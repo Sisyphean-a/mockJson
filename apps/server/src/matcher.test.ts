@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { matchApi } from "./matcher.js";
-const api = (mode: "AND" | "OR") => ({
+import type { LogicalApi } from "./types.js";
+const api = (mode: "AND" | "OR"): LogicalApi => ({
   id: "a",
   name: "a",
   enabled: true,
@@ -52,5 +53,23 @@ test("OR accepts either rule", () => {
       headers: { apiname: "123" },
     }),
     true,
+  );
+});
+
+test("Method 规则区分请求方法", () => {
+  assert.equal(
+    matchApi({ ...api("AND"), matchRules: [{ id: "method", source: "method", field: "method", operator: "equals", value: "POST" }] }, {
+      method: "POST", url: new URL("http://x/loan"), headers: {},
+    }),
+    true,
+  );
+});
+
+test("多值 Header 的否定操作要求所有值都不匹配", () => {
+  assert.equal(
+    matchApi({ ...api("AND"), matchRules: [{ id: "header", source: "header", field: "x-tag", operator: "notEquals", value: "blocked" }] }, {
+      method: "GET", url: new URL("http://x/loan"), headers: { "x-tag": ["allowed", "blocked"] },
+    }),
+    false,
   );
 });

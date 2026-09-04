@@ -1,19 +1,37 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import staticPlugin from "@fastify/static";
 import { existsSync } from "node:fs";
 import { createProxy } from "./proxy.js";
 import { JsonFileRepository } from "./storage.js";
-import type { State, PackageConfig, LogicalApi, Scenario } from "./types.js";
+import type { State, PackageConfig, LogicalApi, Scenario, MatchRule } from "./types.js";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import {
+  parseJsonBody,
+  validateDelay,
+  validateMatchRules,
+  validateName,
+  validateStatus,
+} from "./validation.js";
 
-const port = Number(process.env.PORT || 22333),
-  host = process.env.HOST || "0.0.0.0";
+const port = Number(process.env.PORT || 22333);
+const host = process.env.HOST || "0.0.0.0";
 const repo = new JsonFileRepository(resolve("data/mock-data.json"));
 const app = Fastify({ logger: true });
-await app.register(cors);
-app.addHook("onRequest", async (req) => {
+app.addContentTypeParser("*", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
+const loopback = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+
+await app.register(cors, {
+  origin: (origin, cb) => {
+    if (!origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin))
+      return cb(null, true);
+    cb(null, false);
+  },
+});
+app.addHook("onRequest", async (req, reply) => {
+  if (req.url.startsWith("/__mock_admin/") && !loopback.has(req.ip))
+    return reply.code(403).send({ error: "管理接口只允许本机访问" });
   app.log.info(
     {
       method: req.method,
@@ -24,92 +42,37 @@ app.addHook("onRequest", async (req) => {
     "mock request received",
   );
 });
-if (existsSync(resolve("dist")))
-  await app.register(staticPlugin, { root: resolve("dist"), prefix: "/" });
-let state = await repo.read();
+const hasDist = existsSync(resolve("dist"));
+if (hasDist)
+  await app.register(staticPlugin, { root: resolve("dist"), prefix: "/__mock_ui/", index: false });
+
+let state: State = await repo.read();
+if (hasDist)
+  app.get("/", async (req, reply) => {
+    if (String(req.headers.accept || "").includes("text/html")) return reply.sendFile("index.html");
+    return createProxy(req, reply, state);
+  });
 for (const p of state.packages)
-  for (const api of p.apis)
-    if (!api.activeScenarioId && api.scenarios.length)
-      api.activeScenarioId = api.scenarios[0].id;
-if (!state.currentPackageId && state.packages[0])
-  state.currentPackageId = state.packages[0].id;
-const save = async () => repo.write(state);
-function pkg(id: string) {
-  return state.packages.find((p) => p.id === id);
-}
-app.get("/__mock_admin/state", async () => state);
-app.get("/__mock_admin/packages", async () => state.packages);
-app.post("/__mock_admin/packages", async (req, res) => {
-  const b = req.body as Partial<PackageConfig>;
-  const p = {
-    id: randomUUID(),
-    name: b.name || "未命名测试包",
-    targetBaseUrl: b.targetBaseUrl || "",
-    apis: [],
-  };
-  state.packages.push(p);
-  if (!state.currentPackageId) state.currentPackageId = p.id;
-  await save();
-  return res.code(201).send(p);
-});
-app.patch("/__mock_admin/packages/:id", async (req, res) => {
-  const p = pkg((req.params as any).id);
-  if (!p) return res.code(404).send({ error: "Package not found" });
-  if (req.body && typeof (req.body as any).targetBaseUrl === "string") {
-    const targetBaseUrl = (req.body as any).targetBaseUrl.trim();
-    if (targetBaseUrl) {
-      try {
-        const parsed = new URL(targetBaseUrl);
-        if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
-      } catch {
-        return res
-          .code(400)
-          .send({ error: "targetBaseUrl 必须是 http:// 或 https:// 地址" });
-      }
-    }
+  for (const api of p.apis) {
+    if (!api.activeScenarioId || !api.scenarios.some((s) => s.id === api.activeScenarioId))
+      api.activeScenarioId = api.scenarios[0]?.id || null;
   }
-  Object.assign(p, req.body);
-  await save();
-  return p;
-});
-app.delete("/__mock_admin/packages/:id", async (req, res) => {
-  state.packages = state.packages.filter(
-    (p) => p.id !== (req.params as any).id,
-  );
-  if (state.currentPackageId === (req.params as any).id)
-    state.currentPackageId = state.packages[0]?.id || null;
-  await save();
-  return { success: true };
-});
-app.post("/__mock_admin/current-package/:id", async (req, res) => {
-  if (!pkg((req.params as any).id))
-    return res.code(404).send({ error: "Package not found" });
-  state.currentPackageId = (req.params as any).id;
-  await save();
-  return { success: true, currentPackageId: state.currentPackageId };
-});
-app.get("/__mock_admin/packages/:id/apis", async (req, res) => {
-  const p = pkg((req.params as any).id);
-  return p ? p.apis : res.code(404).send({ error: "Package not found" });
-});
-app.post("/__mock_admin/packages/:packageId/apis", async (req, res) => {
-  const p = pkg((req.params as any).packageId);
-  if (!p) return res.code(404).send({ error: "Package not found" });
-  const b = req.body as Partial<LogicalApi>;
-  const api = {
-    id: randomUUID(),
-    name: b.name || "未命名接口",
-    enabled: true,
-    priority: Math.max(0, ...p.apis.map((a) => a.priority)) + 10,
-    matchMode: "AND" as const,
-    matchRules: b.matchRules || [],
-    activeScenarioId: null,
-    scenarios: [],
-  };
-  p.apis.push(api);
-  await save();
-  return res.code(201).send(api);
-});
+if (state.currentPackageId && !state.packages.some((p) => p.id === state.currentPackageId))
+  state.currentPackageId = state.packages[0]?.id || null;
+if (!state.currentPackageId && state.packages[0]) state.currentPackageId = state.packages[0].id;
+let persistedState = structuredClone(state);
+const save = async () => {
+  try {
+    await repo.write(state);
+    persistedState = structuredClone(state);
+  } catch (error) {
+    state = structuredClone(persistedState);
+    throw error;
+  }
+};
+function pkg(id: string) { return state.packages.find((p) => p.id === id); }
+function body(req: FastifyRequest) { return (req.body || {}) as Record<string, unknown>; }
+function routeId(req: FastifyRequest, key: string) { return (req.params as Record<string, string>)[key]; }
 function findApi(id: string) {
   for (const p of state.packages) {
     const a = p.apis.find((x) => x.id === id);
@@ -117,84 +80,178 @@ function findApi(id: string) {
   }
   return null;
 }
-app.patch("/__mock_admin/apis/:id", async (req, res) => {
-  const found = findApi((req.params as any).id);
-  if (!found) return res.code(404).send({ error: "API not found" });
-  Object.assign(found[1], req.body);
-  await save();
-  return found[1];
+function findScenario(id: string) {
+  for (const p of state.packages)
+    for (const a of p.apis) {
+      const s = a.scenarios.find((x) => x.id === id);
+      if (s) return [p, a, s] as const;
+    }
+  return null;
+}
+function validTarget(value: unknown) {
+  const target = typeof value === "string" ? value.trim() : "";
+  if (!target) return "";
+  const parsed = new URL(target);
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error("targetBaseUrl 必须是 http:// 或 https:// 地址");
+  return target;
+}
+function sendBadRequest(reply: any, error: unknown) {
+  return reply.code(400).send({ error: error instanceof Error ? error.message : "请求参数不正确" });
+}
+
+app.get("/__mock_admin/state", async () => state);
+app.get("/__mock_admin/packages", async () => state.packages);
+app.post("/__mock_admin/packages", async (req, reply) => {
+  try {
+    const b = body(req);
+    const p: PackageConfig = {
+      id: randomUUID(),
+      name: validateName(b.name, "Package"),
+      targetBaseUrl: validTarget(b.targetBaseUrl),
+      apis: [],
+    };
+    state.packages.push(p);
+    if (!state.currentPackageId) state.currentPackageId = p.id;
+    await save();
+    return reply.code(201).send(p);
+  } catch (error) { return sendBadRequest(reply, error); }
 });
-app.delete("/__mock_admin/apis/:id", async (req, res) => {
-  const found = findApi((req.params as any).id);
-  if (!found) return res.code(404).send({ error: "API not found" });
+app.patch("/__mock_admin/packages/:id", async (req, reply) => {
+  const p = pkg(routeId(req, "id"));
+  if (!p) return reply.code(404).send({ error: "Package not found" });
+  try {
+    const b = body(req);
+    if (b.name !== undefined) p.name = validateName(b.name, "Package");
+    if (b.targetBaseUrl !== undefined) p.targetBaseUrl = validTarget(b.targetBaseUrl);
+    await save();
+    return p;
+  } catch (error) { return sendBadRequest(reply, error); }
+});
+app.delete("/__mock_admin/packages/:id", async (req, reply) => {
+  const id = routeId(req, "id");
+  if (!pkg(id)) return reply.code(404).send({ error: "Package not found" });
+  state.packages = state.packages.filter((p) => p.id !== id);
+  if (state.currentPackageId === id) state.currentPackageId = state.packages[0]?.id || null;
+  await save();
+  return { success: true, currentPackageId: state.currentPackageId };
+});
+app.post("/__mock_admin/current-package/:id", async (req, reply) => {
+  const id = routeId(req, "id");
+  if (!pkg(id)) return reply.code(404).send({ error: "Package not found" });
+  state.currentPackageId = id;
+  await save();
+  return { success: true, currentPackageId: id };
+});
+app.get("/__mock_admin/packages/:id/apis", async (req, reply) => {
+  const p = pkg(routeId(req, "id"));
+  return p ? p.apis : reply.code(404).send({ error: "Package not found" });
+});
+app.post("/__mock_admin/packages/:packageId/apis", async (req, reply) => {
+  const p = pkg(routeId(req, "packageId"));
+  if (!p) return reply.code(404).send({ error: "Package not found" });
+  try {
+    const b = body(req);
+    const api: LogicalApi = {
+      id: randomUUID(),
+      name: validateName(b.name, "接口"),
+      enabled: false,
+      priority: Math.max(0, ...p.apis.map((a) => a.priority)) + 10,
+      matchMode: "AND",
+      matchRules: [],
+      activeScenarioId: null,
+      scenarios: [],
+    };
+    p.apis.push(api);
+    await save();
+    return reply.code(201).send(api);
+  } catch (error) { return sendBadRequest(reply, error); }
+});
+app.patch("/__mock_admin/apis/:id", async (req, reply) => {
+  const found = findApi(routeId(req, "id"));
+  if (!found) return reply.code(404).send({ error: "API not found" });
+  try {
+    const b = body(req);
+    if (b.name !== undefined) found[1].name = validateName(b.name, "接口");
+    if (b.enabled !== undefined) {
+      if (typeof b.enabled !== "boolean") throw new Error("enabled 必须是布尔值");
+      found[1].enabled = b.enabled;
+    }
+    if (b.priority !== undefined) {
+      if (!Number.isInteger(b.priority) || Number(b.priority) < 0) throw new Error("优先级必须是非负整数");
+      found[1].priority = Number(b.priority);
+    }
+    if (b.matchMode !== undefined) {
+      if (b.matchMode !== "AND" && b.matchMode !== "OR") throw new Error("规则关系必须是 AND 或 OR");
+      found[1].matchMode = b.matchMode;
+    }
+    if (b.matchRules !== undefined) found[1].matchRules = validateMatchRules(b.matchRules) as MatchRule[];
+    await save();
+    return found[1];
+  } catch (error) { return sendBadRequest(reply, error); }
+});
+app.delete("/__mock_admin/apis/:id", async (req, reply) => {
+  const found = findApi(routeId(req, "id"));
+  if (!found) return reply.code(404).send({ error: "API not found" });
   found[0].apis = found[0].apis.filter((a) => a.id !== found[1].id);
   await save();
   return { success: true };
 });
-app.post("/__mock_admin/apis/:id/scenarios", async (req, res) => {
-  const found = findApi((req.params as any).id);
-  if (!found) return res.code(404).send({ error: "API not found" });
-  const b = req.body as Partial<Scenario>;
-  let body = b.responseBody ?? {};
-  if (typeof body === "string")
-    try {
-      body = JSON.parse(body);
-    } catch {
-      return res.code(400).send({ error: "responseBody must be valid JSON" });
-    }
-  const s = {
-    id: randomUUID(),
-    name: b.name || "新场景",
-    status: b.status || 200,
-    delayMs: Math.min(30000, Math.max(0, b.delayMs || 0)),
-    responseBody: body,
-    color: b.color || "blue",
-  };
-  found[1].scenarios.push(s);
-  if ((b as any).activate !== false || !found[1].activeScenarioId)
-    found[1].activeScenarioId = s.id;
-  await save();
-  return res.code(201).send(s);
+app.post("/__mock_admin/apis/:id/scenarios", async (req, reply) => {
+  const found = findApi(routeId(req, "id"));
+  if (!found) return reply.code(404).send({ error: "API not found" });
+  try {
+    const b = body(req);
+    const s: Scenario = {
+      id: randomUUID(),
+      name: validateName(b.name, "场景"),
+      status: validateStatus(b.status),
+      delayMs: validateDelay(b.delayMs),
+      responseBody: parseJsonBody(b.responseBody === undefined ? {} : b.responseBody),
+      color: typeof b.color === "string" ? b.color : "blue",
+    };
+    found[1].scenarios.push(s);
+    if (b.activate !== false || !found[1].activeScenarioId) found[1].activeScenarioId = s.id;
+    await save();
+    return reply.code(201).send(s);
+  } catch (error) { return sendBadRequest(reply, error); }
 });
-app.patch("/__mock_admin/scenarios/:id", async (req, res) => {
-  for (const p of state.packages)
-    for (const a of p.apis) {
-      const s = a.scenarios.find((x) => x.id === (req.params as any).id);
-      if (s) {
-        const b = req.body as any;
-        if (b.responseBody !== undefined) {
-          try {
-            s.responseBody =
-              typeof b.responseBody === "string"
-                ? JSON.parse(b.responseBody)
-                : b.responseBody;
-          } catch {
-            return res
-              .code(400)
-              .send({ error: "responseBody must be valid JSON" });
-          }
-        }
-        Object.assign(s, b);
-        await save();
-        return s;
-      }
+app.patch("/__mock_admin/scenarios/:id", async (req, reply) => {
+  const found = findScenario(routeId(req, "id"));
+  if (!found) return reply.code(404).send({ error: "Scenario not found" });
+  try {
+    const b = body(req);
+    if (b.name !== undefined) found[2].name = validateName(b.name, "场景");
+    if (b.status !== undefined) found[2].status = validateStatus(b.status);
+    if (b.delayMs !== undefined) found[2].delayMs = validateDelay(b.delayMs);
+    if (b.color !== undefined) {
+      if (typeof b.color !== "string") throw new Error("场景颜色格式不正确");
+      found[2].color = b.color;
     }
-  return res.code(404).send({ error: "Scenario not found" });
+    if (b.responseBody !== undefined) found[2].responseBody = parseJsonBody(b.responseBody);
+    await save();
+    return found[2];
+  } catch (error) { return sendBadRequest(reply, error); }
 });
-app.post("/__mock_admin/apis/:apiId/activate/:scenarioId", async (req, res) => {
-  const found = findApi((req.params as any).apiId);
-  if (
-    !found ||
-    !found[1].scenarios.some((s) => s.id === (req.params as any).scenarioId)
-  )
-    return res.code(404).send({ error: "Scenario not found" });
-  found[1].activeScenarioId = (req.params as any).scenarioId;
+app.delete("/__mock_admin/scenarios/:id", async (req, reply) => {
+  const found = findScenario(routeId(req, "id"));
+  if (!found) return reply.code(404).send({ error: "Scenario not found" });
+  found[1].scenarios = found[1].scenarios.filter((s) => s.id !== found[2].id);
+  if (found[1].activeScenarioId === found[2].id) found[1].activeScenarioId = found[1].scenarios[0]?.id || null;
   await save();
   return { success: true, activeScenarioId: found[1].activeScenarioId };
 });
-app.setNotFoundHandler((req, res) => createProxy(req, res, state));
-app
-  .listen({ port, host })
-  .then(() =>
-    console.log(`Mock Console started\nAdmin UI: http://127.0.0.1:${port}`),
-  );
+app.post("/__mock_admin/apis/:apiId/activate/:scenarioId", async (req, reply) => {
+  const found = findApi(routeId(req, "apiId"));
+  if (!found || !found[1].scenarios.some((s) => s.id === routeId(req, "scenarioId")))
+    return reply.code(404).send({ error: "Scenario not found" });
+  found[1].activeScenarioId = routeId(req, "scenarioId");
+  await save();
+  return { success: true, activeScenarioId: found[1].activeScenarioId };
+});
+
+app.setNotFoundHandler((req, reply) => {
+  if (req.url.startsWith("/__mock_admin/")) return reply.code(404).send({ error: "管理接口不存在" });
+  return createProxy(req, reply, state);
+});
+await app.listen({ port, host });
+console.log(`Mock Console started\nAdmin UI: http://127.0.0.1:${port}`);

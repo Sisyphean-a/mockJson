@@ -1,6 +1,6 @@
 # Mock Console
 
-本地 Mock / Proxy 控制台：用逻辑接口、匹配条件和完整响应场景，快速切换 Android 测试请求的返回结果。
+本地 Mock / Proxy 控制台：用逻辑接口、匹配条件和完整响应场景，快速切换不同请求的返回结果。
 
 ## 启动
 
@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-管理页面（开发模式）默认在 `http://127.0.0.1:22334`，Mock / Proxy 服务监听 `0.0.0.0:22333`。配置保存在 `data/mock-data.json`，写入采用临时文件替换并保留 `.bak`。
+管理页面（开发模式）默认在 `http://127.0.0.1:22334`，Mock / Proxy 服务监听 `0.0.0.0:22333`。管理 API 只允许本机访问，局域网设备仍可访问 Mock / Proxy 路径。配置保存在 `data/mock-data.json`，写入采用串行临时文件替换并保留有效 `.bak`；主文件损坏时自动恢复备份，两者都损坏时服务会明确报错。
 
 正式使用时执行：
 
@@ -23,10 +23,11 @@ npm start
 ## 使用方式
 
 1. 启动服务并打开 `http://127.0.0.1:22333`。
-2. 在顶部「真实服务」输入真实测试环境地址，例如 `https://api.example.com`，点击「保存」。这是未命中 Mock 或关闭 Mock 时的转发目标。
-3. 创建逻辑接口，添加 `Header.apiName` 或 `URL.path` 匹配条件。
-4. 创建场景并保存完整 JSON，点击场景卡片切换「当前使用」场景。
-5. Reqable 将需要 Mock 的请求重写到 `http://电脑局域网IP:22333/原始路径`，保留查询参数和业务 Header。
+2. 首次启动为空白状态，点击「+ 包」创建测试包。
+3. 在顶部「真实服务」输入真实测试环境地址，例如 `https://api.example.com`，点击「保存」。这是未命中 Mock 或关闭 Mock 时的转发目标。
+4. 创建逻辑接口，添加任意 Header、URL.path 或 HTTP Method 匹配条件；新接口默认关闭，配置完成后再开启。
+5. 创建场景并设置完整 JSON、状态码和延迟，点击场景卡片立即切换当前返回。
+6. Reqable 将需要 Mock 的请求重写到 `http://电脑局域网IP:22333/原始路径`，保留查询参数和业务 Header。
 
 如果请求没有命中接口：
 
@@ -36,11 +37,11 @@ npm start
 
 HTTPS 请求由 Reqable 负责解密和重写；本项目不提供 HTTPS MITM。Android 连接电脑时使用电脑局域网 IP，不要使用 Android 自己的 `127.0.0.1`。
 
-- 空白初始 Package，不携带参考项目的 mock 数据
-- Package / Logical API / Scenario 管理 API
-- Header（大小写不敏感）与 URL 的 equals / contains 等匹配
-- 优先级命中、场景即时切换、JSON 校验、延迟（上限 30 秒）
-- 未命中或关闭 Mock 时透明转发到 Package 的 `targetBaseUrl`
+- 空白初始状态，不携带参考项目的 Package 或 Mock 数据
+- Package / Logical API / Scenario 完整创建、修改和删除
+- 任意 Header（名称大小写不敏感）、URL 与 HTTP Method 匹配
+- 优先级命中、场景即时切换、JSON/状态码/延迟校验
+- 未命中或关闭 Mock 时透明转发到 Package 的 `targetBaseUrl`，保留 JSON 请求体和基础路径
 - Vue 3 + TypeScript 页面，场景区和 JSON 编辑器为主要操作区域
 
-Reqable 等客户端只需将请求转发至 `22333`；本项目不做 HTTPS MITM 或请求体重编码。
+Reqable 等客户端只需将请求转发至 `22333`；本项目不做 HTTPS MITM。

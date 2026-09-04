@@ -1,4 +1,4 @@
-export type MatchSource = "header" | "url";
+export type MatchSource = "header" | "url" | "method";
 export type MatchOperator =
   | "equals"
   | "notEquals"
