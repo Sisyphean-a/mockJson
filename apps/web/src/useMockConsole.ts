@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 export type Rule = {
   id: string;
@@ -31,6 +31,7 @@ type State = { currentPackageId: string | null; packages: Pkg[] };
 export function useMockConsole() {
   const state = ref<State>({ currentPackageId: null, packages: [] });
   const search = ref(""), selectedId = ref<string | null>(null), sceneId = ref<string | null>(null);
+  const loading = ref(true), loadError = ref("");
   const draft = ref(""), jsonError = ref(""), expanded = ref(true), draftDirty = ref(false);
   const showApi = ref(false), showScene = ref(false), showPackage = ref(false), sceneEditMode = ref(false);
   const apiName = ref(""), serverReady = ref(false), apiEditName = ref(""), apiPriority = ref(0);
@@ -73,6 +74,7 @@ export function useMockConsole() {
       serverReady.value = true;
     } catch (error) {
       serverReady.value = false;
+      if (error instanceof TypeError) throw new Error("无法连接 Mock 服务，请检查服务是否运行后重试", { cause: error });
       throw error;
     }
     if (!response.ok) {
@@ -83,13 +85,26 @@ export function useMockConsole() {
     return response.status === 204 ? null : response.json();
   }
   async function load() {
-    state.value = await call("/__mock_admin/state");
-    serverReady.value = true;
-    const current = pkg.value;
-    if (!current) { selectedId.value = null; sceneId.value = null; return; }
-    if (!current.apis.some((a) => a.id === selectedId.value)) selectedId.value = current.apis[0]?.id || null;
-    const selected = current.apis.find((a) => a.id === selectedId.value);
-    if (!selected?.scenarios.some((s) => s.id === sceneId.value)) sceneId.value = selected?.activeScenarioId || selected?.scenarios[0]?.id || null;
+    loading.value = true;
+    loadError.value = "";
+    try {
+      state.value = await call("/__mock_admin/state");
+      serverReady.value = true;
+      const current = pkg.value;
+      if (!current) { selectedId.value = null; sceneId.value = null; return; }
+      if (!current.apis.some((a) => a.id === selectedId.value)) selectedId.value = current.apis[0]?.id || null;
+      const selected = current.apis.find((a) => a.id === selectedId.value);
+      if (!selected?.scenarios.some((s) => s.id === sceneId.value)) sceneId.value = selected?.activeScenarioId || selected?.scenarios[0]?.id || null;
+    } catch (error) {
+      loadError.value = error instanceof Error ? error.message : "无法加载配置";
+      throw error;
+    } finally {
+      loading.value = false;
+    }
+  }
+  async function retryLoad() {
+    try { await load(); }
+    catch (e: any) { serverReady.value = false; notice(e.message); }
   }
   watch(scene, (s) => {
     draft.value = s ? JSON.stringify(s.responseBody, null, 2) : "";
@@ -126,7 +141,7 @@ export function useMockConsole() {
     } catch (e: any) { notice(e.message); }
   }
   async function deletePackage(p: Pkg) {
-    if (!window.confirm(`确定删除 Package“${p.name}”及其全部配置吗？`)) return;
+    if (!window.confirm(`确定删除 Package“${p.name}”及其全部配置吗？删除后不可恢复。`)) return;
     try { await call("/__mock_admin/packages/" + p.id, { method: "DELETE" }); await load(); notice("Package 已删除"); }
     catch (e: any) { notice(e.message); }
   }
@@ -146,7 +161,7 @@ export function useMockConsole() {
     catch (e: any) { notice(e.message); }
   }
   async function deleteApi() {
-    if (!api.value || !window.confirm(`确定删除接口“${api.value.name}”及其场景吗？`)) return;
+    if (!api.value || !window.confirm(`确定删除接口“${api.value.name}”及其场景吗？删除后不可恢复。`)) return;
     try { await call("/__mock_admin/apis/" + api.value.id, { method: "DELETE" }); await load(); notice("接口已删除"); }
     catch (e: any) { notice(e.message); }
   }
@@ -175,8 +190,17 @@ export function useMockConsole() {
   function changeSource() { ruleField.value = ruleSource.value === "header" ? "apiName" : ruleSource.value === "url" ? "path" : "method"; }
   async function saveJson() {
     if (!scene.value) return;
-    try { const responseBody = JSON.parse(draft.value); const saved = await call("/__mock_admin/scenarios/" + scene.value.id, { method: "PATCH", body: JSON.stringify({ responseBody }) }); scene.value.responseBody = saved.responseBody; draftDirty.value = false; jsonError.value = ""; notice("场景已保存"); }
-    catch (e: any) { jsonError.value = e.message || "JSON 格式错误"; }
+    try {
+      const responseBody = JSON.parse(draft.value);
+      const saved = await call("/__mock_admin/scenarios/" + scene.value.id, { method: "PATCH", body: JSON.stringify({ responseBody }) });
+      scene.value.responseBody = saved.responseBody;
+      draftDirty.value = false;
+      jsonError.value = "";
+      notice("场景已保存");
+    } catch (e: any) {
+      const message = e instanceof Error ? e.message : "JSON 格式错误";
+      jsonError.value = message.startsWith("无法连接 Mock 服务") ? `${message}；响应尚未保存` : message;
+    }
   }
   async function createApi() {
     if (!pkg.value || !apiName.value.trim()) return;
@@ -220,12 +244,21 @@ export function useMockConsole() {
     } catch (e: any) { notice(e.message); }
   }
   async function deleteScene(s: Scene) {
-    if (!api.value || !window.confirm(`确定删除场景“${s.name}”吗？`)) return;
+    if (!api.value || !window.confirm(`确定删除场景“${s.name}”吗？删除后不可恢复。`)) return;
     try { await call("/__mock_admin/scenarios/" + s.id, { method: "DELETE" }); await load(); notice("场景已删除"); }
     catch (e: any) { notice(e.message); }
   }
   function notice(message: string) { toast.value = message; setTimeout(() => (toast.value = ""), 2200); }
-  onMounted(async () => { try { await load(); } catch (e: any) { serverReady.value = false; notice(e.message); } });
+  function handleBeforeUnload(event: BeforeUnloadEvent) {
+    if (!draftDirty.value) return;
+    event.preventDefault();
+    event.returnValue = "";
+  }
+  onMounted(async () => {
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    try { await load(); } catch (e: any) { serverReady.value = false; notice(e.message); }
+  });
+  onBeforeUnmount(() => window.removeEventListener("beforeunload", handleBeforeUnload));
 
-  return { state, search, selectedId, sceneId, draft, jsonError, expanded, showApi, showScene, showPackage, sceneEditMode, draftDirty, apiName, serverReady, apiEditName, apiPriority, sceneName, editSceneName, editSceneStatus, editSceneDelay, editSceneColor, packageName, editingPackageId, toast, targetUrl, ruleSource, ruleField, ruleOperator, ruleValue, addingRule, operators, urlFields, methodFields, ruleHint, pkg, api, scene, activeSceneId, activeScene, filtered, selectApi, switchPkg, openApiCreate, openPackage, savePackage, deletePackage, saveTargetUrl, toggle, openApiEdit, saveApi, deleteApi, activate, addRule, removeRule, updateLogic, changeSource, saveJson, createApi, createScene, openSceneCreate, openSceneEdit, duplicateScene, saveScene, deleteScene };
+  return { state, search, selectedId, sceneId, loading, loadError, draft, jsonError, expanded, showApi, showScene, showPackage, sceneEditMode, draftDirty, apiName, serverReady, apiEditName, apiPriority, sceneName, editSceneName, editSceneStatus, editSceneDelay, editSceneColor, packageName, editingPackageId, toast, targetUrl, ruleSource, ruleField, ruleOperator, ruleValue, addingRule, operators, urlFields, methodFields, ruleHint, pkg, api, scene, activeSceneId, activeScene, filtered, selectApi, switchPkg, openApiCreate, openPackage, savePackage, deletePackage, saveTargetUrl, toggle, openApiEdit, saveApi, deleteApi, activate, addRule, removeRule, updateLogic, changeSource, saveJson, createApi, createScene, openSceneCreate, openSceneEdit, duplicateScene, saveScene, deleteScene, retryLoad };
 }

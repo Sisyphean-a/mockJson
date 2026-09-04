@@ -4,6 +4,7 @@ import staticPlugin from "@fastify/static";
 import { existsSync } from "node:fs";
 import { createProxy } from "./proxy.js";
 import { JsonFileRepository } from "./storage.js";
+import { resolveStateFile } from "./state-path.js";
 import type { State, PackageConfig, LogicalApi, Scenario, MatchRule } from "./types.js";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
@@ -17,7 +18,7 @@ import {
 
 const port = Number(process.env.PORT || 22333);
 const host = process.env.HOST || "0.0.0.0";
-const repo = new JsonFileRepository(resolve("data/mock-data.json"));
+const repo = new JsonFileRepository(resolveStateFile());
 const app = Fastify({ logger: true });
 app.addContentTypeParser("*", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
 const loopback = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);

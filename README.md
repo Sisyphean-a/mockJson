@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-管理页面（开发模式）默认在 `http://127.0.0.1:22334`，Mock / Proxy 服务监听 `0.0.0.0:22333`。管理 API 只允许本机访问，局域网设备仍可访问 Mock / Proxy 路径。配置保存在 `data/mock-data.json`，写入采用串行临时文件替换并保留有效 `.bak`；主文件损坏时自动恢复备份，两者都损坏时服务会明确报错。
+管理页面（开发模式）默认在 `http://127.0.0.1:22334`，Mock / Proxy 服务监听 `0.0.0.0:22333`。管理 API 只允许本机访问，局域网设备仍可访问 Mock / Proxy 路径。配置默认保存在当前用户数据目录：Windows 为 `%LOCALAPPDATA%\mock-console\state.json`，macOS 为 `~/Library/Application Support/mock-console/state.json`，Linux 为 `$XDG_DATA_HOME/mock-console/state.json` 或 `~/.local/share/mock-console/state.json`。也可以通过 `MOCK_STATE_FILE` 指定路径。仓库中的 `data/mock-data.example.json` 只是脱敏示例，不会自动加载。写入采用串行临时文件替换并保留有效 `.bak`；主文件损坏时自动恢复备份，两者都损坏时服务会明确报错。
 
 正式使用时执行：
 

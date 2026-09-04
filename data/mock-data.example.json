@@ -1,0 +1,44 @@
+{
+  "currentPackageId": "example-package",
+  "packages": [
+    {
+      "id": "example-package",
+      "name": "示例配置",
+      "targetBaseUrl": "https://api.example.test",
+      "apis": [
+        {
+          "id": "example-api",
+          "name": "示例接口",
+          "enabled": true,
+          "priority": 10,
+          "matchMode": "AND",
+          "matchRules": [
+            {
+              "id": "example-rule",
+              "source": "url",
+              "field": "path",
+              "operator": "equals",
+              "value": "/api/example"
+            }
+          ],
+          "activeScenarioId": "example-scenario",
+          "scenarios": [
+            {
+              "id": "example-scenario",
+              "name": "成功",
+              "status": 200,
+              "delayMs": 0,
+              "responseBody": {
+                "code": 0,
+                "data": {
+                  "message": "example response"
+                }
+              },
+              "color": "green"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
