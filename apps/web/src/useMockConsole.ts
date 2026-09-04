@@ -60,7 +60,7 @@ export function useMockConsole() {
   const scene = computed(() => api.value?.scenarios.find((s) => s.id === sceneId.value));
   const activeSceneId = computed(() => {
     if (!api.value) return null;
-    return api.value.scenarios.some((s) => s.id === api.value!.activeScenarioId) ? api.value.activeScenarioId : api.value.scenarios[0]?.id || null;
+    return api.value.scenarios.some((s) => s.id === api.value!.activeScenarioId) ? api.value.activeScenarioId : null;
   });
   const activeScene = computed(() => api.value?.scenarios.find((s) => s.id === activeSceneId.value));
   const filtered = computed(() => pkg.value?.apis.filter((a) => a.name.toLowerCase().includes(search.value.toLowerCase())) || []);
@@ -165,10 +165,30 @@ export function useMockConsole() {
     try { await call("/__mock_admin/apis/" + api.value.id, { method: "DELETE" }); await load(); notice("接口已删除"); }
     catch (e: any) { notice(e.message); }
   }
-  async function activate(s: Scene) {
-    if (!api.value || !leaveCurrentDraft()) return;
-    try { await call(`/__mock_admin/apis/${api.value.id}/activate/${s.id}`, { method: "POST" }); api.value.activeScenarioId = s.id; sceneId.value = s.id; notice("场景已切换"); }
-    catch (e: any) { notice(e.message); }
+  function selectScene(s: Scene) {
+    if (sceneId.value === s.id || !leaveCurrentDraft()) return;
+    sceneId.value = s.id;
+  }
+  async function toggleScene(s: Scene) {
+    if (!api.value) return;
+    const isActive = activeSceneId.value === s.id;
+    if (!isActive && sceneId.value === s.id && draftDirty.value) {
+      notice("请先保存响应，再启用场景");
+      return;
+    }
+    if (!isActive && sceneId.value !== s.id && !leaveCurrentDraft()) return;
+    try {
+      if (isActive) {
+        await call(`/__mock_admin/apis/${api.value.id}/active-scenario`, { method: "DELETE" });
+        api.value.activeScenarioId = null;
+        notice("场景已停用");
+      } else {
+        await call(`/__mock_admin/apis/${api.value.id}/activate/${s.id}`, { method: "POST" });
+        api.value.activeScenarioId = s.id;
+        sceneId.value = s.id;
+        notice("场景已启用");
+      }
+    } catch (e: any) { notice(e.message); }
   }
   async function addRule() {
     if (!api.value || (ruleOperator.value !== "exists" && ruleOperator.value !== "notExists" && !ruleValue.value.trim())) return;
@@ -209,7 +229,7 @@ export function useMockConsole() {
   }
   async function createScene() {
     if (!api.value || !sceneName.value.trim()) return;
-    try { const created = await call("/__mock_admin/apis/" + api.value.id + "/scenarios", { method: "POST", body: JSON.stringify({ name: sceneName.value, responseBody: {}, activate: true }) }); api.value.scenarios.push(created); api.value.activeScenarioId = created.id; sceneName.value = ""; showScene.value = false; sceneId.value = created.id; notice("场景已创建"); }
+    try { const created = await call("/__mock_admin/apis/" + api.value.id + "/scenarios", { method: "POST", body: JSON.stringify({ name: sceneName.value, responseBody: {} }) }); api.value.scenarios.push(created); sceneName.value = ""; showScene.value = false; sceneId.value = created.id; notice("场景已创建，配置完成后再启用"); }
     catch (e: any) { notice(e.message); }
   }
   function openSceneCreate() {
@@ -260,5 +280,5 @@ export function useMockConsole() {
   });
   onBeforeUnmount(() => window.removeEventListener("beforeunload", handleBeforeUnload));
 
-  return { state, search, selectedId, sceneId, loading, loadError, draft, jsonError, expanded, showApi, showScene, showPackage, sceneEditMode, draftDirty, apiName, serverReady, apiEditName, apiPriority, sceneName, editSceneName, editSceneStatus, editSceneDelay, editSceneColor, packageName, editingPackageId, toast, targetUrl, ruleSource, ruleField, ruleOperator, ruleValue, addingRule, operators, urlFields, methodFields, ruleHint, pkg, api, scene, activeSceneId, activeScene, filtered, selectApi, switchPkg, openApiCreate, openPackage, savePackage, deletePackage, saveTargetUrl, toggle, openApiEdit, saveApi, deleteApi, activate, addRule, removeRule, updateLogic, changeSource, saveJson, createApi, createScene, openSceneCreate, openSceneEdit, duplicateScene, saveScene, deleteScene, retryLoad };
+  return { state, search, selectedId, sceneId, loading, loadError, draft, jsonError, expanded, showApi, showScene, showPackage, sceneEditMode, draftDirty, apiName, serverReady, apiEditName, apiPriority, sceneName, editSceneName, editSceneStatus, editSceneDelay, editSceneColor, packageName, editingPackageId, toast, targetUrl, ruleSource, ruleField, ruleOperator, ruleValue, addingRule, operators, urlFields, methodFields, ruleHint, pkg, api, scene, activeSceneId, activeScene, filtered, selectApi, selectScene, switchPkg, openApiCreate, openPackage, savePackage, deletePackage, saveTargetUrl, toggle, openApiEdit, saveApi, deleteApi, toggleScene, addRule, removeRule, updateLogic, changeSource, saveJson, createApi, createScene, openSceneCreate, openSceneEdit, duplicateScene, saveScene, deleteScene, retryLoad };
 }

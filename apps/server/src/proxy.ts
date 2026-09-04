@@ -11,7 +11,7 @@ const hop = new Set([
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function activeScenario(api: State["packages"][number]["apis"][number]) {
-  return api.scenarios.find((s) => s.id === api.activeScenarioId) || api.scenarios[0];
+  return api.scenarios.find((s) => s.id === api.activeScenarioId);
 }
 function targetUrl(requestUrl: string, baseUrl: string) {
   const request = new URL(requestUrl, "http://mock.local");
@@ -27,7 +27,7 @@ export async function createProxy(req: FastifyRequest, res: FastifyReply, state:
   const p = state.packages.find((x) => x.id === state.currentPackageId);
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const api = p?.apis
-    .filter((a) => a.enabled !== false && a.scenarios.length > 0)
+    .filter((a) => a.enabled !== false && activeScenario(a) !== undefined)
     .slice()
     .sort((a, b) => b.priority - a.priority)
     .find((a) => matchApi(a, { method: req.method, url, headers: req.headers }));

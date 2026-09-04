@@ -39,9 +39,7 @@ export function matchRule(rule: MatchRule, context: MatchContext): boolean {
 }
 
 export function matchApi(api: LogicalApi, context: MatchContext) {
+  if (api.matchRules.length === 0) return false;
   const results = api.matchRules.map((r) => matchRule(r, context));
-  return (
-    api.matchRules.length === 0 ||
-    (api.matchMode === "AND" ? results.every(Boolean) : results.some(Boolean))
-  );
+  return api.matchMode === "AND" ? results.every(Boolean) : results.some(Boolean);
 }

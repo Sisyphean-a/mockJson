@@ -5,6 +5,10 @@ import http from "node:http";
 import { createProxy } from "./proxy.js";
 import type { State } from "./types.js";
 
+const matchingRules = (): State["packages"][number]["apis"][number]["matchRules"] => [{
+  id: "header-rule", source: "header", field: "apiName", operator: "equals", value: "loan-home",
+}];
+
 function createState(rules: State["packages"][number]["apis"][number]["matchRules"]): State {
   return {
     currentPackageId: "pkg",
@@ -23,13 +27,13 @@ async function request(state: State, options: Record<string, unknown> = {}) {
 }
 
 test("Fastify 收到请求头后可按 Header 规则命中场景", async () => {
-  const response = await request(createState([{ id: "header-rule", source: "header", field: "apiName", operator: "equals", value: "loan-home" }]));
+  const response = await request(createState(matchingRules()));
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.json(), { matched: true });
 });
 
 test("代理返回 activeScenarioId 指向的场景", async () => {
-  const state = createState([]);
+  const state = createState(matchingRules());
   const api = state.packages[0].apis[0];
   api.scenarios.push({ id: "second", name: "第二场景", status: 200, delayMs: 0, responseBody: { matched: "second" } });
   api.activeScenarioId = "second";
@@ -43,19 +47,42 @@ test("fullUrl 可使用查询参数匹配", async () => {
 });
 
 test("没有场景的高优先级接口不会遮挡可用 Mock", async () => {
-  const state = createState([]);
-  state.packages[0].apis.unshift({ id: "empty", name: "未完成接口", enabled: true, priority: 99, matchMode: "AND", matchRules: [], activeScenarioId: null, scenarios: [] });
+  const state = createState(matchingRules());
+  state.packages[0].apis.unshift({ id: "empty", name: "未完成接口", enabled: true, priority: 99, matchMode: "AND", matchRules: matchingRules(), activeScenarioId: null, scenarios: [] });
   const response = await request(state);
   assert.deepEqual(response.json(), { matched: true });
 });
 
-test("活动场景失效时回退到第一个场景", async () => {
-  const state = createState([]);
-  const api = state.packages[0].apis[0];
-  api.activeScenarioId = "missing";
-  api.scenarios[0].responseBody = { fallback: true };
+test("没有启用场景的高优先级接口不会遮挡可用 Mock", async () => {
+  const state = createState(matchingRules());
+  state.packages[0].apis.unshift({
+    id: "inactive", name: "未启用场景的接口", enabled: true, priority: 99, matchMode: "AND",
+    matchRules: matchingRules(), activeScenarioId: null,
+    scenarios: [{ id: "draft", name: "未启用", status: 200, delayMs: 0, responseBody: { draft: true } }],
+  });
   const response = await request(state);
-  assert.deepEqual(response.json(), { fallback: true });
+  assert.deepEqual(response.json(), { matched: true });
+});
+
+test("没有匹配规则时不处理请求", async () => {
+  const response = await request(createState([]));
+  assert.equal(response.statusCode, 502);
+  assert.deepEqual(response.json(), { error: "未命中 Mock，且当前 Package 未配置真实服务器" });
+});
+
+test("接口关闭时不处理请求", async () => {
+  const state = createState(matchingRules());
+  state.packages[0].apis[0].enabled = false;
+  const response = await request(state);
+  assert.equal(response.statusCode, 502);
+});
+
+test("活动场景失效时不回退到其他场景", async () => {
+  const state = createState(matchingRules());
+  state.packages[0].apis[0].activeScenarioId = "missing";
+  const response = await request(state);
+  assert.equal(response.statusCode, 502);
+  assert.deepEqual(response.json(), { error: "未命中 Mock，且当前 Package 未配置真实服务器" });
 });
 
 test("未命中代理会保留 multipart 原始字节", async () => {

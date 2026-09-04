@@ -1,0 +1,49 @@
+* {
+  box-sizing: border-box;
+  font-family: "Noto Sans SC", "Google Sans Flex", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f6f8fb;
+  color: #172033;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 120ms ease;
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #246bfd;
+  outline-offset: 2px;
+}
+
+input::placeholder {
+  color: #94a3b8;
+}

@@ -54,10 +54,9 @@ if (hasDist)
     return createProxy(req, reply, state);
   });
 for (const p of state.packages)
-  for (const api of p.apis) {
-    if (!api.activeScenarioId || !api.scenarios.some((s) => s.id === api.activeScenarioId))
-      api.activeScenarioId = api.scenarios[0]?.id || null;
-  }
+  for (const api of p.apis)
+    if (api.activeScenarioId && !api.scenarios.some((s) => s.id === api.activeScenarioId))
+      api.activeScenarioId = null;
 if (state.currentPackageId && !state.packages.some((p) => p.id === state.currentPackageId))
   state.currentPackageId = state.packages[0]?.id || null;
 if (!state.currentPackageId && state.packages[0]) state.currentPackageId = state.packages[0].id;
@@ -211,7 +210,7 @@ app.post("/__mock_admin/apis/:id/scenarios", async (req, reply) => {
       color: typeof b.color === "string" ? b.color : "blue",
     };
     found[1].scenarios.push(s);
-    if (b.activate !== false || !found[1].activeScenarioId) found[1].activeScenarioId = s.id;
+    if (b.activate === true) found[1].activeScenarioId = s.id;
     await save();
     return reply.code(201).send(s);
   } catch (error) { return sendBadRequest(reply, error); }
@@ -237,7 +236,7 @@ app.delete("/__mock_admin/scenarios/:id", async (req, reply) => {
   const found = findScenario(routeId(req, "id"));
   if (!found) return reply.code(404).send({ error: "Scenario not found" });
   found[1].scenarios = found[1].scenarios.filter((s) => s.id !== found[2].id);
-  if (found[1].activeScenarioId === found[2].id) found[1].activeScenarioId = found[1].scenarios[0]?.id || null;
+  if (found[1].activeScenarioId === found[2].id) found[1].activeScenarioId = null;
   await save();
   return { success: true, activeScenarioId: found[1].activeScenarioId };
 });
@@ -248,6 +247,13 @@ app.post("/__mock_admin/apis/:apiId/activate/:scenarioId", async (req, reply) =>
   found[1].activeScenarioId = routeId(req, "scenarioId");
   await save();
   return { success: true, activeScenarioId: found[1].activeScenarioId };
+});
+app.delete("/__mock_admin/apis/:apiId/active-scenario", async (req, reply) => {
+  const found = findApi(routeId(req, "apiId"));
+  if (!found) return reply.code(404).send({ error: "API not found" });
+  found[1].activeScenarioId = null;
+  await save();
+  return { success: true, activeScenarioId: null };
 });
 
 app.setNotFoundHandler((req, reply) => {

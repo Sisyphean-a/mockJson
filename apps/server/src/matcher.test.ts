@@ -56,6 +56,17 @@ test("OR accepts either rule", () => {
   );
 });
 
+test("没有匹配规则时不命中接口", () => {
+  assert.equal(
+    matchApi({ ...api("AND"), matchRules: [] }, {
+      method: "GET",
+      url: new URL("http://x/anything"),
+      headers: {},
+    }),
+    false,
+  );
+});
+
 test("Method 规则区分请求方法", () => {
   assert.equal(
     matchApi({ ...api("AND"), matchRules: [{ id: "method", source: "method", field: "method", operator: "equals", value: "POST" }] }, {
