@@ -1,4 +1,4 @@
-import type { PackageConfig, State } from "./types.js";
+import type { PackageConfig, State } from "../../shared/types.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -73,6 +73,14 @@ export function parseJsonBody(value: unknown) {
   if (typeof value === "string") return JSON.parse(value) as unknown;
   JSON.stringify(value);
   return value;
+}
+
+export function validTarget(value: unknown) {
+  const target = typeof value === "string" ? value.trim() : "";
+  if (!target) return "";
+  const parsed = new URL(target);
+  if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("targetBaseUrl 必须是 http:// 或 https:// 地址");
+  return target;
 }
 
 export function validateName(value: unknown, fallback: string) {

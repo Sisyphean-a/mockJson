@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
-import type { State } from "./types.js";
+import type { State } from "../../shared/types.js";
 import { isValidState } from "./validation.js";
 
 const emptyState = (): State => ({ currentPackageId: null, packages: [] });

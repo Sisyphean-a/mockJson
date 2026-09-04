@@ -1,4 +1,4 @@
-import type { LogicalApi, MatchRule } from "./types.js";
+import type { LogicalApi, MatchRule } from "../../shared/types.js";
 
 export type MatchContext = {
   method: string;

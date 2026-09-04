@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import Fastify from "fastify";
 import http from "node:http";
 import { createProxy } from "./proxy.js";
-import type { State } from "./types.js";
+import type { State } from "../../shared/types.js";
 
 const matchingRules = (): State["packages"][number]["apis"][number]["matchRules"] => [{
   id: "header-rule", source: "header", field: "apiName", operator: "equals", value: "loan-home",

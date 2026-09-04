@@ -6,6 +6,7 @@ export type MatchOperator =
   | "notContains"
   | "exists"
   | "notExists";
+
 export type MatchRule = {
   id: string;
   source: MatchSource;
@@ -13,6 +14,7 @@ export type MatchRule = {
   operator: MatchOperator;
   value: string;
 };
+
 export type Scenario = {
   id: string;
   name: string;
@@ -21,6 +23,7 @@ export type Scenario = {
   responseBody: unknown;
   color?: string;
 };
+
 export type LogicalApi = {
   id: string;
   name: string;
@@ -31,12 +34,14 @@ export type LogicalApi = {
   activeScenarioId: string | null;
   scenarios: Scenario[];
 };
+
 export type PackageConfig = {
   id: string;
   name: string;
   targetBaseUrl: string;
   apis: LogicalApi[];
 };
+
 export type State = {
   currentPackageId: string | null;
   packages: PackageConfig[];

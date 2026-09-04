@@ -1,7 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 import type { FastifyRequest, FastifyReply } from "fastify";
-import type { State } from "./types.js";
+import type { State } from "../../shared/types.js";
 import { matchApi } from "./matcher.js";
 
 const hop = new Set([

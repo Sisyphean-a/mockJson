@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { matchApi } from "./matcher.js";
-import type { LogicalApi } from "./types.js";
+import type { LogicalApi } from "../../shared/types.js";
 const api = (mode: "AND" | "OR"): LogicalApi => ({
   id: "a",
   name: "a",

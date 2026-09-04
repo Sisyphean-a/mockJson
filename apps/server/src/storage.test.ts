@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { JsonFileRepository } from "./storage.js";
-import type { State } from "./types.js";
+import type { State } from "../../shared/types.js";
 
 const state: State = { currentPackageId: null, packages: [] };
 
