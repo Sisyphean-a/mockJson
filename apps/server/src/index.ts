@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import staticPlugin from "@fastify/static";
 import { existsSync } from "node:fs";
@@ -18,6 +18,13 @@ const config = new MockConfigService(repository);
 const app = Fastify({ logger: true });
 const loopback = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
+function requestChannel(req: FastifyRequest) {
+  if (req.url.startsWith("/__mock_admin/")) return "admin";
+  if (req.url.startsWith("/__mock_ui/") || (req.url === "/" && String(req.headers.accept || "").includes("text/html")))
+    return "ui";
+  return "proxy";
+}
+
 await config.initialize();
 app.addContentTypeParser("*", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
 
@@ -34,12 +41,13 @@ app.addHook("onRequest", async (req, reply) => {
     return reply.code(403).send({ error: "管理接口只允许本机访问" });
   app.log.info(
     {
+      channel: requestChannel(req),
       method: req.method,
       url: req.url,
       host: req.headers.host,
       apiName: req.headers.apiname,
     },
-    "mock request received",
+    "request received",
   );
 });
 

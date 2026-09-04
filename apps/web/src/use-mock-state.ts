@@ -1,5 +1,5 @@
 import { computed, ref, watch } from "vue";
-import type { MockAdminClient, Api, Pkg, Scene, State } from "./mock-admin-client";
+import { AdminTransportError, type MockAdminClient, type Api, type Pkg, type Scene, type State } from "./mock-admin-client";
 
 export function useMockState(client: MockAdminClient) {
   const state = ref<State>({ currentPackageId: null, packages: [] });
@@ -22,12 +22,22 @@ export function useMockState(client: MockAdminClient) {
   const activeScene = computed(() => api.value?.scenarios.find((item) => item.id === activeSceneId.value));
   const filtered = computed(() => pkg.value?.apis.filter((item) => item.name.toLowerCase().includes(search.value.toLowerCase())) || []);
 
+  async function runAdminRequest<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      const result = await operation();
+      serverReady.value = true;
+      return result;
+    } catch (error) {
+      if (error instanceof AdminTransportError) serverReady.value = false;
+      throw error;
+    }
+  }
+
   async function load() {
     loading.value = true;
     loadError.value = "";
     try {
-      state.value = await client.getState();
-      serverReady.value = true;
+      state.value = await runAdminRequest(() => client.getState());
       synchronizeSelection();
     } catch (error) {
       serverReady.value = false;
@@ -75,6 +85,6 @@ export function useMockState(client: MockAdminClient) {
   return {
     state, search, selectedId, sceneId, loading, loadError, serverReady,
     pkg, api, scene, activeSceneId, activeScene, filtered,
-    load, selectApi, selectScene, replaceApi, synchronizeSelection,
+    load, runAdminRequest, selectApi, selectScene, replaceApi, synchronizeSelection,
   };
 }

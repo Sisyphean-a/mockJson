@@ -163,6 +163,10 @@ main {
   gap: 14px;
 }
 
+main.startup-state {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 aside {
   min-height: 0;
   background: #fff;

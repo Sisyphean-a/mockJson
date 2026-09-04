@@ -1,30 +1,51 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { adminUrl, MockAdminClient } from "./mock-admin-client";
+import { AdminTransportError, createBrowserTransport, MockAdminClient, type AdminTransport } from "./mock-admin-client";
+import { createRuntimeEndpoints } from "./runtime-endpoints";
 
-test("开发页面直接访问 22333 管理 API，不依赖 Vite 代理", async () => {
+const endpoints = createRuntimeEndpoints({ protocol: "http:", port: "22334" });
+const emptyState = JSON.stringify({ currentPackageId: null, packages: [] });
+
+test("客户端通过运行地址和传输边界访问管理 API", async () => {
   const requests: string[] = [];
-  const client = new MockAdminClient(async (input) => {
-    requests.push(String(input));
-    return new Response(JSON.stringify({ currentPackageId: null, packages: [] }), { status: 200 });
-  }, { protocol: "http:", hostname: "localhost", port: "22334" });
+  const transport: AdminTransport = {
+    async send(input) {
+      requests.push(input);
+      return new Response(emptyState, { status: 200 });
+    },
+  };
+  const client = new MockAdminClient(endpoints, transport);
 
   await client.getState();
+
   assert.deepEqual(requests, ["http://127.0.0.1:22333/__mock_admin/state"]);
 });
 
-test("客户端以全局对象作为 fetch 接收者", async () => {
-  const client = new MockAdminClient(function (this: unknown) {
-    assert.equal(this, globalThis);
-    return Promise.resolve(new Response(JSON.stringify({ currentPackageId: null, packages: [] }), { status: 200 }));
-  });
+test("浏览器传输以浏览器对象作为原生 fetch 接收者", async () => {
+  const browser = {
+    fetch(this: unknown) {
+      assert.equal(this, browser);
+      return Promise.resolve(new Response(emptyState, { status: 200 }));
+    },
+  } as Pick<typeof globalThis, "fetch">;
+  const client = new MockAdminClient(endpoints, createBrowserTransport(browser));
 
   await client.getState();
 });
 
-test("正式页面继续使用当前来源访问管理 API", () => {
-  assert.equal(
-    adminUrl("/__mock_admin/state", { protocol: "http:", hostname: "127.0.0.1", port: "22333" }),
-    "/__mock_admin/state",
-  );
+test("浏览器传输保留连接失败的地址和原始原因", async () => {
+  const cause = new TypeError("Failed to fetch");
+  const browser = {
+    fetch() {
+      return Promise.reject(cause);
+    },
+  } as Pick<typeof globalThis, "fetch">;
+  const client = new MockAdminClient(endpoints, createBrowserTransport(browser));
+
+  await assert.rejects(client.getState(), (error) => {
+    assert.ok(error instanceof AdminTransportError);
+    assert.equal(error.url, "http://127.0.0.1:22333/__mock_admin/state");
+    assert.equal(error.cause, cause);
+    return true;
+  });
 });

@@ -5,18 +5,18 @@ import ConsoleModals from "./components/ConsoleModals.vue";
 import MatchPanel from "./components/MatchPanel.vue";
 import PackageBar from "./components/PackageBar.vue";
 import ScenarioPanel from "./components/ScenarioPanel.vue";
+import { createRuntimeEndpoints } from "./runtime-endpoints";
 
-const c = useMockConsole();
-const mockPort = window.location.port === "22334" ? "22333" : window.location.port || "22333";
-const localMockUrl = `http://127.0.0.1:${mockPort}`;
-const lanMockUrl = `http://<电脑局域网 IP>:${mockPort}/原始路径`;
+const endpoints = createRuntimeEndpoints(window.location);
+const c = useMockConsole(endpoints);
+const { localMockUrl, lanMockUrl } = endpoints;
 </script>
 
 <template>
   <div class="app-shell">
     <PackageBar :controller="c" />
-    <main>
-      <ApiSidebar :controller="c" />
+    <main :class="{ 'startup-state': c.loading.value || c.loadError.value }">
+      <ApiSidebar v-if="!c.loading.value && !c.loadError.value" :controller="c" />
       <section class="content" :aria-busy="c.loading.value">
         <div v-if="c.loading.value" class="loading-panel" role="status" aria-live="polite">
           <div class="loading-mark" aria-hidden="true">✦</div>

@@ -25,7 +25,7 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     const current = model.pkg.value;
     if (!current || !forms.apiName.value.trim()) return;
     try {
-      const created = await client.createApi(current.id, forms.apiName.value);
+      const created = await model.runAdminRequest(() => client.createApi(current.id, forms.apiName.value));
       current.apis.push(created);
       forms.apiName.value = "";
       forms.showApi.value = false;
@@ -38,7 +38,7 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     const current = model.api.value;
     if (!current) return;
     try {
-      const saved = await client.updateApi(current.id, { name: forms.apiEditName.value, priority: forms.apiPriority.value });
+      const saved = await model.runAdminRequest(() => client.updateApi(current.id, { name: forms.apiEditName.value, priority: forms.apiPriority.value }));
       model.replaceApi(saved);
       forms.showApi.value = false;
       notify("接口已更新");
@@ -48,13 +48,13 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
   async function deleteApi() {
     const current = model.api.value;
     if (!current || !window.confirm(`确定删除接口“${current.name}”及其场景吗？删除后不可恢复。`)) return;
-    try { await client.deleteApi(current.id); await model.load(); notify("接口已删除"); }
+    try { await model.runAdminRequest(() => client.deleteApi(current.id)); await model.load(); notify("接口已删除"); }
     catch (error) { notify(message(error)); }
   }
 
   async function toggle(api: Api) {
     try {
-      const saved = await client.updateApi(api.id, { enabled: !api.enabled });
+      const saved = await model.runAdminRequest(() => client.updateApi(api.id, { enabled: !api.enabled }));
       model.replaceApi(saved);
       notify(saved.enabled ? "Mock 已开启" : "已关闭 Mock，将转发真实服务");
     } catch (error) { notify(message(error)); }
@@ -69,7 +69,7 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
       operator: forms.ruleOperator.value as MatchRule["operator"], value,
     }];
     try {
-      const saved = await client.updateApi(api.id, { matchRules: rules });
+      const saved = await model.runAdminRequest(() => client.updateApi(api.id, { matchRules: rules }));
       model.replaceApi(saved);
       forms.ruleValue.value = "";
       forms.addingRule.value = false;
@@ -81,7 +81,7 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     const api = model.api.value;
     if (!api) return;
     try {
-      const saved = await client.updateApi(api.id, { matchRules: api.matchRules.filter((rule) => rule.id !== id) });
+      const saved = await model.runAdminRequest(() => client.updateApi(api.id, { matchRules: api.matchRules.filter((rule) => rule.id !== id) }));
       model.replaceApi(saved);
       notify("匹配条件已删除");
     } catch (error) { notify(message(error)); }
@@ -91,7 +91,7 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     const api = model.api.value;
     if (!api) return;
     try {
-      const saved = await client.updateApi(api.id, { matchMode: mode });
+      const saved = await model.runAdminRequest(() => client.updateApi(api.id, { matchMode: mode }));
       model.replaceApi(saved);
       notify("规则关系已更新");
     } catch (error) { notify(message(error)); }

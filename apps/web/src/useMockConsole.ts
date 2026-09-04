@@ -5,11 +5,11 @@ import { useConsoleForms } from "./use-console-forms";
 import { useMockState } from "./use-mock-state";
 import { usePackageActions } from "./use-package-actions";
 import { useScenarioActions } from "./use-scenario-actions";
+import { createRuntimeEndpoints, type RuntimeEndpoints } from "./runtime-endpoints";
 
-export function useMockConsole() {
-  const client = new MockAdminClient();
+export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoints()) {
+  const client = new MockAdminClient(endpoints);
   const model = useMockState(client);
-  client.onConnectionLost = () => { model.serverReady.value = false; };
   const forms = useConsoleForms();
   const toast = ref("");
 
@@ -36,7 +36,9 @@ export function useMockConsole() {
 
   async function retryLoad() {
     try { await model.load(); }
-    catch (error) { notice(error instanceof Error ? error.message : "无法加载配置"); }
+    catch {
+      // Rule: 启动失败只由 loadError 展示，避免同一错误再叠加 Toast。
+    }
   }
 
   function handleBeforeUnload(event: BeforeUnloadEvent) {
@@ -45,10 +47,9 @@ export function useMockConsole() {
     event.returnValue = "";
   }
 
-  onMounted(async () => {
+  onMounted(() => {
     window.addEventListener("beforeunload", handleBeforeUnload);
-    try { await model.load(); }
-    catch (error) { notice(error instanceof Error ? error.message : "无法加载配置"); }
+    void retryLoad();
   });
   onBeforeUnmount(() => window.removeEventListener("beforeunload", handleBeforeUnload));
 

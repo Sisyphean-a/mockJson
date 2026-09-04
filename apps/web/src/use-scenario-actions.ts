@@ -37,7 +37,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     const api = model.api.value;
     if (!api || !forms.sceneName.value.trim()) return;
     try {
-      const created = await client.createScenario(api.id, { name: forms.sceneName.value, responseBody: {} });
+      const created = await model.runAdminRequest(() => client.createScenario(api.id, { name: forms.sceneName.value, responseBody: {} }));
       api.scenarios.push(created);
       forms.sceneName.value = "";
       forms.showScene.value = false;
@@ -51,10 +51,10 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     const scene = model.scene.value;
     if (!scene) return;
     try {
-      const saved = await client.updateScenario(scene.id, {
+      const saved = await model.runAdminRequest(() => client.updateScenario(scene.id, {
         name: forms.editSceneName.value, status: forms.editSceneStatus.value,
         delayMs: forms.editSceneDelay.value, color: forms.editSceneColor.value,
-      });
+      }));
       Object.assign(scene, saved);
       forms.showScene.value = false;
       forms.sceneEditMode.value = false;
@@ -67,7 +67,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     if (!scene) return;
     try {
       const responseBody = JSON.parse(forms.draft.value);
-      const saved = await client.updateScenario(scene.id, { responseBody });
+      const saved = await model.runAdminRequest(() => client.updateScenario(scene.id, { responseBody }));
       scene.responseBody = saved.responseBody;
       forms.draftDirty.value = false;
       forms.jsonError.value = "";
@@ -89,11 +89,11 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     if (!isActive && model.sceneId.value !== scene.id && !canLeave()) return;
     try {
       if (isActive) {
-        await client.deactivateScenario(api.id);
+        await model.runAdminRequest(() => client.deactivateScenario(api.id));
         api.activeScenarioId = null;
         notify("场景已停用");
       } else {
-        await client.activateScenario(api.id, scene.id);
+        await model.runAdminRequest(() => client.activateScenario(api.id, scene.id));
         api.activeScenarioId = scene.id;
         model.sceneId.value = scene.id;
         notify("场景已启用");
@@ -105,10 +105,10 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     const api = model.api.value;
     if (!api) return;
     try {
-      const created = await client.createScenario(api.id, {
+      const created = await model.runAdminRequest(() => client.createScenario(api.id, {
         name: `${scene.name} 副本`, status: scene.status, delayMs: scene.delayMs,
         responseBody: scene.responseBody, color: scene.color, activate: false,
-      });
+      }));
       api.scenarios.push(created);
       notify("场景已复制");
     } catch (error) { notify(message(error)); }
@@ -117,7 +117,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
   async function deleteScene(scene: Scene) {
     const api = model.api.value;
     if (!api || !window.confirm(`确定删除场景“${scene.name}”吗？删除后不可恢复。`)) return;
-    try { await client.deleteScenario(scene.id); await model.load(); notify("场景已删除"); }
+    try { await model.runAdminRequest(() => client.deleteScenario(scene.id)); await model.load(); notify("场景已删除"); }
     catch (error) { notify(message(error)); }
   }
 

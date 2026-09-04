@@ -9,7 +9,7 @@ type Notify = (message: string) => void;
 export function usePackageActions(client: MockAdminClient, model: Model, forms: Forms, notify: Notify, canLeave: () => boolean) {
   async function switchPackage(id: string) {
     if (!canLeave()) return;
-    try { await client.switchPackage(id); await model.load(); notify("测试包已切换"); }
+    try { await model.runAdminRequest(() => client.switchPackage(id)); await model.load(); notify("测试包已切换"); }
     catch (error) { notify(message(error)); }
   }
 
@@ -22,10 +22,10 @@ export function usePackageActions(client: MockAdminClient, model: Model, forms: 
   async function savePackage() {
     try {
       if (forms.editingPackageId.value) {
-        await client.updatePackage(forms.editingPackageId.value, { name: forms.packageName.value });
+        await model.runAdminRequest(() => client.updatePackage(forms.editingPackageId.value!, { name: forms.packageName.value }));
       } else {
-        const created = await client.createPackage({ name: forms.packageName.value });
-        await client.switchPackage(created.id);
+        const created = await model.runAdminRequest(() => client.createPackage({ name: forms.packageName.value }));
+        await model.runAdminRequest(() => client.switchPackage(created.id));
       }
       forms.showPackage.value = false;
       await model.load();
@@ -35,7 +35,7 @@ export function usePackageActions(client: MockAdminClient, model: Model, forms: 
 
   async function deletePackage(packageConfig: Pkg) {
     if (!window.confirm(`确定删除 Package“${packageConfig.name}”及其全部配置吗？删除后不可恢复。`)) return;
-    try { await client.deletePackage(packageConfig.id); await model.load(); notify("Package 已删除"); }
+    try { await model.runAdminRequest(() => client.deletePackage(packageConfig.id)); await model.load(); notify("Package 已删除"); }
     catch (error) { notify(message(error)); }
   }
 
@@ -44,7 +44,7 @@ export function usePackageActions(client: MockAdminClient, model: Model, forms: 
     if (!current) return;
     try {
       const value = forms.targetUrl.value.trim();
-      await client.updatePackage(current.id, { targetBaseUrl: value });
+      await model.runAdminRequest(() => client.updatePackage(current.id, { targetBaseUrl: value }));
       current.targetBaseUrl = value;
       notify(value ? "真实服务地址已保存" : "已清空真实服务地址");
     } catch (error) { notify(message(error)); }

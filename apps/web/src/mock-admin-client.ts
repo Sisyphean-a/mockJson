@@ -1,16 +1,42 @@
 import type { LogicalApi, MatchRule, PackageConfig, Scenario, State } from "../../shared/types";
+import { createRuntimeEndpoints, type RuntimeEndpoints } from "./runtime-endpoints";
 
 export type { LogicalApi, MatchRule, PackageConfig, Scenario, State };
 export type Api = LogicalApi;
 export type Pkg = PackageConfig;
 export type Scene = Scenario;
 
-export class MockAdminClient {
-  onConnectionLost: (() => void) | undefined;
+export interface AdminTransport {
+  // Failure: 连接层失败抛出 AdminTransportError；实现错误原样暴露。
+  send(input: string, init: RequestInit): Promise<Response>;
+}
 
+export class AdminTransportError extends Error {
+  constructor(readonly url: string, cause: unknown) {
+    const detail = cause instanceof Error && cause.message ? `：${cause.message}` : "";
+    super(`无法连接 Mock 服务（${url}）${detail}，请检查服务是否运行后重试`, { cause });
+    this.name = "AdminTransportError";
+  }
+}
+
+export function createBrowserTransport(browser: Pick<typeof globalThis, "fetch"> = globalThis): AdminTransport {
+  return {
+    async send(input, init) {
+      try {
+        return await browser.fetch(input, init);
+      } catch (cause) {
+        throw new AdminTransportError(input, cause);
+      }
+    },
+  };
+}
+
+const browserTransport = createBrowserTransport();
+
+export class MockAdminClient {
   constructor(
-    private readonly fetcher: typeof fetch = fetch,
-    private readonly location: Pick<Location, "protocol" | "hostname" | "port"> | undefined = typeof window === "undefined" ? undefined : window.location,
+    private readonly endpoints: RuntimeEndpoints = createRuntimeEndpoints(),
+    private readonly transport: AdminTransport = browserTransport,
   ) {}
 
   async getState() {
@@ -75,17 +101,7 @@ export class MockAdminClient {
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const headers = new Headers(options.headers);
     if (options.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json");
-    let response: Response;
-    try {
-      response = await this.fetcher.call(globalThis, adminUrl(path, this.location), { ...options, headers });
-    } catch (error) {
-      if (error instanceof TypeError) {
-        this.onConnectionLost?.();
-        const detail = error.message ? `：${error.message}` : "";
-        throw new Error(`无法连接 Mock 服务（${adminUrl(path, this.location)}）${detail}，请检查服务是否运行后重试`, { cause: error });
-      }
-      throw error;
-    }
+    const response = await this.transport.send(this.endpoints.adminUrl(path), { ...options, headers });
     if (!response.ok) {
       let message = `管理服务返回 ${response.status}`;
       try { message = (await response.json()).error || message; } catch {}
@@ -93,13 +109,6 @@ export class MockAdminClient {
     }
     return (response.status === 204 ? null : await response.json()) as T;
   }
-}
-
-export function adminUrl(path: string, location: Pick<Location, "protocol" | "hostname" | "port"> | undefined) {
-  if (!location || (location.protocol !== "http:" && location.protocol !== "https:"))
-    return `http://127.0.0.1:22333${path}`;
-  if (location.port !== "22334") return path;
-  return `http://127.0.0.1:22333${path}`;
 }
 
 function json(method: "POST" | "PATCH", body: unknown): RequestInit {
