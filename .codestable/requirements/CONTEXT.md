@@ -27,4 +27,4 @@
 - 正式运行时 Fastify 单进程使用 `22333`，同时提供控制台页面、管理 API 和 Mock / Proxy；开发热更新页面使用 `22334`，不使用 `5173`。
 - Mock 返回固定使用 `application/json; charset=utf-8`；前后端都拒绝保存非法 JSON。
 
-代表性锚点：`apps/server/src/types.ts`、`apps/server/src/validation.ts`、`apps/server/src/matcher.ts`、`apps/server/src/proxy.ts`、`apps/web/src/useMockConsole.ts`、`apps/web/src/App.vue`。
+代表性锚点：`apps/shared/types.ts`、`apps/server/src/validation.ts`、`apps/server/src/matcher.ts`、`apps/server/src/proxy.ts`、`apps/web/src/useMockConsole.ts`、`apps/web/src/App.vue`。

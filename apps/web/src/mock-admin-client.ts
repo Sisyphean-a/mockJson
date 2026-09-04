@@ -8,7 +8,10 @@ export type Scene = Scenario;
 export class MockAdminClient {
   onConnectionLost: (() => void) | undefined;
 
-  constructor(private readonly fetcher: typeof fetch = fetch) {}
+  constructor(
+    private readonly fetcher: typeof fetch = fetch,
+    private readonly location: Pick<Location, "protocol" | "hostname" | "port"> | undefined = typeof window === "undefined" ? undefined : window.location,
+  ) {}
 
   async getState() {
     return this.request<State>("/__mock_admin/state");
@@ -74,21 +77,29 @@ export class MockAdminClient {
     if (options.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json");
     let response: Response;
     try {
-      response = await this.fetcher(path, { ...options, headers });
+      response = await this.fetcher.call(globalThis, adminUrl(path, this.location), { ...options, headers });
     } catch (error) {
       if (error instanceof TypeError) {
         this.onConnectionLost?.();
-        throw new Error("无法连接 Mock 服务，请检查服务是否运行后重试", { cause: error });
+        const detail = error.message ? `：${error.message}` : "";
+        throw new Error(`无法连接 Mock 服务（${adminUrl(path, this.location)}）${detail}，请检查服务是否运行后重试`, { cause: error });
       }
       throw error;
     }
     if (!response.ok) {
-      let message = "请求失败";
+      let message = `管理服务返回 ${response.status}`;
       try { message = (await response.json()).error || message; } catch {}
       throw new Error(message);
     }
     return (response.status === 204 ? null : await response.json()) as T;
   }
+}
+
+export function adminUrl(path: string, location: Pick<Location, "protocol" | "hostname" | "port"> | undefined) {
+  if (!location || (location.protocol !== "http:" && location.protocol !== "https:"))
+    return `http://127.0.0.1:22333${path}`;
+  if (location.port !== "22334") return path;
+  return `http://127.0.0.1:22333${path}`;
 }
 
 function json(method: "POST" | "PATCH", body: unknown): RequestInit {

@@ -7,7 +7,7 @@
     "build": "vite build --config apps/web/vite.config.ts",
     "typecheck": "vue-tsc --noEmit",
     "start": "tsx apps/server/src/index.ts",
-    "test": "node --import tsx --test apps/server/src/**/*.test.ts"
+    "test": "node --import tsx --test apps/server/src/**/*.test.ts apps/web/src/**/*.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",
