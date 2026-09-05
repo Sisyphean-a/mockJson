@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import Fastify from "fastify";
 import http from "node:http";
+import { gzipSync } from "node:zlib";
 import { createProxy } from "./proxy.js";
 import { RequestLogStore } from "./request-logs.js";
 import type { State } from "../../shared/types.js";
@@ -79,6 +80,67 @@ test("没有启用场景的高优先级接口不会遮挡可用 Mock", async () 
   });
   const response = await request(state);
   assert.deepEqual(response.json(), { matched: true });
+});
+
+test("相同优先级按配置顺序命中第一个接口", async () => {
+  const state = createState(matchingRules());
+  state.packages[0].apis.push({
+    id: "second",
+    name: "第二接口",
+    enabled: true,
+    priority: state.packages[0].apis[0].priority,
+    matchMode: "AND",
+    matchRules: matchingRules(),
+    activeScenarioId: "second-scene",
+    scenarios: [{ id: "second-scene", name: "第二场景", status: 200, delayMs: 0, responseBody: { matched: "second" } }],
+  });
+
+  const response = await request(state);
+  assert.deepEqual(response.json(), { matched: true });
+});
+
+test("响应日志按类型控制预览内存且不改变原始流", async () => {
+  const binary = Buffer.alloc(64 * 1024, 0x5a);
+  const text = Buffer.alloc(64 * 1024, 0x61);
+  const compressed = gzipSync(Buffer.from(JSON.stringify({ ok: true })));
+  const upstream = http.createServer((req, res) => {
+    if (req.url === "/compressed") {
+      res.setHeader("content-type", "application/json");
+      res.setHeader("content-encoding", "gzip");
+      return res.end(compressed);
+    }
+    if (req.url === "/text") {
+      res.setHeader("content-type", "text/plain");
+      return res.end(text);
+    }
+    res.setHeader("content-type", "application/octet-stream");
+    return res.end(binary);
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()));
+  const address = upstream.address();
+  assert.ok(address && typeof address !== "string");
+  const state = createState([]);
+  state.packages[0].apis[0].enabled = false;
+  state.packages[0].targetBaseUrl = `http://127.0.0.1:${address.port}`;
+  const logs = new RequestLogStore();
+
+  const binaryResponse = await request(state, { url: "/binary" }, logs);
+  const compressedResponse = await request(state, { url: "/compressed" }, logs);
+  const textResponse = await request(state, { url: "/text" }, logs);
+  await new Promise<void>((resolve) => upstream.close(() => resolve()));
+
+  assert.deepEqual(binaryResponse.rawPayload, binary);
+  assert.deepEqual(compressedResponse.rawPayload, compressed);
+  assert.deepEqual(textResponse.rawPayload, text);
+  const [textLog, compressedLog, binaryLog] = logs.list();
+  assert.ok(textLog && compressedLog && binaryLog);
+  assert.equal(textLog.response.body?.length, 32 * 1024);
+  assert.equal(textLog.response.byteLength, text.length);
+  assert.equal(textLog.response.truncated, true);
+  assert.equal(compressedLog.response.body, null);
+  assert.equal(compressedLog.response.byteLength, compressed.length);
+  assert.equal(binaryLog.response.body, null);
+  assert.equal(binaryLog.response.byteLength, binary.length);
 });
 
 test("没有匹配规则时不处理请求", async () => {

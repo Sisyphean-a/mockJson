@@ -42,6 +42,9 @@ export function createBrowserTransport(browser: Pick<typeof globalThis, "fetch">
 const browserTransport = createBrowserTransport();
 
 export class MockAdminClient {
+  private logsCache: RequestLogsResponse = { logs: [] };
+  private logsEtag: string | undefined;
+
   constructor(
     private readonly endpoints: RuntimeEndpoints = createRuntimeEndpoints(),
     private readonly transport: AdminTransport = browserTransport,
@@ -52,11 +55,21 @@ export class MockAdminClient {
   }
 
   async getLogs() {
-    return this.request<RequestLogsResponse>("/__mock_admin/logs");
+    const options: RequestInit = this.logsEtag ? { headers: { "if-none-match": this.logsEtag } } : {};
+    const response = await this.send("/__mock_admin/logs", options);
+    if (response.status === 304) return this.logsCache;
+
+    const result = await this.readResponse<RequestLogsResponse>(response);
+    this.logsCache = result;
+    this.logsEtag = response.headers.get("etag") || undefined;
+    return result;
   }
 
   async clearLogs() {
-    return this.request<{ success: true }>("/__mock_admin/logs", { method: "DELETE" });
+    const result = await this.request<{ success: true }>("/__mock_admin/logs", { method: "DELETE" });
+    this.logsCache = { logs: [] };
+    this.logsEtag = undefined;
+    return result;
   }
 
   async switchPackage(id: string) {
@@ -114,10 +127,17 @@ export class MockAdminClient {
     return this.request<{ success: true; activeScenarioId: null }>(`/__mock_admin/apis/${apiId}/active-scenario`, { method: "DELETE" });
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  private async send(path: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers);
     if (options.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json");
-    const response = await this.transport.send(this.endpoints.adminUrl(path), { ...options, headers });
+    return this.transport.send(this.endpoints.adminUrl(path), { ...options, headers });
+  }
+
+  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    return this.readResponse<T>(await this.send(path, options));
+  }
+
+  private async readResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       let message = `管理服务返回 ${response.status}`;
       try { message = (await response.json()).error || message; } catch {}

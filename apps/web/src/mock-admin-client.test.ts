@@ -42,6 +42,29 @@ test("客户端读取并清空请求日志", async () => {
   ]);
 });
 
+test("客户端用 ETag 缓存未变化的请求日志并在清空后重新同步", async () => {
+  const tags: Array<string | null> = [];
+  const transport: AdminTransport = {
+    async send(_input, init) {
+      const method = init.method || "GET";
+      if (method === "DELETE") return new Response(JSON.stringify({ success: true }), { status: 200 });
+
+      const tag = new Headers(init.headers).get("if-none-match");
+      tags.push(tag);
+      if (tag) return new Response(null, { status: 304, headers: { etag: '"v1"' } });
+      return new Response(JSON.stringify({ logs: [] }), { status: 200, headers: { etag: '"v1"' } });
+    },
+  };
+  const client = new MockAdminClient(endpoints, transport);
+
+  const first = await client.getLogs();
+  const second = await client.getLogs();
+  assert.strictEqual(second, first);
+  await client.clearLogs();
+  await client.getLogs();
+  assert.deepEqual(tags, [null, '"v1"', null]);
+});
+
 test("浏览器传输以浏览器对象作为原生 fetch 接收者", async () => {
   const browser = {
     fetch(this: unknown) {

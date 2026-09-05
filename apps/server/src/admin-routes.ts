@@ -10,7 +10,12 @@ export function registerAdminRoutes(
   logs: RequestLogStore,
 ) {
   app.get("/__mock_admin/state", async () => service.getState());
-  app.get("/__mock_admin/logs", async () => ({ logs: logs.list() }));
+  app.get("/__mock_admin/logs", async (req, reply) => {
+    const etag = logs.etag();
+    reply.header("etag", etag).header("cache-control", "no-cache");
+    if (matchesEtag(req.headers["if-none-match"], etag)) return reply.code(304).send();
+    return { logs: logs.list() };
+  });
   app.delete("/__mock_admin/logs", async () => {
     logs.clear();
     return { success: true };
@@ -136,4 +141,13 @@ function routeId(req: FastifyRequest, key: string) {
 function sendError(reply: FastifyReply, error: unknown) {
   const status = error instanceof NotFoundError ? 404 : 400;
   return reply.code(status).send({ error: error instanceof Error ? error.message : "请求参数不正确" });
+}
+
+function matchesEtag(value: string | string[] | undefined, etag: string) {
+  if (!value) return false;
+  const header = Array.isArray(value) ? value.join(",") : value;
+  return header.split(",").some((candidate) => {
+    const normalized = candidate.trim();
+    return normalized === "*" || normalized === etag || normalized === `W/${etag}`;
+  });
 }

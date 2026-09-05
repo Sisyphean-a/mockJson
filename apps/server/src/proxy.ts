@@ -12,9 +12,30 @@ const hop = new Set([
 ]);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function activeScenario(api: State["packages"][number]["apis"][number]) {
+type LogicalApi = State["packages"][number]["apis"][number];
+
+function activeScenario(api: LogicalApi) {
   return api.scenarios.find((s) => s.id === api.activeScenarioId);
 }
+
+function selectMatchingApi(
+  apis: LogicalApi[] | undefined,
+  context: Parameters<typeof matchApi>[1],
+) {
+  if (!apis) return undefined;
+  let selectedApi: LogicalApi | undefined;
+  let selectedScene: ReturnType<typeof activeScenario>;
+  for (const api of apis) {
+    if (api.enabled === false) continue;
+    const scene = activeScenario(api);
+    if (!scene || !matchApi(api, context)) continue;
+    if (selectedApi && api.priority <= selectedApi.priority) continue;
+    selectedApi = api;
+    selectedScene = scene;
+  }
+  return selectedApi && selectedScene ? { api: selectedApi, scene: selectedScene } : undefined;
+}
+
 function targetUrl(requestUrl: string, baseUrl: string) {
   const request = new URL(requestUrl, "http://mock.local");
   const base = new URL(baseUrl);
@@ -37,12 +58,14 @@ function isTextualContentType(contentType: string | null) {
 }
 
 function textResponse(contentType: string | null, body: string): RequestLogResponse {
-  const bytes = Buffer.from(body);
+  const byteLength = Buffer.byteLength(body);
   return {
     contentType,
-    body: bytes.subarray(0, MAX_LOG_BODY_BYTES).toString("utf8"),
-    byteLength: bytes.length,
-    truncated: bytes.length > MAX_LOG_BODY_BYTES,
+    body: byteLength <= MAX_LOG_BODY_BYTES
+      ? body
+      : Buffer.from(body).subarray(0, MAX_LOG_BODY_BYTES).toString("utf8"),
+    byteLength,
+    truncated: byteLength > MAX_LOG_BODY_BYTES,
   };
 }
 
@@ -50,28 +73,27 @@ function emptyResponse(contentType: string | null): RequestLogResponse {
   return { contentType, body: "", byteLength: 0, truncated: false };
 }
 
-function createResponseCollector() {
+function createResponseCollector(captureBody: boolean) {
   let byteLength = 0;
   let capturedBytes = 0;
   let truncated = false;
-  const chunks: Buffer[] = [];
+  const chunks: Buffer[] | undefined = captureBody ? [] : undefined;
 
   return {
     collect(chunk: Buffer | string) {
-      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      byteLength += bytes.length;
-      const remaining = MAX_LOG_BODY_BYTES - capturedBytes;
-      if (remaining > 0) {
-        const captured = bytes.subarray(0, remaining);
-        chunks.push(captured);
+      const chunkLength = Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
+      byteLength += chunkLength;
+      if (chunks && capturedBytes < MAX_LOG_BODY_BYTES) {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        const captured = bytes.subarray(0, MAX_LOG_BODY_BYTES - capturedBytes);
+        // Rule: 只保留预览字节，避免小切片继续持有巨大的上游 Buffer。
+        chunks.push(Buffer.from(captured));
         capturedBytes += captured.length;
       }
       if (byteLength > MAX_LOG_BODY_BYTES) truncated = true;
     },
     preview(contentType: string | null, contentEncoding: string | null): RequestLogResponse {
-      if (contentEncoding && contentEncoding.toLowerCase() !== "identity")
-        return { contentType, body: null, byteLength, truncated };
-      if (!isTextualContentType(contentType))
+      if (!chunks || (contentEncoding && contentEncoding.toLowerCase() !== "identity") || !isTextualContentType(contentType))
         return { contentType, body: null, byteLength, truncated };
       return {
         contentType,
@@ -92,12 +114,9 @@ export async function createProxy(
   const startedAt = Date.now();
   const p = state.packages.find((x) => x.id === state.currentPackageId);
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-  const api = p?.apis
-    .filter((a) => a.enabled !== false && activeScenario(a) !== undefined)
-    .slice()
-    .sort((a, b) => b.priority - a.priority)
-    .find((a) => matchApi(a, { method: req.method, url, headers: req.headers }));
-  const scene = api && activeScenario(api);
+  const selected = selectMatchingApi(p?.apis, { method: req.method, url, headers: req.headers });
+  const api = selected?.api;
+  const scene = selected?.scene;
   const record = (
     outcome: RequestLogOutcome,
     status: number,
@@ -175,14 +194,17 @@ export async function createProxy(
       responseStatus = upstreamResponse.statusCode || 502;
       responseContentType = headerText(upstreamResponse.headers["content-type"]);
       responseContentEncoding = headerText(upstreamResponse.headers["content-encoding"]);
-      responseCollector = createResponseCollector();
-      const tee = new Transform({
-        transform(chunk, _encoding, callback) {
-          responseCollector?.collect(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-          callback(null, chunk);
-        },
-      });
-      tee.on("error", (error) => {
+      const captureBody = (!responseContentEncoding || responseContentEncoding.toLowerCase() === "identity") && isTextualContentType(responseContentType);
+      responseCollector = createResponseCollector(captureBody);
+      const tee = captureBody
+        ? new Transform({
+            transform(chunk, _encoding, callback) {
+              responseCollector?.collect(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+              callback(null, chunk);
+            },
+          })
+        : undefined;
+      tee?.on("error", (error) => {
         recordOnce("error", responseStatus, responseCollector?.preview(responseContentType, responseContentEncoding) || emptyResponse(responseContentType), error.message);
         finish();
       });
@@ -197,7 +219,12 @@ export async function createProxy(
       res.raw.statusCode = responseStatus;
       for (const [key, value] of Object.entries(upstreamResponse.headers))
         if (value !== undefined && !hop.has(key.toLowerCase())) res.raw.setHeader(key, value);
-      upstreamResponse.pipe(tee).pipe(res.raw);
+      if (tee) {
+        upstreamResponse.pipe(tee).pipe(res.raw);
+      } else {
+        upstreamResponse.on("data", (chunk) => responseCollector?.collect(chunk));
+        upstreamResponse.pipe(res.raw);
+      }
     };
     const options = { method: req.method, headers, timeout: 30000 };
     const upstream = target.protocol === "https:"

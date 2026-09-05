@@ -1,11 +1,11 @@
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import type { MockAdminClient, RequestLog } from "./mock-admin-client";
 
 type RunAdminRequest = <T>(operation: () => Promise<T>) => Promise<T>;
 
 export function useRequestLogs(client: MockAdminClient, runAdminRequest: RunAdminRequest) {
   const activeView = ref<"workspace" | "logs">("workspace");
-  const logs = ref<RequestLog[]>([]);
+  const logs = shallowRef<RequestLog[]>([]);
   const logsLoading = ref(false);
   const logsError = ref("");
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -55,7 +55,6 @@ export function useRequestLogs(client: MockAdminClient, runAdminRequest: RunAdmi
   }
 
   onMounted(() => {
-    void refreshLogs();
     refreshTimer = setInterval(() => {
       if (activeView.value === "logs") void refreshLogs();
     }, 2000);
