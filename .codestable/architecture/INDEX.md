@@ -12,18 +12,19 @@
 | --- | --- | --- |
 | server/bootstrap | Fastify 组合根、启动、CORS、静态页面和请求访问边界 | `apps/server/src/index.ts` |
 | server/config | Package / Logical API / Scenario 的业务变更、查找、状态归一化和持久化回滚 | `apps/server/src/config-service.ts` `MockConfigService` |
-| server/routes | `/__mock_admin/*` HTTP 参数转换、错误状态和响应转换 | `apps/server/src/admin-routes.ts` `registerAdminRoutes` |
+| server/routes | `/__mock_admin/*` HTTP 参数转换、错误状态和响应转换（含请求日志读取与清空） | `apps/server/src/admin-routes.ts` `registerAdminRoutes` |
 | server/storage | 解析用户数据目录，校验配置、串行原子保存并从有效备份恢复 | `apps/server/src/state-path.ts` `apps/server/src/storage.ts` `JsonFileRepository` |
 | server/validation | 管理 API 与持久化共用的数据边界校验 | `apps/server/src/validation.ts` |
 | server/matcher | 无 IO 的 Header / URL / Method 规则计算 | `apps/server/src/matcher.ts` `matchApi` |
 | server/proxy | 当前包匹配、Mock 返回和未命中流式转发 | `apps/server/src/proxy.ts` `createProxy` |
-| shared/contracts | 前后端共用的 Mock 领域数据类型 | `apps/shared/types.ts` |
+| server/logs | 代理请求结果、匹配接口和响应预览的运行态内存记录与上限 | `apps/server/src/request-logs.ts` `apps/server/src/proxy.ts` |
+| shared/contracts | 前后端共用的 Mock 配置与运行日志数据类型 | `apps/shared/types.ts` |
 | web/runtime | 开发与正式运行的服务端口、管理请求地址和页面展示地址策略 | `apps/web/src/runtime-endpoints.ts` `createRuntimeEndpoints` |
-| web/client | 浏览器 HTTP 传输接缝、管理 API 请求、响应和连接错误转换 | `apps/web/src/mock-admin-client.ts` `AdminTransport` `MockAdminClient` |
-| web/state | 页面状态、当前选择、派生查询、服务端加载和管理请求可用状态 | `apps/web/src/use-mock-state.ts` `useMockState` `runAdminRequest` |
+| web/client | 浏览器 HTTP 传输接缝、配置/日志管理 API 请求、响应和连接错误转换 | `apps/web/src/mock-admin-client.ts` `AdminTransport` `MockAdminClient` |
+| web/state | 配置页面状态、请求日志轮询、当前选择、派生查询和管理请求可用状态 | `apps/web/src/use-mock-state.ts` `useMockState` `apps/web/src/use-request-logs.ts` `useRequestLogs` |
 | web/forms | 表单草稿和编辑器状态，不执行领域请求 | `apps/web/src/use-console-forms.ts` `useConsoleForms` |
 | web/actions | 按 Package、API、Scenario 变化原因组织的用户动作 | `apps/web/src/use-package-actions.ts` `usePackageActions` `apps/web/src/use-api-actions.ts` `useApiActions` `apps/web/src/use-scenario-actions.ts` `useScenarioActions` |
-| web/views | 页面组合根、唯一启动状态展示与独立区域视图 | `apps/web/src/App.vue` `apps/web/src/components/` |
+| web/views | 页面组合根、唯一启动状态展示、配置/日志视图切换与独立区域视图 | `apps/web/src/App.vue` `apps/web/src/components/` |
 
 ## 运行与数据
 

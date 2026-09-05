@@ -1,5 +1,6 @@
 @import "./styles/foundation.css";
 @import "./styles/shell.css";
 @import "./styles/workspace.css";
+@import "./styles/logs.css";
 @import "./styles/overlays.css";
 @import "./styles/responsive.css";

@@ -21,7 +21,7 @@
 - **Scenario（响应场景）**：保存完整且合法的 JSON、HTTP 状态码和 0–30000ms 延迟；新建场景默认不启用，选择场景只切换编辑对象，独立开关负责启用、停用或切换当前响应，一个逻辑接口最多启用一个场景。
 - Package、Logical API 和 Scenario 都可在控制台完成创建、修改和删除；新建 Logical API 默认关闭，配置场景与规则后再显式开启，未完成接口或没有启用场景的接口不得遮挡其他可用 Mock。
 - 接口 `enabled=false`、没有启用场景或没有规则命中时转发当前 Package 的 `targetBaseUrl`；转发保留 JSON 和原始流请求体，保留 `targetBaseUrl` 的基础路径，按目标地址协议选择 HTTP / HTTPS 上游连接，并对无响应上游设置超时。
-- Fastify 接收 Reqable 转发的请求 Header，并仅将其用于匹配，不提供请求历史或抓包 Inspector。管理 API 只允许本机访问，局域网客户端仅使用 Mock / Proxy 路径。
+- Fastify 接收 Reqable 转发的请求 Header，用于匹配并生成本地运行日志；日志只保留最近 200 条 Proxy 请求的匹配结果、接口/场景、状态、耗时和响应体预览，不写入配置文件，也不记录管理/UI 请求。管理 API 只允许本机访问，局域网客户端仅使用 Mock / Proxy 路径；产品不提供通用请求历史或抓包 Inspector。
 - URL 规则中 `path` 仅匹配路径、`host` 匹配收到的 Host、`fullUrl` 包含查询字符串；通过 Reqable 改写目标时优先使用 `path`，因为 Host 可能变成本机地址。
 - 配置写入串行化并采用临时文件替换；主文件损坏时仅恢复结构有效的 `.bak`，两者均损坏时明确失败，不静默清空。
 - 正式运行时 Fastify 单进程使用 `22333`，同时提供控制台页面、管理 API 和 Mock / Proxy；开发热更新页面使用 `22334`，不使用 `5173`。

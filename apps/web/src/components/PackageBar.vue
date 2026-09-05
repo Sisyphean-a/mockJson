@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ConsoleController } from "../console-controller";
 
-type PackageBarController = Pick<ConsoleController, "state" | "switchPkg" | "targetUrl" | "saveTargetUrl" | "openPackage" | "pkg" | "deletePackage" | "serverReady" | "loading">;
+type PackageBarController = Pick<ConsoleController, "state" | "switchPkg" | "targetUrl" | "saveTargetUrl" | "openPackage" | "pkg" | "deletePackage" | "serverReady" | "loading" | "activeView" | "showWorkspace" | "showLogs">;
 const { controller: c } = defineProps<{ controller: PackageBarController }>();
 </script>
 
@@ -11,6 +11,10 @@ const { controller: c } = defineProps<{ controller: PackageBarController }>();
       <span class="brand-mark">✦</span>
       <div><strong>Mock Console</strong><small>本地接口模拟控制台</small></div>
     </div>
+    <nav class="view-tabs" aria-label="控制台视图" role="tablist">
+      <button :class="['view-tab', { active: c.activeView.value === 'workspace' }]" :aria-selected="c.activeView.value === 'workspace'" role="tab" @click="c.showWorkspace">接口配置</button>
+      <button :class="['view-tab', { active: c.activeView.value === 'logs' }]" :aria-selected="c.activeView.value === 'logs'" role="tab" @click="c.showLogs">请求日志</button>
+    </nav>
     <div class="top-actions">
       <label for="package-select">当前测试包</label>
       <select id="package-select" :value="c.state.value.currentPackageId || ''" @change="c.switchPkg(($event.target as HTMLSelectElement).value)">

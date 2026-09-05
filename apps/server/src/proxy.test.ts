@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import Fastify from "fastify";
 import http from "node:http";
 import { createProxy } from "./proxy.js";
+import { RequestLogStore } from "./request-logs.js";
 import type { State } from "../../shared/types.js";
 
 const matchingRules = (): State["packages"][number]["apis"][number]["matchRules"] => [{
@@ -18,9 +19,13 @@ function createState(rules: State["packages"][number]["apis"][number]["matchRule
     }] }],
   };
 }
-async function request(state: State, options: Record<string, unknown> = {}) {
+async function request(
+  state: State,
+  options: Record<string, unknown> = {},
+  logs = new RequestLogStore(),
+) {
   const app = Fastify();
-  app.setNotFoundHandler((req, reply) => createProxy(req, reply, state));
+  app.setNotFoundHandler((req, reply) => createProxy(req, reply, state, logs));
   const response = await app.inject({ method: "GET", url: "/api/chile/loan?case=failed", headers: { apiName: "loan-home" }, ...options } as any);
   await app.close();
   return response;
@@ -30,6 +35,18 @@ test("Fastify 收到请求头后可按 Header 规则命中场景", async () => {
   const response = await request(createState(matchingRules()));
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.json(), { matched: true });
+});
+
+test("命中 Mock 会记录逻辑接口、场景和响应数据", async () => {
+  const logs = new RequestLogStore();
+  await request(createState(matchingRules()), {}, logs);
+
+  const [log] = logs.list();
+  assert.ok(log);
+  assert.equal(log.outcome, "mocked");
+  assert.equal(log.apiName, "测试接口");
+  assert.equal(log.scenarioName, "命中");
+  assert.deepEqual(JSON.parse(log.response.body || ""), { matched: true });
 });
 
 test("代理返回 activeScenarioId 指向的场景", async () => {
@@ -65,9 +82,16 @@ test("没有启用场景的高优先级接口不会遮挡可用 Mock", async () 
 });
 
 test("没有匹配规则时不处理请求", async () => {
-  const response = await request(createState([]));
+  const logs = new RequestLogStore();
+  const response = await request(createState([]), {}, logs);
   assert.equal(response.statusCode, 502);
   assert.deepEqual(response.json(), { error: "未命中 Mock，且当前 Package 未配置真实服务器" });
+
+  const [log] = logs.list();
+  assert.ok(log);
+  assert.equal(log.outcome, "unmatched");
+  assert.equal(log.apiName, null);
+  assert.deepEqual(JSON.parse(log.response.body || ""), { error: "未命中 Mock，且当前 Package 未配置真实服务器" });
 });
 
 test("接口关闭时不处理请求", async () => {
@@ -127,9 +151,14 @@ test("未命中代理会转发 JSON 请求体并保留目标基础路径", async
   const state = createState([]);
   state.packages[0].apis[0].enabled = false;
   state.packages[0].targetBaseUrl = `http://127.0.0.1:${address.port}/base`;
-  const response = await request(state, { method: "POST", url: "/echo?x=1", headers: { "content-type": "application/json" }, payload: { hello: "world" } });
+  const logs = new RequestLogStore();
+  const response = await request(state, { method: "POST", url: "/echo?x=1", headers: { "content-type": "application/json" }, payload: { hello: "world" } }, logs);
   await new Promise<void>((resolve) => upstream.close(() => resolve()));
   assert.equal(response.statusCode, 200);
   assert.equal(received.url, "/base/echo?x=1");
   assert.deepEqual(JSON.parse(received.body || ""), { hello: "world" });
+  const [log] = logs.list();
+  assert.ok(log);
+  assert.equal(log.outcome, "forwarded");
+  assert.deepEqual(JSON.parse(log.response.body || ""), { ok: true });
 });

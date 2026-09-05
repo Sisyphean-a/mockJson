@@ -46,3 +46,35 @@ export type State = {
   currentPackageId: string | null;
   packages: PackageConfig[];
 };
+
+export type RequestLogOutcome = "mocked" | "forwarded" | "unmatched" | "error";
+
+export type RequestLogResponse = {
+  contentType: string | null;
+  body: string | null;
+  byteLength: number;
+  truncated: boolean;
+};
+
+export type RequestLog = {
+  id: string;
+  timestamp: string;
+  durationMs: number;
+  packageId: string | null;
+  packageName: string | null;
+  method: string;
+  host: string | null;
+  url: string;
+  outcome: RequestLogOutcome;
+  apiId: string | null;
+  apiName: string | null;
+  scenarioId: string | null;
+  scenarioName: string | null;
+  status: number;
+  response: RequestLogResponse;
+  error?: string;
+};
+
+export type RequestLogsResponse = {
+  logs: RequestLog[];
+};

@@ -6,10 +6,12 @@ import { useMockState } from "./use-mock-state";
 import { usePackageActions } from "./use-package-actions";
 import { useScenarioActions } from "./use-scenario-actions";
 import { createRuntimeEndpoints, type RuntimeEndpoints } from "./runtime-endpoints";
+import { useRequestLogs } from "./use-request-logs";
 
 export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoints()) {
   const client = new MockAdminClient(endpoints);
   const model = useMockState(client);
+  const requestLogs = useRequestLogs(client, model.runAdminRequest);
   const forms = useConsoleForms();
   const toast = ref("");
 
@@ -55,6 +57,7 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
 
   return {
     ...model,
+    ...requestLogs,
     ...forms,
     toast,
     selectApi,

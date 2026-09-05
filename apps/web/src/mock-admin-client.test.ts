@@ -21,6 +21,27 @@ test("客户端通过运行地址和传输边界访问管理 API", async () => {
   assert.deepEqual(requests, ["http://127.0.0.1:22333/__mock_admin/state"]);
 });
 
+test("客户端读取并清空请求日志", async () => {
+  const requests: Array<{ url: string; method: string }> = [];
+  const transport: AdminTransport = {
+    async send(input, init) {
+      requests.push({ url: input, method: init.method || "GET" });
+      return new Response(
+        init.method === "DELETE" ? JSON.stringify({ success: true }) : JSON.stringify({ logs: [] }),
+        { status: 200 },
+      );
+    },
+  };
+  const client = new MockAdminClient(endpoints, transport);
+
+  assert.deepEqual(await client.getLogs(), { logs: [] });
+  assert.deepEqual(await client.clearLogs(), { success: true });
+  assert.deepEqual(requests, [
+    { url: "http://127.0.0.1:22333/__mock_admin/logs", method: "GET" },
+    { url: "http://127.0.0.1:22333/__mock_admin/logs", method: "DELETE" },
+  ]);
+});
+
 test("浏览器传输以浏览器对象作为原生 fetch 接收者", async () => {
   const browser = {
     fetch(this: unknown) {

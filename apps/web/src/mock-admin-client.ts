@@ -1,7 +1,15 @@
-import type { LogicalApi, MatchRule, PackageConfig, Scenario, State } from "../../shared/types";
+import type {
+  LogicalApi,
+  MatchRule,
+  PackageConfig,
+  RequestLog,
+  RequestLogsResponse,
+  Scenario,
+  State,
+} from "../../shared/types";
 import { createRuntimeEndpoints, type RuntimeEndpoints } from "./runtime-endpoints";
 
-export type { LogicalApi, MatchRule, PackageConfig, Scenario, State };
+export type { LogicalApi, MatchRule, PackageConfig, RequestLog, RequestLogsResponse, Scenario, State };
 export type Api = LogicalApi;
 export type Pkg = PackageConfig;
 export type Scene = Scenario;
@@ -41,6 +49,14 @@ export class MockAdminClient {
 
   async getState() {
     return this.request<State>("/__mock_admin/state");
+  }
+
+  async getLogs() {
+    return this.request<RequestLogsResponse>("/__mock_admin/logs");
+  }
+
+  async clearLogs() {
+    return this.request<{ success: true }>("/__mock_admin/logs", { method: "DELETE" });
   }
 
   async switchPackage(id: string) {

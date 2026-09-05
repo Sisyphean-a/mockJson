@@ -4,6 +4,7 @@ import ApiSidebar from "./components/ApiSidebar.vue";
 import ConsoleModals from "./components/ConsoleModals.vue";
 import MatchPanel from "./components/MatchPanel.vue";
 import PackageBar from "./components/PackageBar.vue";
+import RequestLogPanel from "./components/RequestLogPanel.vue";
 import ScenarioPanel from "./components/ScenarioPanel.vue";
 import { createRuntimeEndpoints } from "./runtime-endpoints";
 
@@ -26,6 +27,7 @@ const { localMockUrl, lanMockUrl } = endpoints;
           <p>{{ c.loadError.value }}</p>
           <button class="primary" @click="c.retryLoad">重试</button>
         </div>
+        <RequestLogPanel v-else-if="c.activeView.value === 'logs'" :controller="c" />
         <div v-else-if="!c.api.value" class="welcome">
           <div class="welcome-icon">✦</div>
           <h1>开始配置 Mock 接口</h1>

@@ -1,10 +1,20 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MockConfigService, NotFoundError } from "./config-service.js";
+import { RequestLogStore } from "./request-logs.js";
 
 type Body = Record<string, unknown>;
 
-export function registerAdminRoutes(app: FastifyInstance, service: MockConfigService) {
+export function registerAdminRoutes(
+  app: FastifyInstance,
+  service: MockConfigService,
+  logs: RequestLogStore,
+) {
   app.get("/__mock_admin/state", async () => service.getState());
+  app.get("/__mock_admin/logs", async () => ({ logs: logs.list() }));
+  app.delete("/__mock_admin/logs", async () => {
+    logs.clear();
+    return { success: true };
+  });
   app.get("/__mock_admin/packages", async () => service.getPackages());
 
   app.post("/__mock_admin/packages", async (req, reply) => {
