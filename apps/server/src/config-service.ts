@@ -11,20 +11,20 @@ import {
 
 export interface StateRepository {
   read(): Promise<State>;
-  write(state: State): Promise<void>;
+  write(state: State, serializedState?: string): Promise<void>;
 }
 
 export class NotFoundError extends Error {}
 
 export class MockConfigService {
   private state: State | null = null;
-  private persistedState: State | null = null;
+  private persistedSnapshot: string | null = null;
 
   constructor(private readonly repository: StateRepository) {}
 
   async initialize() {
     this.state = normalizeState(await this.repository.read());
-    this.persistedState = structuredClone(this.state);
+    this.persistedSnapshot = JSON.stringify(this.state, null, 2);
   }
 
   getState(): State {
@@ -91,7 +91,7 @@ export class MockConfigService {
       activeScenarioId: null,
       scenarios: [],
     };
-    packageConfig.apis.push(api);
+    packageConfig.apis = [...packageConfig.apis, api];
     await this.save();
     return api;
   }
@@ -103,7 +103,10 @@ export class MockConfigService {
     matchMode?: unknown;
     matchRules?: unknown;
   }) {
-    const api = this.requireApi(id).api;
+    const found = this.requireApi(id);
+    // Rule: 先换代 API 数组，即使后续校验失败也不会复用旧的排序缓存。
+    found.packageConfig.apis = [...found.packageConfig.apis];
+    const api = found.api;
     if (input.name !== undefined) api.name = validateName(input.name, "接口");
     if (input.enabled !== undefined) {
       if (typeof input.enabled !== "boolean") throw new Error("enabled 必须是布尔值");
@@ -223,11 +226,16 @@ export class MockConfigService {
   private async save() {
     const state = this.getState();
     try {
-      await this.repository.write(state);
-      this.persistedState = structuredClone(state);
+      const serializedState = JSON.stringify(state, null, 2);
+      await this.repository.write(state, serializedState);
+      // Rule: 常驻序列化快照，只有写入失败时才解析回滚，避免长期保留整份对象副本。
+      this.persistedSnapshot = serializedState;
     } catch (error) {
-      state.packages = structuredClone(this.persistedState?.packages || []);
-      state.currentPackageId = this.persistedState?.currentPackageId || null;
+      const persisted = this.persistedSnapshot === null
+        ? { currentPackageId: null, packages: [] }
+        : JSON.parse(this.persistedSnapshot) as State;
+      state.packages = persisted.packages;
+      state.currentPackageId = persisted.currentPackageId;
       throw error;
     }
   }

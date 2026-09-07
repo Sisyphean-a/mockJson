@@ -3,7 +3,7 @@ import cors from "@fastify/cors";
 import staticPlugin from "@fastify/static";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { createProxy } from "./proxy.js";
+import { createProxy, hasRequestBody } from "./proxy.js";
 import { JsonFileRepository } from "./storage.js";
 import { resolveStateFile } from "./state-path.js";
 import { MockConfigService } from "./config-service.js";
@@ -41,9 +41,10 @@ await app.register(cors, {
 app.addHook("onRequest", async (req, reply) => {
   if (req.url.startsWith("/__mock_admin/") && !loopback.has(req.ip))
     return reply.code(403).send({ error: "管理接口只允许本机访问" });
+  const channel = requestChannel(req);
   app.log.info(
     {
-      channel: requestChannel(req),
+      channel,
       method: req.method,
       url: req.url,
       host: req.headers.host,
@@ -51,6 +52,8 @@ app.addHook("onRequest", async (req, reply) => {
     },
     "request received",
   );
+  if (channel === "proxy" && hasRequestBody(req))
+    await createProxy(req, reply, config.getState(), requestLogs, { streamRequestBody: true });
 });
 
 const hasDist = existsSync(distRoot);

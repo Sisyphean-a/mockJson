@@ -14,7 +14,8 @@ export function registerAdminRoutes(
     const etag = logs.etag();
     reply.header("etag", etag).header("cache-control", "no-cache");
     if (matchesEtag(req.headers["if-none-match"], etag)) return reply.code(304).send();
-    return { logs: logs.list() };
+    const since = querySince(req);
+    return since ? logs.listSince(since) : { logs: logs.list() };
   });
   app.delete("/__mock_admin/logs", async () => {
     logs.clear();
@@ -136,6 +137,12 @@ function body(req: FastifyRequest): Body {
 
 function routeId(req: FastifyRequest, key: string) {
   return (req.params as Record<string, string>)[key];
+}
+
+function querySince(req: FastifyRequest) {
+  if (!req.query || typeof req.query !== "object" || Array.isArray(req.query)) return undefined;
+  const since = (req.query as Record<string, unknown>).since;
+  return typeof since === "string" && since ? since : undefined;
 }
 
 function sendError(reply: FastifyReply, error: unknown) {

@@ -63,6 +63,20 @@ test("管理 API 可以读取和清空运行态请求日志", async () => {
   });
   assert.equal(changed.statusCode, 200);
   assert.equal(changed.json().logs.length, 2);
+  const changedEtag = changed.headers.etag;
+  assert.ok(changedEtag);
+
+  logs.record(logEntry());
+  const delta = await app.inject({
+    method: "GET",
+    url: `/__mock_admin/logs?since=${encodeURIComponent(changedEtag)}`,
+    headers: { "if-none-match": changedEtag },
+  });
+  assert.equal(delta.statusCode, 200);
+  const deltaBody = delta.json();
+  assert.equal(deltaBody.reset, false);
+  assert.equal(deltaBody.logs.length, 1);
+  assert.equal(deltaBody.logs[0].url, "/health");
 
   const clear = await app.inject({ method: "DELETE", url: "/__mock_admin/logs" });
   assert.equal(clear.statusCode, 200);

@@ -13,9 +13,57 @@ const hop = new Set([
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type LogicalApi = State["packages"][number]["apis"][number];
+type ProxyOptions = { streamRequestBody?: boolean };
+
+export function hasRequestBody(req: Pick<FastifyRequest, "headers">) {
+  if (req.headers["transfer-encoding"] !== undefined) return true;
+  const contentLength = req.headers["content-length"];
+  const value = Array.isArray(contentLength) ? contentLength[0] : contentLength;
+  const length = value === undefined ? NaN : Number(value);
+  return Number.isSafeInteger(length) && length > 0;
+}
+
+function consumeRequestBody(req: FastifyRequest) {
+  if (req.raw.readableEnded) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const finish = () => {
+      req.raw.removeListener("end", finish);
+      req.raw.removeListener("aborted", finish);
+      req.raw.removeListener("error", finish);
+      resolve();
+    };
+    req.raw.once("end", finish);
+    req.raw.once("aborted", finish);
+    req.raw.once("error", finish);
+    req.raw.resume();
+  });
+}
 
 function activeScenario(api: LogicalApi) {
   return api.scenarios.find((s) => s.id === api.activeScenarioId);
+}
+
+type RankedApisCache = {
+  inputs: LogicalApi[];
+  priorities: number[];
+  ranked: LogicalApi[];
+};
+const rankedApisCache = new WeakMap<LogicalApi[], RankedApisCache>();
+
+function rankedApis(apis: LogicalApi[]) {
+  const cached = rankedApisCache.get(apis);
+  if (
+    cached &&
+    cached.inputs.length === apis.length &&
+    cached.inputs.every((api, index) => api === apis[index] && api.priority === cached.priorities[index])
+  ) return cached.ranked;
+
+  const ranked = apis
+    .map((api, index) => ({ api, index }))
+    .sort((left, right) => right.api.priority - left.api.priority || left.index - right.index)
+    .map(({ api }) => api);
+  rankedApisCache.set(apis, { inputs: apis.slice(), priorities: apis.map((api) => api.priority), ranked });
+  return ranked;
 }
 
 function selectMatchingApi(
@@ -23,17 +71,12 @@ function selectMatchingApi(
   context: Parameters<typeof matchApi>[1],
 ) {
   if (!apis) return undefined;
-  let selectedApi: LogicalApi | undefined;
-  let selectedScene: ReturnType<typeof activeScenario>;
-  for (const api of apis) {
+  for (const api of rankedApis(apis)) {
     if (api.enabled === false) continue;
     const scene = activeScenario(api);
-    if (!scene || !matchApi(api, context)) continue;
-    if (selectedApi && api.priority <= selectedApi.priority) continue;
-    selectedApi = api;
-    selectedScene = scene;
+    if (scene && matchApi(api, context)) return { api, scene };
   }
-  return selectedApi && selectedScene ? { api: selectedApi, scene: selectedScene } : undefined;
+  return undefined;
 }
 
 function targetUrl(requestUrl: string, baseUrl: string) {
@@ -57,13 +100,33 @@ function isTextualContentType(contentType: string | null) {
   return !contentType || contentType.startsWith("text/") || /json|xml|javascript|graphql|x-www-form-urlencoded/i.test(contentType);
 }
 
+function utf8Preview(body: string, maxBytes: number, byteLength: number) {
+  if (byteLength <= maxBytes) return body;
+
+  // Rule: 只按需编码预览前缀，避免为整份大响应额外分配 UTF-8 Buffer。
+  let low = 0;
+  let high = Math.min(body.length, maxBytes) + 1;
+  while (low + 1 < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (Buffer.byteLength(body.slice(0, middle)) <= maxBytes) low = middle;
+    else high = middle;
+  }
+  if (
+    low < body.length &&
+    low > 0 &&
+    body.charCodeAt(low - 1) >= 0xd800 &&
+    body.charCodeAt(low - 1) <= 0xdbff &&
+    body.charCodeAt(low) >= 0xdc00 &&
+    body.charCodeAt(low) <= 0xdfff
+  ) low -= 1;
+  return Buffer.from(body.slice(0, low)).toString("utf8");
+}
+
 function textResponse(contentType: string | null, body: string): RequestLogResponse {
   const byteLength = Buffer.byteLength(body);
   return {
     contentType,
-    body: byteLength <= MAX_LOG_BODY_BYTES
-      ? body
-      : Buffer.from(body).subarray(0, MAX_LOG_BODY_BYTES).toString("utf8"),
+    body: utf8Preview(body, MAX_LOG_BODY_BYTES, byteLength),
     byteLength,
     truncated: byteLength > MAX_LOG_BODY_BYTES,
   };
@@ -71,6 +134,20 @@ function textResponse(contentType: string | null, body: string): RequestLogRespo
 
 function emptyResponse(contentType: string | null): RequestLogResponse {
   return { contentType, body: "", byteLength: 0, truncated: false };
+}
+
+function copyReplyHeaders(res: FastifyReply) {
+  for (const [key, value] of Object.entries(res.getHeaders()))
+    if (value !== undefined) res.raw.setHeader(key, value);
+}
+
+function sendRaw(res: FastifyReply, status: number, contentType: string, body: string) {
+  copyReplyHeaders(res);
+  res.hijack();
+  res.raw.statusCode = status;
+  res.raw.setHeader("content-type", contentType);
+  res.raw.end(body);
+  return res;
 }
 
 function createResponseCollector(captureBody: boolean) {
@@ -110,8 +187,10 @@ export async function createProxy(
   res: FastifyReply,
   state: State,
   logs?: RequestLogStore,
+  options: ProxyOptions = {},
 ) {
   const startedAt = Date.now();
+  const streamRequestBody = options.streamRequestBody === true;
   const p = state.packages.find((x) => x.id === state.currentPackageId);
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const selected = selectMatchingApi(p?.apis, { method: req.method, url, headers: req.headers });
@@ -143,19 +222,22 @@ export async function createProxy(
   };
 
   if (scene) {
+    if (streamRequestBody) await consumeRequestBody(req);
     await sleep(scene.delayMs);
     const body = JSON.stringify(scene.responseBody);
-    const reply = res
-      .code(scene.status)
-      .type("application/json; charset=utf-8")
-      .send(body);
     record("mocked", scene.status, textResponse("application/json; charset=utf-8", body || ""));
-    return reply;
+    return streamRequestBody
+      ? sendRaw(res, scene.status, "application/json; charset=utf-8", body)
+      : res.code(scene.status).type("application/json; charset=utf-8").send(body);
   }
   if (!p?.targetBaseUrl) {
+    if (streamRequestBody) await consumeRequestBody(req);
     const body = { error: "未命中 Mock，且当前 Package 未配置真实服务器" };
-    record("unmatched", 502, textResponse("application/json; charset=utf-8", JSON.stringify(body)));
-    return res.code(502).send(body);
+    const serialized = JSON.stringify(body);
+    record("unmatched", 502, textResponse("application/json; charset=utf-8", serialized));
+    return streamRequestBody
+      ? sendRaw(res, 502, "application/json; charset=utf-8", serialized)
+      : res.code(502).send(body);
   }
 
   const target = targetUrl(req.url, p.targetBaseUrl);
@@ -172,6 +254,10 @@ export async function createProxy(
     if (payload !== undefined) headers["content-length"] = String(Buffer.byteLength(payload));
   }
 
+  if (streamRequestBody) {
+    res.hijack();
+    copyReplyHeaders(res);
+  }
   await new Promise<void>((resolve) => {
     let settled = false;
     let recorded = false;
@@ -179,7 +265,13 @@ export async function createProxy(
     let responseContentType: string | null = null;
     let responseContentEncoding: string | null = null;
     let responseCollector: ReturnType<typeof createResponseCollector> | undefined;
-    const finish = () => { if (!settled) { settled = true; resolve(); } };
+    let cleanupClientDisconnect = () => {};
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanupClientDisconnect();
+      resolve();
+    };
     const recordOnce = (
       outcome: RequestLogOutcome,
       status: number,
@@ -231,17 +323,35 @@ export async function createProxy(
       ? https.request(target, options, handleResponse)
       : http.request(target, options, handleResponse);
     upstream.on("timeout", () => upstream.destroy(new Error("upstream timeout")));
+    const abortClientRequest = () => upstream.destroy(new Error("client aborted"));
+    const onClientDisconnect = () => {
+      if (!res.raw.writableEnded) abortClientRequest();
+    };
+    const clientSocket = req.raw.socket;
+    req.raw.on("aborted", abortClientRequest);
+    clientSocket?.once("close", onClientDisconnect);
+    res.raw.once("close", onClientDisconnect);
+    cleanupClientDisconnect = () => {
+      req.raw.removeListener("aborted", abortClientRequest);
+      clientSocket?.removeListener("close", onClientDisconnect);
+      res.raw.removeListener("close", onClientDisconnect);
+    };
     upstream.on("error", (error) => {
       const body = { error: "Proxy failed", detail: error.message };
-      if (!res.sent && !res.raw.headersSent) {
+      const serialized = JSON.stringify(body);
+      if (streamRequestBody && !res.raw.headersSent && !res.raw.writableEnded && !res.raw.destroyed) {
+        res.raw.statusCode = 502;
+        res.raw.setHeader("content-type", "application/json; charset=utf-8");
+        res.raw.end(serialized);
+        recordOnce("error", 502, textResponse("application/json; charset=utf-8", serialized), error.message);
+      } else if (!streamRequestBody && !res.sent && !res.raw.headersSent) {
         res.code(502).send(body);
-        recordOnce("error", 502, textResponse("application/json; charset=utf-8", JSON.stringify(body)), error.message);
+        recordOnce("error", 502, textResponse("application/json; charset=utf-8", serialized), error.message);
       } else {
         recordOnce("error", responseStatus, responseCollector?.preview(responseContentType, responseContentEncoding) || emptyResponse(responseContentType), error.message);
       }
       finish();
     });
-    req.raw.on("aborted", () => upstream.destroy(new Error("client aborted")));
     if (payload !== undefined) upstream.end(payload);
     else req.raw.pipe(upstream);
   });

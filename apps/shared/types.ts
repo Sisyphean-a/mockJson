@@ -47,6 +47,8 @@ export type State = {
   packages: PackageConfig[];
 };
 
+export const MAX_REQUEST_LOGS = 200;
+
 export type RequestLogOutcome = "mocked" | "forwarded" | "unmatched" | "error";
 
 export type RequestLogResponse = {
@@ -77,4 +79,8 @@ export type RequestLog = {
 
 export type RequestLogsResponse = {
   logs: RequestLog[];
+};
+
+export type RequestLogsDeltaResponse = RequestLogsResponse & {
+  reset: boolean;
 };

@@ -30,8 +30,9 @@ export class JsonFileRepository {
     }
   }
 
-  async write(state: State) {
+  async write(state: State, serializedState?: string) {
     if (!isValidState(state)) throw new Error("拒绝保存无效配置");
+    const serialized = serializedState ?? JSON.stringify(state, null, 2);
     const operation = this.writeQueue.catch(() => undefined).then(async () => {
       await fs.mkdir(dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
@@ -40,7 +41,7 @@ export class JsonFileRepository {
         const current: unknown = JSON.parse(await fs.readFile(this.file, "utf8"));
         if (isValidState(current)) await fs.copyFile(this.file, old);
       } catch {}
-      await fs.writeFile(tmp, JSON.stringify(state, null, 2) + "\n");
+      await fs.writeFile(tmp, `${serialized}\n`);
       await fs.rename(tmp, this.file);
     });
     this.writeQueue = operation.catch(() => undefined);

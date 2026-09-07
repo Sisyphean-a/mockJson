@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import Fastify from "fastify";
 import http from "node:http";
 import { gzipSync } from "node:zlib";
-import { createProxy } from "./proxy.js";
+import { createProxy, hasRequestBody } from "./proxy.js";
 import { RequestLogStore } from "./request-logs.js";
 import type { State } from "../../shared/types.js";
 
@@ -99,6 +99,16 @@ test("相同优先级按配置顺序命中第一个接口", async () => {
   assert.deepEqual(response.json(), { matched: true });
 });
 
+test("接口移除后不会继续命中排序缓存", async () => {
+  const state = createState(matchingRules());
+  const first = await request(state);
+  assert.equal(first.statusCode, 200);
+
+  state.packages[0].apis.splice(0, 1);
+  const second = await request(state);
+  assert.equal(second.statusCode, 502);
+});
+
 test("响应日志按类型控制预览内存且不改变原始流", async () => {
   const binary = Buffer.alloc(64 * 1024, 0x5a);
   const text = Buffer.alloc(64 * 1024, 0x61);
@@ -141,6 +151,21 @@ test("响应日志按类型控制预览内存且不改变原始流", async () =>
   assert.equal(compressedLog.response.byteLength, compressed.length);
   assert.equal(binaryLog.response.body, null);
   assert.equal(binaryLog.response.byteLength, binary.length);
+});
+
+test("多字节大响应的日志预览不会超过 UTF-8 字节上限", async () => {
+  const state = createState(matchingRules());
+  state.packages[0].apis[0].scenarios[0].responseBody = { text: "😀".repeat(20_000) };
+  const logs = new RequestLogStore();
+  const response = await request(state, {}, logs);
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json(), state.packages[0].apis[0].scenarios[0].responseBody);
+  const [log] = logs.list();
+  assert.ok(log);
+  assert.ok(log.response.body);
+  assert.equal(log.response.truncated, true);
+  assert.ok(Buffer.byteLength(log.response.body) <= 32 * 1024);
 });
 
 test("没有匹配规则时不处理请求", async () => {
@@ -193,6 +218,97 @@ test("未命中代理会保留 multipart 原始字节", async () => {
   await new Promise<void>((resolve) => upstream.close(() => resolve()));
   assert.equal(response.statusCode, 200);
   assert.deepEqual(received, payload);
+});
+
+test("有请求体的代理在解析前直接流式转发", async () => {
+  let received = Buffer.alloc(0);
+  const upstream = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    req.on("end", () => { received = Buffer.concat(chunks); res.end("ok"); });
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()));
+  const address = upstream.address();
+  assert.ok(address && typeof address !== "string");
+  const state = createState([]);
+  state.packages[0].apis[0].enabled = false;
+  state.packages[0].targetBaseUrl = `http://127.0.0.1:${address.port}`;
+  const app = Fastify();
+  app.addContentTypeParser("*", { parseAs: "buffer" }, () => {
+    throw new Error("请求体不应先被解析");
+  });
+  app.addHook("onRequest", async (req, reply) => {
+    reply.header("x-stream-test", "preserved");
+    if (hasRequestBody(req)) await createProxy(req, reply, state, undefined, { streamRequestBody: true });
+  });
+  app.setNotFoundHandler((_req, reply) => reply.code(500).send("未进入流式代理"));
+  const payload = Buffer.alloc(128 * 1024, 0x61);
+  const response = await app.inject({
+    method: "POST",
+    url: "/upload",
+    headers: { "content-type": "application/octet-stream", "content-length": String(payload.length) },
+    payload,
+  });
+  await app.close();
+  await new Promise<void>((resolve) => upstream.close(() => resolve()));
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers["x-stream-test"], "preserved");
+  assert.deepEqual(received, payload);
+});
+
+test("客户端中断请求体时会释放上游请求", async () => {
+  let upstreamAborted = false;
+  let upstreamStartedResolve: (() => void) | undefined;
+  let upstreamAbortedResolve: (() => void) | undefined;
+  const upstreamStarted = new Promise<void>((resolve) => { upstreamStartedResolve = resolve; });
+  const abortObserved = new Promise<void>((resolve) => { upstreamAbortedResolve = resolve; });
+  const upstream = http.createServer((req) => {
+    req.on("aborted", () => {
+      upstreamAborted = true;
+      upstreamAbortedResolve?.();
+    });
+    upstreamStartedResolve?.();
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()));
+  const address = upstream.address();
+  assert.ok(address && typeof address !== "string");
+  const state = createState([]);
+  state.packages[0].apis[0].enabled = false;
+  state.packages[0].targetBaseUrl = `http://127.0.0.1:${address.port}`;
+  const app = Fastify();
+  app.addContentTypeParser("*", { parseAs: "buffer" }, () => {
+    throw new Error("请求体不应先被解析");
+  });
+  app.addHook("onRequest", async (req, reply) => {
+    if (hasRequestBody(req)) await createProxy(req, reply, state, undefined, { streamRequestBody: true });
+  });
+  app.setNotFoundHandler((_req, reply) => reply.code(500).send("未进入流式代理"));
+  await app.listen({ port: 0, host: "127.0.0.1" });
+  const appAddress = app.server.address();
+  assert.ok(appAddress && typeof appAddress !== "string");
+  let clientSocket: import("node:net").Socket | undefined;
+  const client = http.request({
+    hostname: "127.0.0.1",
+    port: appAddress.port,
+    path: "/abort",
+    method: "POST",
+    headers: { "content-length": "65536" },
+  });
+  client.on("socket", (socket) => { clientSocket = socket; });
+  client.on("error", () => undefined);
+  client.write("x");
+  await upstreamStarted;
+  client.destroy();
+  clientSocket?.destroy();
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 1000);
+    abortObserved.then(() => { clearTimeout(timer); resolve(); });
+  });
+  await app.close();
+  await new Promise<void>((resolve) => upstream.close(() => resolve()));
+
+  assert.equal(upstreamAborted, true);
 });
 
 test("未命中代理会转发 JSON 请求体并保留目标基础路径", async () => {

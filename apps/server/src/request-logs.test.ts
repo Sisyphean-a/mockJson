@@ -35,6 +35,34 @@ test("请求日志以内存环形队列保留最新记录并支持清空", () =>
   assert.deepEqual(logs.list(), []);
 });
 
+test("日志增量游标只返回新增记录，游标过旧时要求完整重置", () => {
+  const logs = new RequestLogStore(2);
+  const initialEtag = logs.etag();
+  logs.record(entry("first"));
+  const firstEtag = logs.etag();
+  logs.record(entry("second"));
+
+  assert.deepEqual(logs.listSince(firstEtag), { logs: logs.list().slice(0, 1), reset: false });
+
+  logs.record(entry("third"));
+  const incremental = logs.listSince(firstEtag);
+  assert.equal(incremental.reset, false);
+  assert.deepEqual(incremental.logs.map((log) => log.url), ["/third", "/second"]);
+
+  const reset = logs.listSince(initialEtag);
+  assert.equal(reset.reset, true);
+  assert.deepEqual(reset.logs.map((log) => log.url), ["/third", "/second"]);
+});
+
+test("清空日志会让旧游标重置本地列表", () => {
+  const logs = new RequestLogStore();
+  logs.record(entry("first"));
+  const etag = logs.etag();
+  logs.clear();
+
+  assert.deepEqual(logs.listSince(etag), { logs: [], reset: true });
+});
+
 test("请求日志数量上限必须是正整数", () => {
   assert.throws(() => new RequestLogStore(0), /正整数/);
   assert.throws(() => new RequestLogStore(1.5), /正整数/);

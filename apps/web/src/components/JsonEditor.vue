@@ -22,12 +22,15 @@ const emit = defineEmits<{
 const editorHost = ref<HTMLElement | null>(null);
 const editorView = shallowRef<EditorView>();
 const syncingExternalValue = ref(false);
+let lastEmittedValue = props.value;
+let validationTimer: ReturnType<typeof setTimeout> | undefined;
 const validJson = ref(isValidJson(props.value));
 const lineCount = ref(1);
 const cursorLine = ref(1);
 const cursorColumn = ref(1);
 
 const jsonIndentSize = 4;
+const jsonValidationDebounceMs = 120;
 const indentDecorationCache = new Map<number, Decoration>();
 
 function getIndentDecoration(indent: number) {
@@ -89,13 +92,25 @@ function isValidJson(value: string) {
   }
 }
 
-function updateEditorStatus(view: EditorView) {
+function updateCursorStatus(view: EditorView) {
   const position = view.state.selection.main.head;
   const line = view.state.doc.lineAt(position);
-  validJson.value = isValidJson(view.state.doc.toString());
   lineCount.value = view.state.doc.lines;
   cursorLine.value = line.number;
   cursorColumn.value = position - line.from + 1;
+}
+
+function updateDocumentStatus(view: EditorView, value = view.state.doc.toString()) {
+  updateCursorStatus(view);
+  validJson.value = isValidJson(value);
+}
+
+function scheduleJsonValidation(value: string) {
+  if (validationTimer) clearTimeout(validationTimer);
+  validationTimer = setTimeout(() => {
+    validationTimer = undefined;
+    validJson.value = isValidJson(value);
+  }, jsonValidationDebounceMs);
 }
 
 function openSearch() {
@@ -117,10 +132,20 @@ function expandAll() {
 
 function formatJson() {
   const view = editorView.value;
-  if (!view || !validJson.value) return;
+  if (!view) return;
 
-  const formatted = JSON.stringify(JSON.parse(view.state.doc.toString()), null, jsonIndentSize);
-  if (formatted === view.state.doc.toString()) {
+  const current = view.state.doc.toString();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(current);
+  } catch {
+    validJson.value = false;
+    view.focus();
+    return;
+  }
+  validJson.value = true;
+  const formatted = JSON.stringify(parsed, null, jsonIndentSize);
+  if (formatted === current) {
     view.focus();
     return;
   }
@@ -227,11 +252,14 @@ onMounted(() => {
         }])),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            updateEditorStatus(update.view);
-            emit("update:value", update.state.doc.toString());
+            const value = update.state.doc.toString();
+            updateCursorStatus(update.view);
+            scheduleJsonValidation(value);
+            lastEmittedValue = value;
+            emit("update:value", value);
             if (!syncingExternalValue.value) emit("user-change");
           } else if (update.selectionSet) {
-            updateEditorStatus(update.view);
+            updateCursorStatus(update.view);
           }
         }),
       ],
@@ -240,22 +268,26 @@ onMounted(() => {
   });
 
   editorView.value = view;
-  updateEditorStatus(view);
+  updateDocumentStatus(view);
 });
 
 watch(() => props.value, (value) => {
   const view = editorView.value;
-  if (!view || value === view.state.doc.toString()) return;
+  if (!view || value === lastEmittedValue) return;
+  if (value === view.state.doc.toString()) {
+    lastEmittedValue = value;
+    return;
+  }
 
   syncingExternalValue.value = true;
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: value },
   });
   syncingExternalValue.value = false;
-  updateEditorStatus(view);
 }, { flush: "sync" });
 
 onBeforeUnmount(() => {
+  if (validationTimer) clearTimeout(validationTimer);
   editorView.value?.destroy();
   editorView.value = undefined;
 });

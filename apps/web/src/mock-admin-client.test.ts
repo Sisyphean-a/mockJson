@@ -65,6 +65,28 @@ test("客户端用 ETag 缓存未变化的请求日志并在清空后重新同�
   assert.deepEqual(tags, [null, '"v1"', null]);
 });
 
+test("客户端合并请求日志增量而不是重复替换完整列表", async () => {
+  const first = { id: "first", url: "/first" };
+  const second = { id: "second", url: "/second" };
+  const requests: string[] = [];
+  const transport: AdminTransport = {
+    async send(input) {
+      requests.push(input);
+      if (input.includes("since=%22v1%22"))
+        return new Response(JSON.stringify({ logs: [second], reset: false }), { status: 200, headers: { etag: '"v2"' } });
+      return new Response(JSON.stringify({ logs: [first] }), { status: 200, headers: { etag: '"v1"' } });
+    },
+  };
+  const client = new MockAdminClient(endpoints, transport);
+
+  assert.deepEqual((await client.getLogs()).logs, [first]);
+  assert.deepEqual((await client.getLogs()).logs, [second, first]);
+  assert.deepEqual(requests, [
+    "http://127.0.0.1:22333/__mock_admin/logs",
+    "http://127.0.0.1:22333/__mock_admin/logs?since=%22v1%22",
+  ]);
+});
+
 test("浏览器传输以浏览器对象作为原生 fetch 接收者", async () => {
   const browser = {
     fetch(this: unknown) {

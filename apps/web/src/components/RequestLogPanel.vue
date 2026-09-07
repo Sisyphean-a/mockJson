@@ -32,6 +32,8 @@ const selectedLog = computed(() =>
   filteredLogs.value.find((log) => log.id === selectedId.value) || filteredLogs.value[0] || null,
 );
 
+const responseSummaryCache = new WeakMap<RequestLog, { body: string; summary: string }>();
+
 watch(filteredLogs, (items) => {
   if (!items.some((log) => log.id === selectedId.value)) selectedId.value = items[0]?.id || null;
 }, { immediate: true });
@@ -59,8 +61,12 @@ function responseText(log: RequestLog) {
 
 function responseSummary(log: RequestLog) {
   if (log.response.body === null) return `非文本响应 · ${formatBytes(log.response.byteLength)}`;
+  const cached = responseSummaryCache.get(log);
+  if (cached?.body === log.response.body) return cached.summary;
   const summary = log.response.body.replace(/\s+/g, " ").trim() || "空响应体";
-  return summary.length > 120 ? `${summary.slice(0, 120)}…` : summary;
+  const value = summary.length > 120 ? `${summary.slice(0, 120)}…` : summary;
+  responseSummaryCache.set(log, { body: log.response.body, summary: value });
+  return value;
 }
 
 function formatTime(value: string) {

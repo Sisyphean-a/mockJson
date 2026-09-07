@@ -1,15 +1,17 @@
-import type {
-  LogicalApi,
-  MatchRule,
-  PackageConfig,
-  RequestLog,
-  RequestLogsResponse,
-  Scenario,
-  State,
+import {
+  MAX_REQUEST_LOGS,
+  type LogicalApi,
+  type MatchRule,
+  type PackageConfig,
+  type RequestLog,
+  type RequestLogsDeltaResponse,
+  type RequestLogsResponse,
+  type Scenario,
+  type State,
 } from "../../shared/types";
 import { createRuntimeEndpoints, type RuntimeEndpoints } from "./runtime-endpoints";
 
-export type { LogicalApi, MatchRule, PackageConfig, RequestLog, RequestLogsResponse, Scenario, State };
+export type { LogicalApi, MatchRule, PackageConfig, RequestLog, RequestLogsDeltaResponse, RequestLogsResponse, Scenario, State };
 export type Api = LogicalApi;
 export type Pkg = PackageConfig;
 export type Scene = Scenario;
@@ -55,14 +57,24 @@ export class MockAdminClient {
   }
 
   async getLogs() {
+    const cached = Boolean(this.logsEtag);
+    const path = cached
+      ? `/__mock_admin/logs?since=${encodeURIComponent(this.logsEtag!)}`
+      : "/__mock_admin/logs";
     const options: RequestInit = this.logsEtag ? { headers: { "if-none-match": this.logsEtag } } : {};
-    const response = await this.send("/__mock_admin/logs", options);
+    const response = await this.send(path, options);
     if (response.status === 304) return this.logsCache;
 
-    const result = await this.readResponse<RequestLogsResponse>(response);
-    this.logsCache = result;
+    const result = await this.readResponse<RequestLogsResponse | RequestLogsDeltaResponse>(response);
+    if (!cached || !("reset" in result) || result.reset) {
+      this.logsCache = { logs: result.logs };
+    } else {
+      this.logsCache = {
+        logs: [...result.logs, ...this.logsCache.logs].slice(0, MAX_REQUEST_LOGS),
+      };
+    }
     this.logsEtag = response.headers.get("etag") || undefined;
-    return result;
+    return this.logsCache;
   }
 
   async clearLogs() {
