@@ -3,40 +3,42 @@
   min-height: 520px;
   height: 100%;
   overflow: hidden;
-  border: 1px solid #dfe5ed;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 8px 30px rgb(30 50 80 / 4%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-panel);
   display: flex;
   flex-direction: column;
 }
 
 .log-panel-head {
-  min-height: 84px;
-  padding: 17px 22px 14px;
-  border-bottom: 1px solid #e5e9ef;
+  min-height: 68px;
+  padding: 13px 16px 11px;
+  border-bottom: 1px solid var(--line);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: 16px;
 }
 
 .log-panel-head h1,
 .log-detail-head h2,
 .log-response-head h3 {
   margin: 0;
-  color: #172033;
-  letter-spacing: -0.02em;
+  color: var(--ink-strong);
+  font-weight: 700;
+  letter-spacing: -0.035em;
 }
 
 .log-panel-head h1 {
-  font-size: 19px;
+  font-size: 18px;
 }
 
 .log-panel-head p {
   margin: 4px 0 0;
-  color: #64748b;
-  font-size: 12px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .log-panel-actions {
@@ -44,7 +46,7 @@
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 7px;
+  gap: 6px;
 }
 
 .log-panel-actions button:disabled {
@@ -53,24 +55,24 @@
 }
 
 .log-retention {
-  color: #94a3b8;
-  font-size: 11px;
+  color: var(--ink-faint);
+  font-size: 10px;
   white-space: nowrap;
 }
 
 .danger-action {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .danger-action:hover {
-  border-color: #f2b8b3;
-  background: #fff7f6;
+  border-color: #e9b8b4;
+  background: var(--danger-soft);
 }
 
 .log-toolbar {
-  min-height: 58px;
-  padding: 10px 22px;
-  border-bottom: 1px solid #edf0f4;
+  min-height: 46px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line-soft);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -80,15 +82,6 @@
   min-width: 180px;
   max-width: 420px;
   flex: 1 1 280px;
-  min-height: 36px;
-  border: 1px solid #dfe5ed;
-  border-radius: 7px;
-  background: #f8fafc;
-  padding: 7px 10px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #64748b;
 }
 
 .log-search input {
@@ -97,85 +90,85 @@
   border: 0;
   outline: 0;
   background: transparent;
-  color: #25324a;
+  color: var(--ink);
   font-size: 12px;
 }
 
 .log-filter {
-  min-height: 36px;
+  min-height: var(--control-height);
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #64748b;
+  color: var(--ink-muted);
   font-size: 11px;
   white-space: nowrap;
 }
 
 .log-filter select {
-  min-height: 36px;
-  border: 1px solid #d9e0ea;
-  border-radius: 6px;
-  background: #fff;
-  color: #334155;
-  padding: 7px 28px 7px 9px;
+  min-height: var(--control-height);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 6px 28px 6px 8px;
   font-size: 12px;
 }
 
 .log-count {
   margin-left: auto;
-  color: #64748b;
-  font-size: 11px;
+  color: var(--ink-muted);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .log-error {
-  min-height: 42px;
-  padding: 9px 22px;
-  border-bottom: 1px solid #f1cfcb;
-  background: #fff8f7;
-  color: #a12a21;
+  min-height: 38px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #efc7c4;
+  background: var(--danger-soft);
+  color: var(--danger);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .log-content {
   min-height: 0;
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(330px, 0.9fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(310px, 0.85fr) minmax(0, 1.15fr);
 }
 
 .log-list {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  border-right: 1px solid #e5e9ef;
+  border-right: 1px solid var(--line);
 }
 
 .log-row {
   width: 100%;
   min-width: 0;
   border: 0;
-  border-bottom: 1px solid #edf0f4;
-  background: #fff;
-  padding: 13px 16px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface);
+  padding: 9px 12px;
   display: block;
-  color: #334155;
+  color: var(--ink);
   text-align: left;
   cursor: pointer;
 }
 
 .log-row:hover {
-  background: #f8fbff;
+  background: #f8faff;
 }
 
 .log-row.selected {
-  background: #edf4ff;
-  box-shadow: inset 3px 0 #246bfd;
+  background: var(--surface-active);
+  box-shadow: inset 3px 0 var(--accent);
 }
 
 .log-row-head,
@@ -193,7 +186,7 @@
 
 .log-row-head time {
   margin-left: auto;
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -201,61 +194,61 @@
 
 .log-method {
   min-width: 42px;
-  color: #1763e8;
-  font: 600 10px/1.2 "JetBrains Mono", Consolas, monospace;
+  color: var(--accent-strong);
+  font: 600 10px/1.2 var(--font-mono);
 }
 
 .log-outcome {
   width: fit-content;
-  padding: 3px 6px;
-  border-radius: 4px;
+  padding: 3px 5px;
+  border-radius: 5px;
   font-size: 10px;
   line-height: 1.2;
   white-space: nowrap;
 }
 
 .outcome-mocked {
-  background: #e9f8ef;
-  color: #16803b;
+  background: #e8f6ee;
+  color: var(--success);
 }
 
 .outcome-forwarded {
-  background: #edf4ff;
-  color: #1763e8;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .outcome-unmatched {
-  background: #fff6df;
-  color: #9a6700;
+  background: #fff7e4;
+  color: var(--warning);
 }
 
 .outcome-error {
   background: #fff0ee;
-  color: #b42318;
+  color: var(--danger);
 }
 
 .log-url {
   width: 100%;
   margin-top: 9px;
   overflow: hidden;
-  color: #25324a;
-  font: 12px/1.45 "JetBrains Mono", Consolas, monospace;
+  color: var(--ink);
+  font: 11px/1.45 var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .log-row-meta {
-  margin-top: 9px;
+  margin-top: 8px;
   overflow: hidden;
-  color: #64748b;
-  font-size: 11px;
+  color: var(--ink-muted);
+  font-size: 10px;
 }
 
 .log-row-meta strong {
   min-width: 0;
   overflow: hidden;
-  color: #334155;
-  font-weight: 600;
+  color: var(--ink);
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -268,42 +261,42 @@
 
 .log-status {
   margin-left: auto;
-  color: #16803b;
-  font: 600 11px/1 "JetBrains Mono", Consolas, monospace;
+  color: var(--success);
+  font: 600 11px/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
 .log-status.failed,
 .failed {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .log-preview {
-  margin: 8px 0 0;
+  margin: 7px 0 0;
   overflow: hidden;
-  color: #78909f;
-  font: 11px/1.45 "JetBrains Mono", Consolas, monospace;
+  color: var(--ink-faint);
+  font: 10px/1.45 var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .log-empty,
 .log-detail-empty {
-  min-height: 240px;
-  padding: 30px 22px;
-  color: #64748b;
+  min-height: 220px;
+  padding: 24px 16px;
+  color: var(--ink-muted);
   display: grid;
   place-items: center;
   align-content: center;
   gap: 7px;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .log-empty p {
   margin: 0;
-  color: #475569;
-  font-weight: 600;
+  color: var(--ink);
+  font-weight: 650;
 }
 
 .log-empty span {
@@ -315,7 +308,7 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 20px 22px 22px;
+  padding: 16px 16px 18px;
 }
 
 .log-detail-head {
@@ -328,32 +321,32 @@
 
 .log-detail-head h2 {
   overflow: hidden;
-  font-size: 17px;
+  font-size: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .log-detail-grid {
-  margin-top: 18px;
+  margin-top: 14px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .log-detail-grid > div {
   min-width: 0;
-  min-height: 54px;
-  padding: 9px 10px;
-  border: 1px solid #e5e9ef;
-  border-radius: 7px;
-  background: #fbfcfe;
+  min-height: 46px;
+  padding: 8px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
   display: grid;
   align-content: center;
-  gap: 5px;
+  gap: var(--label-gap);
 }
 
 .log-detail-grid span {
-  color: #78909f;
+  color: var(--ink-muted);
   font-size: 10px;
 }
 
@@ -361,41 +354,41 @@
 .log-detail-grid code {
   min-width: 0;
   overflow: hidden;
-  color: #334155;
+  color: var(--ink);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .log-detail-grid code {
-  font-family: "JetBrains Mono", Consolas, monospace;
+  font-family: var(--font-mono);
   font-weight: 500;
 }
 
 .log-failure {
   margin-top: 14px;
-  padding: 10px 12px;
-  border-left: 3px solid #e34850;
-  background: #fff8f7;
+  padding: 8px 10px;
+  border-left: 3px solid #d35a55;
+  background: var(--danger-soft);
   display: grid;
   gap: 5px;
 }
 
 .log-failure span {
-  color: #a12a21;
+  color: var(--danger);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 650;
 }
 
 .log-failure code {
   overflow-wrap: anywhere;
-  color: #7f2923;
-  font: 11px/1.5 "JetBrains Mono", Consolas, monospace;
+  color: #833a36;
+  font: 11px/1.5 var(--font-mono);
 }
 
 .log-response-head {
-  margin-top: 22px;
+  margin-top: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -407,34 +400,34 @@
 }
 
 .log-response-head span {
-  color: #78909f;
+  color: var(--ink-muted);
   font-size: 10px;
 }
 
 .log-truncated {
   padding: 3px 6px;
-  border-radius: 4px;
-  background: #fff6df;
-  color: #9a6700 !important;
+  border-radius: 5px;
+  background: #fff7e4;
+  color: var(--warning) !important;
 }
 
 .log-response-body {
-  min-height: 220px;
+  min-height: 200px;
   max-height: min(52vh, 520px);
-  margin: 9px 0 0;
+  margin: 10px 0 0;
   overflow: auto;
-  border: 1px solid #dfe5ed;
-  border-radius: 7px;
-  background: #fbfcfe;
-  padding: 14px 16px;
-  color: #263449;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  padding: 12px;
+  color: var(--ink);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 12px/1.65 "JetBrains Mono", Consolas, monospace;
+  font: 11px/1.65 var(--font-mono);
 }
 
 .log-note {
   margin: 8px 0 0;
-  color: #9a6700;
+  color: var(--warning);
   font-size: 10px;
 }

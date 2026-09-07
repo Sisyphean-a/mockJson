@@ -9,7 +9,7 @@ type Notify = (message: string) => void;
 
 export function useScenarioActions(client: MockAdminClient, model: Model, forms: Forms, notify: Notify, canLeave: () => boolean) {
   watch(model.scene, (current) => {
-    forms.draft.value = current ? JSON.stringify(current.responseBody, null, 2) : "";
+    forms.draft.value = current ? JSON.stringify(current.responseBody, null, 4) : "";
     forms.jsonError.value = "";
     forms.draftDirty.value = false;
   }, { immediate: true });

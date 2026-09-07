@@ -47,9 +47,11 @@ const { controller: c } = defineProps<{ controller: MatchPanelController }>();
         <span>来源</span><span>字段</span><span>条件</span><span>值</span><span>操作</span>
       </div>
       <div v-for="rule in c.api.value.matchRules" :key="rule.id" class="rule">
-        <b>{{ rule.source === "header" ? "Header" : rule.source === "method" ? "Method" : "URL" }}</b>
-        <span>{{ rule.field }}</span><span class="operator">{{ c.operators.find((item) => item.value === rule.operator)?.label || rule.operator }}</span>
-        <code>{{ rule.value || "—" }}</code><button class="remove-rule" :aria-label="`删除匹配条件 ${rule.field}`" @click="c.removeRule(rule.id)">删除</button>
+        <b class="rule-source">{{ rule.source === "header" ? "Header" : rule.source === "method" ? "Method" : "URL" }}</b>
+        <span class="rule-field">{{ rule.field }}</span>
+        <span class="operator">{{ c.operators.find((item) => item.value === rule.operator)?.label || rule.operator }}</span>
+        <code class="rule-value">{{ rule.value || "—" }}</code>
+        <button class="remove-rule" :aria-label="`删除匹配条件 ${rule.field}`" @click="c.removeRule(rule.id)">删除</button>
       </div>
     </div>
     <div v-else class="no-rules">未配置匹配条件，此接口不会处理任何请求。点击“添加条件”开始配置。</div>

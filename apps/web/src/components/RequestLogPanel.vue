@@ -51,7 +51,7 @@ function responseText(log: RequestLog) {
   if (log.response.body === null) return `非文本响应，无法直接预览（${formatBytes(log.response.byteLength)}）`;
   if (!log.response.body) return "（空响应体）";
   try {
-    return JSON.stringify(JSON.parse(log.response.body), null, 2);
+    return JSON.stringify(JSON.parse(log.response.body), null, 4);
   } catch {
     return log.response.body;
   }
