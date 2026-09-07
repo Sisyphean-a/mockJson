@@ -17,6 +17,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (event: "update:value", value: string): void;
   (event: "user-change"): void;
+  (event: "save"): void;
 }>();
 
 const editorHost = ref<HTMLElement | null>(null);
@@ -243,13 +244,22 @@ onMounted(() => {
             fontSize: "12px",
           },
         }),
-        Prec.high(keymap.of([{
-          key: "Mod-f",
-          run: (target) => {
-            openSearchPanel(target);
-            return true;
+        Prec.high(keymap.of([
+          {
+            key: "Mod-s",
+            run: () => {
+              emit("save");
+              return true;
+            },
           },
-        }])),
+          {
+            key: "Mod-f",
+            run: (target) => {
+              openSearchPanel(target);
+              return true;
+            },
+          },
+        ])),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             const value = update.state.doc.toString();
@@ -341,9 +351,9 @@ onBeforeUnmount(() => {
 }
 
 .json-editor-toolbar {
-  min-height: 38px;
+  min-height: 34px;
   flex: 0 0 auto;
-  padding: 5px 8px 5px 10px;
+  padding: 4px 8px 4px 10px;
   border-bottom: 1px solid var(--line-soft);
   background: var(--surface-muted);
   display: flex;
@@ -372,12 +382,12 @@ onBeforeUnmount(() => {
 }
 
 .editor-tool {
-  min-height: 25px;
+  min-height: 23px;
   border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
   color: #64748b;
-  padding: 3px 7px;
+  padding: 2px 7px;
   cursor: pointer;
   font-size: 11px;
   white-space: nowrap;

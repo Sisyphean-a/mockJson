@@ -1,4 +1,4 @@
-import { watch } from "vue";
+import { onBeforeUnmount, watch } from "vue";
 import type { Api, MockAdminClient, Scene } from "./mock-admin-client";
 import type { useConsoleForms } from "./use-console-forms";
 import type { useMockState } from "./use-mock-state";
@@ -8,12 +8,39 @@ type Model = ReturnType<typeof useMockState>;
 type Notify = (message: string) => void;
 
 export function useScenarioActions(client: MockAdminClient, model: Model, forms: Forms, notify: Notify, canLeave: () => boolean) {
+  const jsonAutosaveDelayMs = 1000;
+  let jsonAutosaveTimer: ReturnType<typeof setTimeout> | undefined;
+  let jsonSavePromise: Promise<void> | null = null;
+  let jsonSaveQueued = false;
+  let draftRevision = 0;
+
+  function clearJsonAutosave() {
+    if (jsonAutosaveTimer !== undefined) clearTimeout(jsonAutosaveTimer);
+    jsonAutosaveTimer = undefined;
+  }
+
+  function scheduleJsonAutosave() {
+    clearJsonAutosave();
+    if (!forms.draftDirty.value) return;
+    jsonAutosaveTimer = setTimeout(() => {
+      jsonAutosaveTimer = undefined;
+      if (forms.draftDirty.value) void saveJson(true);
+    }, jsonAutosaveDelayMs);
+  }
+
   watch(model.scene, (current) => {
+    clearJsonAutosave();
+    draftRevision += 1;
     forms.draft.value = current ? JSON.stringify(current.responseBody, null, 4) : "";
     forms.jsonError.value = "";
     forms.draftDirty.value = false;
   }, { immediate: true });
+  watch(forms.draft, () => {
+    draftRevision += 1;
+    scheduleJsonAutosave();
+  });
   watch(model.pkg, (current) => { forms.targetUrl.value = current?.targetBaseUrl || ""; }, { immediate: true });
+  onBeforeUnmount(clearJsonAutosave);
 
   function openSceneCreate() {
     if (!canLeave()) return;
@@ -62,17 +89,41 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     } catch (error) { notify(message(error)); }
   }
 
-  async function saveJson() {
+  async function saveJson(silent = false) {
+    clearJsonAutosave();
+    if (jsonSavePromise) {
+      jsonSaveQueued = true;
+      return jsonSavePromise;
+    }
+
     const scene = model.scene.value;
     if (!scene) return;
+    const draftAtSave = forms.draft.value;
+    const revisionAtSave = draftRevision;
+    const savePromise = saveJsonDraft(scene, draftAtSave, revisionAtSave, silent);
+    jsonSavePromise = savePromise;
     try {
-      const responseBody = JSON.parse(forms.draft.value);
+      await savePromise;
+    } finally {
+      jsonSavePromise = null;
+      if (jsonSaveQueued) {
+        jsonSaveQueued = false;
+        if (forms.draftDirty.value) void saveJson(true);
+      }
+    }
+  }
+
+  async function saveJsonDraft(scene: Scene, draftAtSave: string, revisionAtSave: number, silent: boolean) {
+    try {
+      const responseBody = JSON.parse(draftAtSave);
       const saved = await model.runAdminRequest(() => client.updateScenario(scene.id, { responseBody }));
+      if (model.scene.value?.id !== scene.id || draftRevision !== revisionAtSave) return;
       scene.responseBody = saved.responseBody;
       forms.draftDirty.value = false;
       forms.jsonError.value = "";
-      notify("场景已保存");
+      if (!silent) notify("场景已保存");
     } catch (error) {
+      if (model.scene.value?.id !== scene.id || draftRevision !== revisionAtSave) return;
       const messageText = error instanceof Error ? error.message : "JSON 格式错误";
       forms.jsonError.value = messageText.startsWith("无法连接 Mock 服务") ? `${messageText}；响应尚未保存` : messageText;
     }
@@ -83,7 +134,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     if (!api) return;
     const isActive = model.activeSceneId.value === scene.id;
     if (!isActive && model.sceneId.value === scene.id && forms.draftDirty.value) {
-      notify("请先保存响应，再启用场景");
+      notify("请先修正 JSON 或等待自动保存完成");
       return;
     }
     if (!isActive && model.sceneId.value !== scene.id && !canLeave()) return;

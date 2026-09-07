@@ -8,13 +8,13 @@ const { controller: c } = defineProps<{ controller: MatchPanelController }>();
 <template>
   <section v-if="c.api.value" class="match-card" aria-labelledby="match-title">
     <div class="panel-heading">
-      <div>
-        <span class="panel-context">逻辑接口 · {{ c.api.value.name }}</span>
+      <div class="panel-title">
         <h1 id="match-title">匹配条件</h1>
+        <span class="panel-context">{{ c.api.value.name }}</span>
       </div>
       <div class="interface-actions">
-        <button class="text-action" @click="c.openApiEdit">编辑接口</button>
-        <button class="text-action danger" @click="c.deleteApi">删除接口</button>
+        <button class="text-action" aria-label="编辑接口" @click="c.openApiEdit">编辑</button>
+        <button class="text-action danger" aria-label="删除接口" @click="c.deleteApi">删除</button>
       </div>
     </div>
 
@@ -54,6 +54,6 @@ const { controller: c } = defineProps<{ controller: MatchPanelController }>();
         <button class="remove-rule" :aria-label="`删除匹配条件 ${rule.field}`" @click="c.removeRule(rule.id)">删除</button>
       </div>
     </div>
-    <div v-else class="no-rules">未配置匹配条件，此接口不会处理任何请求。点击“添加条件”开始配置。</div>
+    <div v-else class="no-rules">未添加匹配条件</div>
   </section>
 </template>

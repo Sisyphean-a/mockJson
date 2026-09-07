@@ -21,7 +21,7 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
   }
 
   function leaveCurrentDraft() {
-    return !forms.draftDirty.value || window.confirm("当前 JSON 尚未保存，确定要离开吗？");
+    return !forms.draftDirty.value || window.confirm("当前 JSON 尚未自动保存完成，确定要离开吗？");
   }
 
   const packageActions = usePackageActions(client, model, forms, notice, leaveCurrentDraft);

@@ -43,12 +43,13 @@
   }
 
   .scene-detail-bar {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    flex-wrap: wrap;
   }
 
   .scene-properties {
-    justify-content: flex-start;
+    justify-content: flex-end;
+    margin-left: auto;
   }
 }
 
@@ -153,11 +154,25 @@
     grid-template-columns: 1fr;
   }
 
+  .scene-detail-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .scene-properties {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
   .scene-list {
     max-height: 228px;
-    overflow: auto;
+    overflow: hidden;
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+
+  .scene-list-items {
+    overflow: auto;
   }
 
   .request-log-panel {
@@ -185,10 +200,6 @@
 
   .log-detail {
     min-height: 420px;
-  }
-
-  .scene-list-foot {
-    display: none;
   }
 
   .json-editor-shell {
