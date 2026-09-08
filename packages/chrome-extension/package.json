@@ -1,0 +1,5 @@
+{
+  "name": "@mock-json/chrome-extension",
+  "private": true,
+  "type": "module"
+}

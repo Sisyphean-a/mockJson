@@ -2,12 +2,18 @@
   "name": "mock-console",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/mock-console",
+    "packages/chrome-extension"
+  ],
   "scripts": {
-    "dev": "concurrently \"tsx apps/server/src/index.ts\" \"vite --config apps/web/vite.config.ts\"",
-    "build": "vite build --config apps/web/vite.config.ts",
+    "dev": "concurrently \"tsx packages/mock-console/server/src/index.ts\" \"vite --config packages/mock-console/web/vite.config.ts\"",
+    "build": "npm run build:mock-console && npm run build:extension",
+    "build:mock-console": "vite build --config packages/mock-console/web/vite.config.ts",
+    "build:extension": "vite build --config packages/chrome-extension/vite.config.ts",
     "typecheck": "vue-tsc --noEmit",
-    "start": "tsx apps/server/src/index.ts",
-    "test": "node --import tsx --test apps/server/src/**/*.test.ts apps/web/src/**/*.test.ts"
+    "start": "tsx packages/mock-console/server/src/index.ts",
+    "test": "node --import tsx --test packages/mock-console/server/src/**/*.test.ts packages/mock-console/web/src/**/*.test.ts"
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",

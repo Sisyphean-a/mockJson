@@ -3,7 +3,7 @@ import https from "node:https";
 import { Transform } from "node:stream";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { RequestLogOutcome, RequestLogResponse, State } from "../../shared/types.js";
-import { matchApi } from "./matcher.js";
+import { selectMatchingApi } from "./runtime-resolver.js";
 import { RequestLogStore } from "./request-logs.js";
 
 const hop = new Set([
@@ -12,7 +12,6 @@ const hop = new Set([
 ]);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-type LogicalApi = State["packages"][number]["apis"][number];
 type ProxyOptions = { streamRequestBody?: boolean };
 
 export function hasRequestBody(req: Pick<FastifyRequest, "headers">) {
@@ -37,46 +36,6 @@ function consumeRequestBody(req: FastifyRequest) {
     req.raw.once("error", finish);
     req.raw.resume();
   });
-}
-
-function activeScenario(api: LogicalApi) {
-  return api.scenarios.find((s) => s.id === api.activeScenarioId);
-}
-
-type RankedApisCache = {
-  inputs: LogicalApi[];
-  priorities: number[];
-  ranked: LogicalApi[];
-};
-const rankedApisCache = new WeakMap<LogicalApi[], RankedApisCache>();
-
-function rankedApis(apis: LogicalApi[]) {
-  const cached = rankedApisCache.get(apis);
-  if (
-    cached &&
-    cached.inputs.length === apis.length &&
-    cached.inputs.every((api, index) => api === apis[index] && api.priority === cached.priorities[index])
-  ) return cached.ranked;
-
-  const ranked = apis
-    .map((api, index) => ({ api, index }))
-    .sort((left, right) => right.api.priority - left.api.priority || left.index - right.index)
-    .map(({ api }) => api);
-  rankedApisCache.set(apis, { inputs: apis.slice(), priorities: apis.map((api) => api.priority), ranked });
-  return ranked;
-}
-
-function selectMatchingApi(
-  apis: LogicalApi[] | undefined,
-  context: Parameters<typeof matchApi>[1],
-) {
-  if (!apis) return undefined;
-  for (const api of rankedApis(apis)) {
-    if (api.enabled === false) continue;
-    const scene = activeScenario(api);
-    if (scene && matchApi(api, context)) return { api, scene };
-  }
-  return undefined;
 }
 
 function targetUrl(requestUrl: string, baseUrl: string) {
@@ -195,7 +154,7 @@ export async function createProxy(
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const selected = selectMatchingApi(p?.apis, { method: req.method, url, headers: req.headers });
   const api = selected?.api;
-  const scene = selected?.scene;
+  const scene = selected?.scenario;
   const record = (
     outcome: RequestLogOutcome,
     status: number,

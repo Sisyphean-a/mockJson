@@ -84,3 +84,27 @@ export type RequestLogsResponse = {
 export type RequestLogsDeltaResponse = RequestLogsResponse & {
   reset: boolean;
 };
+
+/**
+ * Runtime request descriptor sent by the browser extension.
+ * Only metadata visible to page JavaScript is included; the browser performs
+ * the real request itself when the resolver returns `pass`.
+ */
+export type ExtensionRuntimeRequest = {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+};
+
+export type ExtensionRuntimeResponse =
+  | {
+      action: "mock";
+      status: number;
+      delayMs: number;
+      body: string;
+      headers: Record<string, string>;
+    }
+  | {
+      action: "pass";
+      reason?: "unmatched" | "disabled" | "invalid-request" | "unsupported-status";
+    };

@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Mock Console Browser Mock",
+  "version": "0.1.0",
+  "description": "Use Mock Console scenarios for page fetch and asynchronous XMLHttpRequest calls.",
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "host_permissions": [
+    "http://127.0.0.1:22333/*",
+    "http://localhost:22333/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content-main.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content-bridge.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "ISOLATED"
+    }
+  ]
+}

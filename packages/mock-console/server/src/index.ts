@@ -8,12 +8,13 @@ import { JsonFileRepository } from "./storage.js";
 import { resolveStateFile } from "./state-path.js";
 import { MockConfigService } from "./config-service.js";
 import { registerAdminRoutes } from "./admin-routes.js";
+import { registerExtensionRoutes } from "./extension-routes.js";
 import { RequestLogStore } from "./request-logs.js";
 
 const port = Number(process.env.PORT || 22333);
 const host = process.env.HOST || "0.0.0.0";
-const projectRoot = resolve(import.meta.dirname, "../../..");
-const distRoot = resolve(projectRoot, "dist");
+const packageRoot = resolve(import.meta.dirname, "../..");
+const distRoot = resolve(packageRoot, "dist");
 const repository = new JsonFileRepository(resolveStateFile());
 const config = new MockConfigService(repository);
 const requestLogs = new RequestLogStore();
@@ -22,6 +23,7 @@ const loopback = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 function requestChannel(req: FastifyRequest) {
   if (req.url.startsWith("/__mock_admin/")) return "admin";
+  if (req.url.startsWith("/__mock_extension/")) return "extension";
   if (req.url.startsWith("/__mock_ui/") || (req.url === "/" && String(req.headers.accept || "").includes("text/html")))
     return "ui";
   return "proxy";
@@ -41,6 +43,8 @@ await app.register(cors, {
 app.addHook("onRequest", async (req, reply) => {
   if (req.url.startsWith("/__mock_admin/") && !loopback.has(req.ip))
     return reply.code(403).send({ error: "管理接口只允许本机访问" });
+  if (req.url.startsWith("/__mock_extension/") && !loopback.has(req.ip))
+    return reply.code(403).send({ error: "扩展接口只允许本机访问" });
   const channel = requestChannel(req);
   app.log.info(
     {
@@ -61,9 +65,11 @@ if (hasDist)
   await app.register(staticPlugin, { root: distRoot, prefix: "/__mock_ui/", index: false });
 
 registerAdminRoutes(app, config, requestLogs);
+registerExtensionRoutes(app, config);
 
 app.setNotFoundHandler((req, reply) => {
   if (req.url.startsWith("/__mock_admin/")) return reply.code(404).send({ error: "管理接口不存在" });
+  if (req.url.startsWith("/__mock_extension/")) return reply.code(404).send({ error: "扩展接口不存在" });
   return createProxy(req, reply, config.getState(), requestLogs);
 });
 
