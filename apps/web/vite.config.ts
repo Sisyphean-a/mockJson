@@ -1,9 +1,16 @@
 import { defineConfig } from "vite";
+import { codeInspectorPlugin } from "code-inspector-plugin";
 import vue from "@vitejs/plugin-vue";
 
 export default defineConfig(({ command }) => ({
   base: command === "build" ? "/__mock_ui/" : "/",
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    codeInspectorPlugin({
+      bundler: "vite",
+      dev: command === "serve",
+    }),
+  ],
   root: "apps/web",
   server: {
     host: "0.0.0.0",

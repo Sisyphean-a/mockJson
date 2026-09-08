@@ -84,6 +84,32 @@ const indentGuidePlugin = ViewPlugin.fromClass(class {
   decorations: (value) => value.decorations,
 });
 
+const selectionTextDecoration = Decoration.mark({
+  class: "cm-json-selection",
+});
+
+function buildSelectionTextDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const range of view.state.selection.ranges) {
+    if (!range.empty) builder.add(range.from, range.to, selectionTextDecoration);
+  }
+  return builder.finish();
+}
+
+const selectionTextPlugin = ViewPlugin.fromClass(class {
+  decorations: DecorationSet;
+
+  constructor(view: EditorView) {
+    this.decorations = buildSelectionTextDecorations(view);
+  }
+
+  update(update: { docChanged: boolean; selectionSet: boolean; view: EditorView }) {
+    if (update.docChanged || update.selectionSet) this.decorations = buildSelectionTextDecorations(update.view);
+  }
+}, {
+  decorations: (value) => value.decorations,
+});
+
 function isValidJson(value: string) {
   try {
     JSON.parse(value);
@@ -114,9 +140,45 @@ function scheduleJsonValidation(value: string) {
   }, jsonValidationDebounceMs);
 }
 
+function addSearchControlHints(view: EditorView) {
+  const panel = view.dom.querySelector<HTMLElement>(".cm-panel.cm-search");
+  if (!panel || panel.dataset.searchHints === "true") return;
+
+  const hints: Array<[string, string]> = [
+    ['input[name="search"]', "查找"],
+    ['input[name="replace"]', "替换"],
+    ['button[name="next"]', "下一个匹配项（Enter）"],
+    ['button[name="prev"]', "上一个匹配项（Shift+Enter）"],
+    ['button[name="select"]', "选择全部匹配项"],
+    ['button[name="replace"]', "替换当前匹配项（Enter）"],
+    ['button[name="replaceAll"]', "全部替换"],
+    ['button[name="close"]', "关闭（Escape）"],
+  ];
+
+  for (const [selector, title] of hints) {
+    panel.querySelector<HTMLElement>(selector)?.setAttribute("title", title);
+  }
+
+  [
+    "区分大小写（Alt+C）",
+    "正则表达式（Alt+R）",
+    "全词匹配（Alt+W）",
+  ].forEach((title, index) => {
+    panel.querySelectorAll<HTMLElement>("label")[index]?.setAttribute("title", title);
+  });
+
+  panel.dataset.searchHints = "true";
+}
+
+function scheduleSearchControlHints(view: EditorView) {
+  if (!view.dom.querySelector(".cm-panel.cm-search")) return;
+  requestAnimationFrame(() => addSearchControlHints(view));
+}
+
 function openSearch() {
   if (!editorView.value) return;
   openSearchPanel(editorView.value);
+  scheduleSearchControlHints(editorView.value);
 }
 
 function collapseAll() {
@@ -168,7 +230,21 @@ onMounted(() => {
         json(),
         indentUnit.of("    "),
         EditorState.tabSize.of(jsonIndentSize),
+        EditorState.phrases.of({
+          Find: "查找",
+          Replace: "替换",
+          next: "下一个",
+          previous: "上一个",
+          all: "全选",
+          "match case": "区分大小写",
+          regexp: "正则表达式",
+          "by word": "全词匹配",
+          replace: "替换",
+          "replace all": "全部替换",
+          close: "关闭",
+        }),
         indentGuidePlugin,
+        selectionTextPlugin,
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({
           "aria-label": "JSON 响应编辑器",
@@ -223,8 +299,8 @@ onMounted(() => {
           "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
             backgroundColor: "var(--accent) !important",
           },
-          ".cm-line ::selection, .cm-line::selection": {
-            backgroundColor: "transparent !important",
+          ".cm-json-selection, .cm-json-selection *": {
+            backgroundColor: "var(--accent)",
             color: "#ffffff !important",
           },
           ".cm-selectionMatch, .cm-selectionMatch *": {
@@ -272,11 +348,13 @@ onMounted(() => {
             key: "Mod-f",
             run: (target) => {
               openSearchPanel(target);
+              scheduleSearchControlHints(target);
               return true;
             },
           },
         ])),
         EditorView.updateListener.of((update) => {
+          scheduleSearchControlHints(update.view);
           if (update.docChanged) {
             const value = update.state.doc.toString();
             updateCursorStatus(update.view);
@@ -459,7 +537,7 @@ onBeforeUnmount(() => {
 .json-editor-surface {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 :deep(.cm-editor) {
@@ -474,32 +552,274 @@ onBeforeUnmount(() => {
   border-left-color: #246bfd;
 }
 
-:deep(.cm-search) {
-  padding: 6px 8px;
+/* Rule: 搜索面板保持浮层形态，避免打开 Ctrl+F 后把编辑区域整体向下推。 */
+:deep(.cm-panels-bottom) {
+  position: absolute !important;
+  top: 10px !important;
+  right: 10px !important;
+  bottom: auto !important;
+  left: auto !important;
+  z-index: 20;
+  width: min(500px, calc(100% - 20px));
+  border: 0 !important;
+  background: transparent !important;
+  pointer-events: none;
 }
 
-:deep(.cm-search input) {
-  min-height: 26px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+:deep(.cm-panels-bottom .cm-panel) {
+  pointer-events: auto;
+  overflow: visible;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
   background: var(--surface);
-  color: var(--ink);
-  padding: 3px 6px;
+  box-shadow: var(--shadow-float);
 }
 
-:deep(.cm-search button) {
-  min-height: 26px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+:deep(.cm-panel.cm-search) {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(7, 28px);
+  grid-template-rows: 30px 30px;
+  gap: 6px;
+  padding: 8px 10px;
   background: var(--surface);
   color: var(--ink);
-  padding: 3px 7px;
+}
+
+:deep(.cm-panel.cm-search > .cm-textfield) {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--ink-strong);
+  padding: 4px 8px;
+  font: 12px/1.2 var(--font-sans);
+  outline: 0;
+}
+
+:deep(.cm-panel.cm-search > .cm-textfield:focus) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+:deep(.cm-panel.cm-search > .cm-textfield[name="search"]) {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+:deep(.cm-panel.cm-search > .cm-textfield[name="replace"]) {
+  grid-column: 1 / 5;
+  grid-row: 2;
+}
+
+:deep(.cm-panel.cm-search > .cm-button) {
+  box-sizing: border-box;
+  width: 28px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  position: relative;
+  background: transparent;
+  color: var(--ink-muted);
   cursor: pointer;
+  font-size: 0;
+  line-height: 1;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
 }
 
-:deep(.cm-search button:hover) {
+:deep(.cm-panel.cm-search > .cm-button:hover) {
+  box-shadow: 0 1px 3px rgb(33 52 79 / 12%);
   border-color: var(--accent-line);
-  color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+:deep(.cm-panel.cm-search > .cm-button:focus-visible),
+:deep(.cm-panel.cm-search > label:focus-within) {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+
+:deep(.cm-panel.cm-search > button[name="next"]) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+:deep(.cm-panel.cm-search > button[name="next"]::before) {
+  content: "↓";
+  font-size: 19px;
+}
+
+:deep(.cm-panel.cm-search > button[name="prev"]) {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+:deep(.cm-panel.cm-search > button[name="prev"]::before) {
+  content: "↑";
+  font-size: 19px;
+}
+
+:deep(.cm-panel.cm-search > button[name="select"]) {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+:deep(.cm-panel.cm-search > button[name="select"]::before) {
+  content: "☷";
+  font-size: 18px;
+}
+
+:deep(.cm-panel.cm-search > label) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-height: 30px;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-size: 0;
+  line-height: 1;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
+}
+
+:deep(.cm-panel.cm-search > label:hover) {
+  box-shadow: 0 1px 3px rgb(33 52 79 / 12%);
+}
+
+:deep(.cm-panel.cm-search > label input[type="checkbox"]) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  opacity: 0;
+}
+
+:deep(.cm-panel.cm-search > label::before) {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+:deep(.cm-panel.cm-search > label:nth-of-type(1)::before) {
+  content: "Aa";
+}
+
+:deep(.cm-panel.cm-search > label:nth-of-type(2)::before) {
+  content: ".*";
+}
+
+:deep(.cm-panel.cm-search > label:nth-of-type(3)::before) {
+  content: "ab";
+}
+
+:deep(.cm-panel.cm-search > label:hover),
+:deep(.cm-panel.cm-search > label:has(input:checked)) {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+:deep(.cm-panel.cm-search > label:nth-of-type(1)) {
+  grid-column: 5;
+  grid-row: 1;
+}
+
+:deep(.cm-panel.cm-search > label:nth-of-type(2)) {
+  grid-column: 6;
+  grid-row: 1;
+}
+
+:deep(.cm-panel.cm-search > label:nth-of-type(3)) {
+  grid-column: 7;
+  grid-row: 1;
+}
+
+:deep(.cm-panel.cm-search > button[name="replace"]) {
+  grid-column: 5;
+  grid-row: 2;
+}
+
+:deep(.cm-panel.cm-search > button[name="replace"]::before) {
+  content: "↵";
+  font-size: 18px;
+}
+
+:deep(.cm-panel.cm-search > button[name="replaceAll"]) {
+  grid-column: 6;
+  grid-row: 2;
+}
+
+:deep(.cm-panel.cm-search > button[name="replaceAll"]::before) {
+  content: "⇄";
+  font-size: 18px;
+}
+
+:deep(.cm-panel.cm-search > br) {
+  display: none;
+}
+
+:deep(.cm-panel.cm-search > button[name="close"]) {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  min-height: 30px;
+  font-size: 0 !important;
+}
+
+:deep(.cm-panel.cm-search > button[name="close"]::before) {
+  content: "×";
+  font-size: 24px;
+  font-weight: 300;
+}
+
+:deep(.cm-panel.cm-search > .cm-button[title]::after),
+:deep(.cm-panel.cm-search > label[title]::after) {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 40;
+  max-width: 220px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--ink-strong);
+  box-shadow: var(--shadow-float);
+  color: var(--surface);
+  content: attr(title);
+  font: 11px/1.3 var(--font-sans);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+  visibility: hidden;
+  white-space: nowrap;
+}
+
+:deep(.cm-panel.cm-search > .cm-button[title]:hover::after),
+:deep(.cm-panel.cm-search > .cm-button[title]:focus-visible::after),
+:deep(.cm-panel.cm-search > label[title]:hover::after),
+:deep(.cm-panel.cm-search > label[title]:focus-within::after) {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  visibility: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :deep(.cm-panel.cm-search > .cm-button),
+  :deep(.cm-panel.cm-search > label),
+  :deep(.cm-panel.cm-search > .cm-button[title]::after),
+  :deep(.cm-panel.cm-search > label[title]::after) {
+    transition: none;
+  }
 }
 
 @media (max-width: 760px) {
