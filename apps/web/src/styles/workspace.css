@@ -213,14 +213,6 @@
   font-size: 16px;
 }
 
-.interface-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
 .text-action,
 .icon-action {
   border-radius: var(--radius-sm);
@@ -285,16 +277,16 @@
   transform: translateX(14px);
 }
 
-.match-toolbar {
-  min-height: 42px;
-  padding: 0 14px 8px;
+.match-controls {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--control-gap);
 }
 
-.match-toolbar .add-rule,
+.match-controls .add-rule,
 .section-head .secondary {
   min-height: var(--control-height-sm);
   padding: 5px 9px;

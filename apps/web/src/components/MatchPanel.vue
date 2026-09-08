@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ConsoleController } from "../console-controller";
 
-type MatchPanelController = Pick<ConsoleController, "api" | "openApiEdit" | "deleteApi" | "updateLogic" | "addingRule" | "ruleSource" | "changeSource" | "ruleField" | "urlFields" | "methodFields" | "ruleOperator" | "operators" | "ruleValue" | "ruleHint" | "addRule" | "removeRule">;
+type MatchPanelController = Pick<ConsoleController, "api" | "updateLogic" | "addingRule" | "ruleSource" | "changeSource" | "ruleField" | "urlFields" | "methodFields" | "ruleOperator" | "operators" | "ruleValue" | "ruleHint" | "addRule" | "removeRule">;
 const { controller: c } = defineProps<{ controller: MatchPanelController }>();
 </script>
 
@@ -12,20 +12,15 @@ const { controller: c } = defineProps<{ controller: MatchPanelController }>();
         <h1 id="match-title">匹配条件</h1>
         <span class="panel-context">{{ c.api.value.name }}</span>
       </div>
-      <div class="interface-actions">
-        <button class="text-action" aria-label="编辑接口" @click="c.openApiEdit">编辑</button>
-        <button class="text-action danger" aria-label="删除接口" @click="c.deleteApi">删除</button>
+      <div class="match-controls">
+        <div class="logic-control">
+          <label :for="`logic-select-${c.api.value.id}`">匹配方式</label>
+          <select :id="`logic-select-${c.api.value.id}`" class="logic-select" :value="c.api.value.matchMode" @change="c.updateLogic(($event.target as HTMLSelectElement).value as 'AND' | 'OR')">
+            <option value="AND">同时满足（AND）</option><option value="OR">满足任一（OR）</option>
+          </select>
+        </div>
+        <button class="add-rule" @click="c.addingRule.value = !c.addingRule.value">＋ 添加条件</button>
       </div>
-    </div>
-
-    <div class="match-toolbar">
-      <div class="logic-control">
-        <label :for="`logic-select-${c.api.value.id}`">匹配方式</label>
-        <select :id="`logic-select-${c.api.value.id}`" class="logic-select" :value="c.api.value.matchMode" @change="c.updateLogic(($event.target as HTMLSelectElement).value as 'AND' | 'OR')">
-          <option value="AND">同时满足（AND）</option><option value="OR">满足任一（OR）</option>
-        </select>
-      </div>
-      <button class="add-rule" @click="c.addingRule.value = !c.addingRule.value">＋ 添加条件</button>
     </div>
 
     <div v-if="c.addingRule.value" class="rule-form">

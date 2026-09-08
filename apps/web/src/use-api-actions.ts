@@ -46,9 +46,12 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
   }
 
   async function deleteApi() {
-    const current = model.api.value;
-    if (!current || !window.confirm(`确定删除接口“${current.name}”及其场景吗？删除后不可恢复。`)) return;
-    try { await model.runAdminRequest(() => client.deleteApi(current.id)); await model.load(); notify("接口已删除"); }
+    await deleteApiTarget(model.api.value);
+  }
+
+  async function deleteApiTarget(api: Api | undefined) {
+    if (!api || !window.confirm(`确定删除接口“${api.name}”及其场景吗？删除后不可恢复。`)) return;
+    try { await model.runAdminRequest(() => client.deleteApi(api.id)); await model.load(); notify("接口已删除"); }
     catch (error) { notify(message(error)); }
   }
 
@@ -101,7 +104,7 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     forms.ruleField.value = forms.ruleSource.value === "header" ? "apiName" : forms.ruleSource.value === "url" ? "path" : "method";
   }
 
-  return { openApiCreate, openApiEdit, createApi, saveApi, deleteApi, toggle, addRule, removeRule, updateLogic, changeSource };
+  return { openApiCreate, openApiEdit, createApi, saveApi, deleteApi, deleteApiTarget, toggle, addRule, removeRule, updateLogic, changeSource };
 }
 
 function message(error: unknown) {

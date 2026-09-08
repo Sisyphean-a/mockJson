@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import type { ConsoleController } from "../console-controller";
+import type { Scene } from "../mock-admin-client";
+import type { OpenContextMenu } from "../context-menu";
 import JsonEditor from "./JsonEditor.vue";
 
 type ScenarioPanelController = Pick<ConsoleController, "api" | "openSceneCreate" | "scene" | "activeSceneId" | "toggleScene" | "selectScene" | "openSceneEdit" | "duplicateScene" | "deleteScene" | "draft" | "draftDirty" | "jsonError" | "saveJson">;
-const { controller: c } = defineProps<{ controller: ScenarioPanelController }>();
+const { controller: c, openContextMenu } = defineProps<{ controller: ScenarioPanelController; openContextMenu: OpenContextMenu }>();
+
+function openSceneContextFromKeyboard(event: KeyboardEvent, item: Scene) {
+  if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return;
+  event.preventDefault();
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  openContextMenu(new MouseEvent("contextmenu", { clientX: rect.left + 16, clientY: rect.bottom }), { type: "scene", item });
+}
 </script>
 
 <template>
@@ -14,10 +23,10 @@ const { controller: c } = defineProps<{ controller: ScenarioPanelController }>()
           <h2 id="scenario-title">响应场景</h2>
           <button class="secondary" aria-label="新建场景" @click="c.openSceneCreate">＋ 新建</button>
         </div>
-        <div class="scene-list-items" role="list">
-          <div v-for="item in c.api.value.scenarios" :key="item.id" :class="['scene-row', { selected: item.id === c.scene.value?.id }]" role="listitem">
+        <div class="scene-list-items" role="list" @contextmenu.prevent="openContextMenu($event, { type: 'scene-area' })">
+          <div v-for="item in c.api.value.scenarios" :key="item.id" :class="['scene-row', { selected: item.id === c.scene.value?.id }]" role="listitem" @contextmenu.stop.prevent="openContextMenu($event, { type: 'scene', item })" @keydown="openSceneContextFromKeyboard($event, item)">
             <button :class="['toggle', 'compact-toggle', 'scene-toggle', { checked: item.id === c.activeSceneId.value }]" :aria-label="item.id === c.activeSceneId.value ? `停用场景 ${item.name}` : `启用场景 ${item.name}`" :aria-pressed="item.id === c.activeSceneId.value" @click="c.toggleScene(item)"><i aria-hidden="true"></i></button>
-            <button type="button" class="scene-select" :aria-current="item.id === c.scene.value?.id ? 'true' : undefined" @click="c.selectScene(item)">
+            <button type="button" class="scene-select" aria-haspopup="menu" :aria-current="item.id === c.scene.value?.id ? 'true' : undefined" @click="c.selectScene(item)">
               <span :class="['scene-dot', item.color || 'blue']" aria-hidden="true"></span>
               <span class="scene-name">{{ item.name }}</span>
               <span v-if="item.id === c.activeSceneId.value" class="active-badge">当前启用</span>
@@ -60,7 +69,7 @@ const { controller: c } = defineProps<{ controller: ScenarioPanelController }>()
         <h2 id="scenario-title">响应场景</h2>
         <button class="secondary" aria-label="新建场景" @click="c.openSceneCreate">＋ 新建</button>
       </div>
-      <div class="empty-scenes">暂无场景，创建一个完整 JSON 响应开始使用</div>
+      <div class="empty-scenes" @contextmenu.prevent="openContextMenu($event, { type: 'scene-area' })">暂无场景，创建一个完整 JSON 响应开始使用</div>
     </div>
   </section>
 </template>

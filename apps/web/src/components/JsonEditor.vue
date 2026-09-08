@@ -194,6 +194,10 @@ onMounted(() => {
             padding: "12px 0",
             fontFamily: "var(--font-mono)",
           },
+          // Rule: 全局字体重置会作用到 CodeMirror 的标记 span，代码文本必须统一使用等宽字体。
+          ".cm-line, .cm-line *": {
+            fontFamily: "var(--font-mono)",
+          },
           ".cm-line": {
             padding: "0 16px 0 8px",
             fontFamily: "var(--font-mono)",
@@ -214,6 +218,18 @@ onMounted(() => {
           },
           ".cm-activeLine": {
             backgroundColor: "#f1f5ff",
+          },
+          // Rule: 自绘选区和匹配高亮都必须保持明显的前景/背景对比。
+          "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+            backgroundColor: "var(--accent) !important",
+          },
+          ".cm-line ::selection, .cm-line::selection": {
+            backgroundColor: "transparent !important",
+            color: "#ffffff !important",
+          },
+          ".cm-selectionMatch, .cm-selectionMatch *": {
+            backgroundColor: "#d7e3ff",
+            color: "var(--ink-strong)",
           },
           ".cm-activeLineGutter": {
             backgroundColor: "var(--accent-soft)",
