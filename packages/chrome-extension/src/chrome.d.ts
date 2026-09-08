@@ -11,4 +11,13 @@ declare const chrome: {
       ): void;
     };
   };
+  tabs: {
+    query(queryInfo: { active?: boolean; currentWindow?: boolean }): Promise<Array<{ id?: number; url?: string }>>;
+  };
+  storage: {
+    session: {
+      get(keys: string[]): Promise<Record<string, unknown>>;
+      set(items: Record<string, unknown>): Promise<void>;
+    };
+  };
 };

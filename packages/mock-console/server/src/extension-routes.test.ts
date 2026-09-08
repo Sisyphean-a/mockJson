@@ -39,6 +39,14 @@ async function createApp() {
   return app;
 }
 
+test("扩展状态接口只返回连接和 Package 状态", async () => {
+  const app = await createApp();
+  const response = await app.inject({ method: "GET", url: "/__mock_extension/status" });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json(), { online: true, hasPackage: true });
+  await app.close();
+});
+
 test("扩展判定接口返回 Mock 决定", async () => {
   const app = await createApp();
   const response = await app.inject({

@@ -10,6 +10,11 @@ const MAX_HEADER_VALUE_LENGTH = 8 * 1024;
 const MAX_HEADERS = 128;
 
 export function registerExtensionRoutes(app: FastifyInstance, service: MockConfigService) {
+  app.get("/__mock_extension/status", async () => ({
+    online: true,
+    hasPackage: service.getState().currentPackageId !== null,
+  }));
+
   app.post("/__mock_extension/resolve", async (req, reply) => {
     try {
       const request = parseRequest(req);

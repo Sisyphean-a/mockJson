@@ -29,15 +29,16 @@
 
 ## Chrome Extension 领域规则
 
-- 扩展只保存瞬时的请求判定结果，不保存 Package、Logical API、Match Rule 或 Scenario；所有配置和匹配规则仍以 Mock Console 为唯一来源。
+- 扩展只保存瞬时的请求判定结果和 Popup 的启用状态，不保存 Package、Logical API、Match Rule 或 Scenario；所有配置和匹配规则仍以 Mock Console 为唯一来源。全局开关和当前标签页开关保存在 `chrome.storage.session`，浏览器重启后默认启用。
 - 页面 MAIN world 包装 `fetch` 和异步 `XMLHttpRequest`，通过隔离世界 Content Script 和 Service Worker 请求本机 `POST /__mock_extension/resolve`；页面不直接访问管理 API。
 - resolver 接收绝对 `http` / `https` URL、Method 和页面脚本可观察的 Header。命中当前 Package 中启用且有 active scenario 的接口时返回状态码、延迟、JSON body 和 `content-type`；未命中或服务不可用时扩展调用原生浏览器 API继续真实请求。
+- Popup 提供全局 Mock、当前标签页 Mock 和 Mock Console 连接状态三个可见控制面；全局暂停时 Service Worker 不再请求 resolver，当前标签页暂停时该标签页的请求直接放行。
 - 扩展模式不使用 `targetBaseUrl`，因为未命中请求必须由浏览器以原始 URL、Cookie、凭据和 CORS 语义直接发出；当前 Package 仍是全局选择。
 - 扩展 resolver 只允许 loopback 访问，不承担真实请求代理，也不记录真实放行请求的最终响应；现有 Reqable / Proxy 路径和其日志语义保持不变。
 - 扩展 MVP 支持 JSON、200–599 状态码和异步请求；1xx 场景、同步 XHR、导航/资源加载、Worker / Service Worker 请求、WebSocket、流式或二进制 Mock 不由扩展接管。浏览器自动补充且页面不可观察的 Header 不保证可用于扩展匹配。
 
 ## 运行规则
 
-- 正式运行时 Mock Console 服务使用 `22333`，开发热更新页面使用 `22334`；扩展默认连接 `127.0.0.1:22333`。
+- 正式运行时 Mock Console 服务使用 `22333`，开发热更新页面使用 `22334`；扩展默认连接 `127.0.0.1:22333`，Popup 通过 loopback status 接口显示服务是否在线和是否存在当前 Package。
 - npm workspace 目录为 `packages/mock-console` 和 `packages/chrome-extension`。控制台构建产物位于 `packages/mock-console/dist`，扩展构建产物位于 `packages/chrome-extension/dist`。
 - 代表性代码锚点：`packages/mock-console/shared/types.ts`、`packages/mock-console/server/src/validation.ts`、`packages/mock-console/server/src/matcher.ts`、`packages/mock-console/server/src/runtime-resolver.ts`、`packages/mock-console/server/src/proxy.ts`、`packages/mock-console/server/src/extension-routes.ts`、`packages/chrome-extension/src/content-main.ts`。

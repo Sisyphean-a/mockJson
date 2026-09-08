@@ -3,6 +3,11 @@
   "name": "Mock Console Browser Mock",
   "version": "0.1.0",
   "description": "Use Mock Console scenarios for page fetch and asynchronous XMLHttpRequest calls.",
+  "permissions": ["storage", "activeTab"],
+  "action": {
+    "default_title": "Mock Console Browser Mock",
+    "default_popup": "popup.html"
+  },
   "background": {
     "service_worker": "service-worker.js",
     "type": "module"

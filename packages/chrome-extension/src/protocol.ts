@@ -5,8 +5,10 @@ import type {
 
 export const CHANNEL = "__mock_console_extension_v1";
 export const RESOLVER_PATH = "/__mock_extension/resolve";
+export const STATUS_PATH = "/__mock_extension/status";
 export const DEFAULT_RUNTIME_URL = "http://127.0.0.1:22333";
 export const RESOLVE_TIMEOUT_MS = 200;
+export const POPUP_CHANNEL = "__mock_console_popup_v1";
 
 export type ResolveMessage = {
   channel: typeof CHANNEL;
@@ -21,6 +23,26 @@ export type ResolveResultMessage = {
   id: string;
   result: ExtensionRuntimeResponse;
 };
+
+export type PopupState = {
+  serverOnline: boolean;
+  hasPackage: boolean;
+  supportedPage: boolean;
+  tabId: number | null;
+  host: string | null;
+  globalEnabled: boolean;
+  tabEnabled: boolean;
+  effectiveEnabled: boolean;
+};
+
+export type PopupMessage =
+  | { channel: typeof POPUP_CHANNEL; type: "get-state" }
+  | { channel: typeof POPUP_CHANNEL; type: "set-global"; enabled: boolean }
+  | { channel: typeof POPUP_CHANNEL; type: "set-tab"; tabId: number; enabled: boolean };
+
+export type PopupResponse =
+  | { ok: true; state: PopupState }
+  | { ok: false; error: string };
 
 export function isResolveResultMessage(value: unknown): value is ResolveResultMessage {
   if (!isRecord(value)) return false;

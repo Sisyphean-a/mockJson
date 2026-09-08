@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mock Console</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="header">
+        <div>
+          <p class="eyebrow">MOCK CONSOLE</p>
+          <h1>浏览器 Mock</h1>
+        </div>
+        <span id="server-dot" class="status-dot" aria-hidden="true"></span>
+      </header>
+
+      <section class="status-card" aria-live="polite">
+        <strong id="server-status">正在检查 Mock Console…</strong>
+        <span id="server-detail">连接本机 22333</span>
+      </section>
+
+      <section class="switches" aria-label="Mock 开关">
+        <label class="switch-row">
+          <span>
+            <strong>全局 Mock</strong>
+            <small>控制所有支持的网页</small>
+          </span>
+          <input id="global-toggle" type="checkbox" />
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+
+        <label class="switch-row">
+          <span>
+            <strong>当前标签页</strong>
+            <small id="tab-detail">正在读取当前页面…</small>
+          </span>
+          <input id="tab-toggle" type="checkbox" />
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+      </section>
+
+      <p id="hint" class="hint">规则和场景仍由 Mock Console 管理。</p>
+      <button id="refresh" class="refresh" type="button">刷新状态</button>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

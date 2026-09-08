@@ -23,13 +23,14 @@
 | package:mock-console/web | Vue 3 管理页面、管理请求、配置状态、动作和视图组件 | `packages/mock-console/web/src/` |
 | package:chrome-extension/main | MAIN world 包装页面 fetch 与异步 XHR；命中时构造 JSON 响应，未命中调用原生 API | `packages/chrome-extension/src/content-main.ts` |
 | package:chrome-extension/bridge | 隔离世界消息桥，转发页面与扩展 Service Worker 的判定消息 | `packages/chrome-extension/src/content-bridge.ts` |
-| package:chrome-extension/worker | 通过扩展 host permission 请求本机 resolver；失败时返回放行决定 | `packages/chrome-extension/src/service-worker.ts` |
+| package:chrome-extension/worker | 通过扩展 host permission 请求本机 resolver；失败时返回放行决定，并维护 Popup 的全局/当前标签页开关和连接状态 | `packages/chrome-extension/src/service-worker.ts` |
+| package:chrome-extension/popup | 展示连接状态，切换全局 Mock 或当前标签页 Mock；只操作扩展会话状态，不读取或保存 Mock 规则 | `packages/chrome-extension/src/popup.ts` `packages/chrome-extension/public/popup.html` |
 
 ## 运行与数据
 
 - `npm run dev` 同时启动 Mock Console 服务（22333）与管理页面（22334）；`npm run build` 同时构建 `packages/mock-console/dist` 和 `packages/chrome-extension/dist`；`npm start` 运行 Mock Console。
 - Mock Console 正式页面、管理 API、Reqable Mock / Proxy 仍由 `http://127.0.0.1:22333` 提供。配置文件默认保存在当前用户数据目录，仓库只保留脱敏示例。
 - Chrome 扩展默认只连接 `http://127.0.0.1:22333/__mock_extension/resolve`。判定接口只允许 loopback，命中返回一次性 `{ action: "mock", status, delayMs, body, headers }`，未命中返回 `{ action: "pass" }`，不会使用 `targetBaseUrl` 代理真实请求。
-- 扩展不保存 Package、Logical API、Match Rule 或 Scenario；场景和规则仍由 Mock Console 单一拥有。扩展模式的真实请求由页面原生 fetch / XHR 发出，因此现有 Proxy 日志不会自动获得真实放行请求的最终响应信息。
+- 扩展不保存 Package、Logical API、Match Rule 或 Scenario；场景和规则仍由 Mock Console 单一拥有。Popup 的全局/当前标签页开关只保存在 `chrome.storage.session`，浏览器重启后默认启用。扩展模式的真实请求由页面原生 fetch / XHR 发出，因此现有 Proxy 日志不会自动获得真实放行请求的最终响应信息。
 - 扩展当前覆盖页面 `fetch` 和异步 `XMLHttpRequest`，不覆盖导航、资源加载、WebSocket、Worker / Service Worker 请求、同步 XHR、流式或二进制 Mock。扩展只能传递页面脚本可观察到的请求 Header。
 - 管理 API 与扩展 resolver 都受本机访问边界保护；扩展通过 Service Worker 访问本机，页面不直接访问管理 API。Mock Console 页面自身的 22333/22334 页面不会注入扩展拦截器。

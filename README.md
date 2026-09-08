@@ -58,6 +58,14 @@ npm run build:extension
 packages/chrome-extension/dist
 ```
 
+点击浏览器工具栏中的扩展图标可以打开 Popup：
+
+- **全局 Mock**：暂停或恢复所有支持的网页。
+- **当前标签页**：只暂停或恢复当前 HTTP/HTTPS 标签页。
+- **连接状态**：显示 Mock Console 是否在线，以及是否已有当前 Package。
+
+这些开关只保存在扩展的临时会话状态中，不会保存 Mock 规则或场景；浏览器重启后默认恢复启用。切换后重新发起请求即可生效，已经发出的请求不会被中途改变。
+
 扩展默认连接本机 `http://127.0.0.1:22333`。页面中的 `fetch` 和异步 `XMLHttpRequest` 会把 URL、Method 和页面可观察的 Header 交给 Mock Console 判定：
 
 - 命中启用接口和当前场景：返回场景中的 JSON、状态码和延迟。
@@ -72,7 +80,7 @@ packages/chrome-extension/dist
 - 任意 Header（名称大小写不敏感）、URL 与 HTTP Method 匹配
 - 优先级命中、场景即时切换、JSON/状态码/延迟校验
 - Reqable / 本地 Proxy 未命中或关闭 Mock 时透明转发到 `targetBaseUrl`
-- Chrome 扩展对页面 `fetch` / 异步 XHR 提供独立的 Mock 判定通道
+- Chrome 扩展对页面 `fetch` / 异步 XHR 提供独立的 Mock 判定通道，并通过 Popup 控制全局或当前标签页启停
 - Vue 3 + TypeScript 页面，场景区和 JSON 编辑器为主要操作区域
 
 Reqable 等客户端只需将请求转发至 `22333`；本项目不做 HTTPS MITM。
