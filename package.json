@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": [
     "packages/mock-console",
-    "packages/chrome-extension"
+    "packages/chrome-extension",
+    "packages/extension-contract"
   ],
   "scripts": {
     "dev": "concurrently \"tsx packages/mock-console/server/src/index.ts\" \"vite --config packages/mock-console/web/vite.config.ts\"",

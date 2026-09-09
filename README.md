@@ -2,10 +2,11 @@
 
 本地 Mock / Proxy 控制台：用逻辑接口、匹配条件和完整响应场景，快速切换不同请求的返回结果。
 
-仓库现在包含两个 npm workspace：
+仓库现在包含两个产品 npm workspace 和一个共享契约 workspace：
 
-- `packages/mock-console`：Fastify Mock / Proxy 服务、Vue 管理页面和共享领域契约。
+- `packages/mock-console`：Fastify Mock / Proxy 服务和 Vue 管理页面，拥有 Mock 配置、匹配和运行日志。
 - `packages/chrome-extension`：Chrome Manifest V3 扩展，不保存 Mock 配置，只负责页面请求桥接。
+- `packages/extension-contract`：扩展与本机 resolver 共用的 TypeScript 线协议类型，不包含运行时逻辑。
 
 ## 启动 Mock Console
 
@@ -71,9 +72,9 @@ packages/chrome-extension/dist
 扩展默认连接本机 `http://127.0.0.1:22333`。只有请求目标域名命中白名单时，页面中的 `fetch` 和异步 `XMLHttpRequest` 才会把 URL、Method 和页面可观察的 Header 交给 Mock Console 判定：
 
 - 命中启用接口和当前场景：返回场景中的 JSON、状态码和延迟。
-- 未命中、接口未启用、Mock Console 未启动或判定超时：调用浏览器原生 API，继续真实请求。Service Worker 最多等待 1 秒，页面桥接再保留 200ms 消息往返余量；已到达 Mock Console 的扩展判定会写入请求日志并标记为 `Chrome 扩展`，白名单过滤、扩展暂停或扩展侧超时不会产生服务端日志。
+- 未命中、接口未启用、Mock Console 未启动或判定超时：调用浏览器原生 API，继续真实请求。Service Worker 最多等待 1 秒，页面桥接再保留 200ms 消息往返余量；连续两次 resolver 失败后扩展短路 3 秒，并在当前扩展会话保存健康状态，后续请求立即放行，避免服务不可用时反复等待。已取消或超过 32 个并发判定的请求也直接放行。已到达 Mock Console 的扩展判定会写入请求日志并标记为 `Chrome 扩展`，白名单过滤、扩展暂停或扩展侧超时不会产生服务端日志。
 
-扩展模式不使用 Package 的 `targetBaseUrl`，也不保存接口、规则或场景。当前只覆盖页面脚本的 `fetch` / 异步 XHR，不覆盖导航、图片/脚本资源、WebSocket、Worker / Service Worker 请求、同步 XHR、流式或二进制响应。浏览器自动补充且页面不可观察的 Header（例如 Cookie）不保证可参与扩展匹配。
+扩展模式不使用 Package 的 `targetBaseUrl`，也不保存接口、规则或场景。页面取消请求时，扩展会尽量同步取消尚未完成的本机判定；当前只覆盖页面脚本的 `fetch` / 异步 XHR，不覆盖导航、图片/脚本资源、WebSocket、Worker / Service Worker 请求、同步 XHR、流式或二进制响应。浏览器自动补充且页面不可观察的 Header（例如 Cookie）不保证可参与扩展匹配。
 
 ## 当前能力
 

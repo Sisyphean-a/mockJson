@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { ExtensionRuntimeRequest, RequestLogOutcome } from "../../shared/types.js";
+import type { ExtensionRuntimeRequest } from "@mock-json/extension-contract";
+import type { RequestLogOutcome } from "../../shared/types.js";
 import { MockConfigService } from "./config-service.js";
 import { emptyLogResponse, RequestLogStore, textLogResponse } from "./request-logs.js";
 import { resolveExtension, type ExtensionResolution } from "./runtime-resolver.js";

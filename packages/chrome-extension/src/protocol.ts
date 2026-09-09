@@ -1,7 +1,7 @@
 import type {
   ExtensionRuntimeRequest,
   ExtensionRuntimeResponse,
-} from "../../mock-console/shared/types.js";
+} from "@mock-json/extension-contract";
 
 export const CHANNEL = "__mock_console_extension_v1";
 export const RESOLVER_PATH = "/__mock_extension/resolve";
@@ -23,6 +23,12 @@ export type ResolveResultMessage = {
   type: "resolve-result";
   id: string;
   result: ExtensionRuntimeResponse;
+};
+
+export type ResolveCancelMessage = {
+  channel: typeof CHANNEL;
+  type: "cancel";
+  id: string;
 };
 
 export type MonitoringQueryMessage = {

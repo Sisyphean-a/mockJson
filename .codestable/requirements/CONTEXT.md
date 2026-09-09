@@ -2,7 +2,7 @@
 
 ## 领域地图
 
-本工作区拥有一个 Mock 控制台上下文，并由两个实现包组成：`package:mock-console` 提供配置、匹配和 Mock / Proxy 服务；`package:chrome-extension` 提供浏览器页面请求桥接。npm 包边界不改变领域 Package 的含义。
+本工作区拥有一个 Mock 控制台上下文，由两个产品包和一个共享契约包组成：`package:mock-console` 提供配置、匹配和 Mock / Proxy 服务；`package:chrome-extension` 提供浏览器页面请求桥接；`package:extension-contract` 只提供扩展与本机 resolver 之间的线协议类型。npm 包边界不改变领域 Package 的含义。
 
 ## 产品主线
 
@@ -32,9 +32,11 @@
 ## Chrome Extension 领域规则
 
 - 扩展只保存瞬时的请求判定结果、请求域名白名单和 Popup 的启用状态，不保存 Package、Logical API、Match Rule 或 Scenario；所有 Mock 配置和匹配规则仍以 Mock Console 为唯一来源。请求域名白名单保存在 `chrome.storage.local`，新安装且未配置时默认包含 `localhost` 和 `127.0.0.1`；全局开关和当前标签页开关保存在 `chrome.storage.session`。
-- 页面 MAIN world 在请求目标域名命中白名单且开关启用时包装 `fetch` 和异步 `XMLHttpRequest`，通过隔离世界 Content Script 和 Service Worker 请求本机 `POST /__mock_extension/resolve`；非白名单请求不发送 resolver 请求，页面不直接访问管理 API。
+- 页面 MAIN world 在请求目标域名命中白名单且开关启用时包装 `fetch` 和异步 `XMLHttpRequest`，通过隔离世界 Content Script 和 Service Worker 请求本机 `POST /__mock_extension/resolve`；监控状态通过启动握手同步，非白名单或未启用请求不发送 resolver 请求，页面不直接访问管理 API。
+- 对已进入 fetch 判定的请求，MAIN world 先构造唯一的 `Request`；未命中、超时或异常放行时必须复用这个对象调用原生 fetch，不能再用原始 `input/init` 重发，以保持一次性上传体（包括 `ReadableStream`）可用。`multipart`、图片/音视频和 `application/octet-stream` 请求直接由原生 fetch 放行。
+- 白名单非空不等于所有页面都可安装 XHR Proxy：只有页面自身 origin 命中白名单时才安装 XHR 拦截器；FormData、Blob、ArrayBuffer、TypedArray 和 ReadableStream 的 XHR 上传直接调用原生 XHR，不进入 resolver。
 - MAIN world Content Script 必须构建为自包含的普通脚本，不得保留运行时 `import` 或依赖 Vite 共享 chunk；Chrome Manifest 的 `content_scripts` 直接注入该脚本，模块解析失败会使整个拦截器失效。
-- resolver 接收绝对 `http` / `https` URL、Method 和页面脚本可观察的 Header。命中当前 Package 中启用且有 active scenario 的接口时返回状态码、延迟、JSON body 和 `content-type`；Service Worker 的判定等待上限为 1 秒，页面桥接层再保留 200ms 消息往返余量；未命中、服务不可用或超时扩展调用原生浏览器 API继续真实请求，异常或缺失的桥接结果也必须按放行处理而不能读取未定义的 `action`。
+- resolver 接收绝对 `http` / `https` URL、Method 和页面脚本可观察的 Header。命中当前 Package 中启用且有 active scenario 的接口时返回状态码、延迟、JSON body 和 `content-type`；Service Worker 的判定等待上限为 1 秒，页面桥接层再保留 200ms 消息往返余量；连续两次 resolver 失败后短路 3 秒，并在当前扩展会话保存健康状态，单个 Service Worker 同时最多处理 32 个 resolver，取消会传播到本机请求并立即放行，未命中、服务不可用或超时扩展调用原生浏览器 API继续真实请求，异常或缺失的桥接结果也必须按放行处理而不能读取未定义的 `action`。
 - Popup 提供请求域名白名单、全局 Mock、当前标签页 Mock 和 Mock Console 连接状态；白名单为空或请求目标域名未命中时不发送 resolver 请求，全局/当前标签页暂停时请求直接放行。
 - 扩展模式不使用 `targetBaseUrl`，因为未命中请求必须由浏览器以原始 URL、Cookie、凭据和 CORS 语义直接发出；当前 Package 仍是全局选择。
 - 扩展 resolver 只允许 loopback 访问，不承担真实请求代理，也不记录真实放行请求的最终响应；现有 Reqable / Proxy 路径和其日志语义保持不变。
@@ -43,5 +45,5 @@
 ## 运行规则
 
 - 正式运行时 Mock Console 服务使用 `22333`，开发热更新页面使用 `22334`；扩展默认连接 `127.0.0.1:22333`，Popup 通过 loopback status 接口显示服务是否在线和是否存在当前 Package。
-- npm workspace 目录为 `packages/mock-console` 和 `packages/chrome-extension`。控制台构建产物位于 `packages/mock-console/dist`，扩展构建产物位于 `packages/chrome-extension/dist`。
-- 代表性代码锚点：`packages/mock-console/shared/types.ts`、`packages/mock-console/server/src/validation.ts`、`packages/mock-console/server/src/matcher.ts`、`packages/mock-console/server/src/runtime-resolver.ts`、`packages/mock-console/server/src/proxy.ts`、`packages/mock-console/server/src/extension-routes.ts`、`packages/chrome-extension/src/content-main.ts`。
+- npm workspace 目录为 `packages/mock-console`、`packages/chrome-extension` 和 `packages/extension-contract`。控制台构建产物位于 `packages/mock-console/dist`，扩展构建产物位于 `packages/chrome-extension/dist`；共享契约包只提供源码类型，不生成独立运行产物。
+- 代表性代码锚点：`packages/extension-contract/src/index.ts`、`packages/mock-console/shared/types.ts`、`packages/mock-console/server/src/validation.ts`、`packages/mock-console/server/src/matcher.ts`、`packages/mock-console/server/src/runtime-resolver.ts`、`packages/mock-console/server/src/proxy.ts`、`packages/mock-console/server/src/extension-routes.ts`、`packages/chrome-extension/src/content-main.ts`。

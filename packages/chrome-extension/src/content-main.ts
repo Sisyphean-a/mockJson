@@ -1,11 +1,12 @@
 import type {
   ExtensionRuntimeRequest,
   ExtensionRuntimeResponse,
-} from "../../mock-console/shared/types.js";
+} from "@mock-json/extension-contract";
 
 // MAIN world 内容脚本必须自包含，不能依赖 Vite 生成的共享 chunk；Chrome 会按普通脚本解析它。
 const CHANNEL = "__mock_console_extension_v1";
 const MONITORING_STATE_TYPE = "monitoring-state";
+const MONITORING_STATE_REQUEST_TYPE = "monitoring-state-request";
 // Flow: 页面层比 Service Worker 的 1 秒超时多等 200ms，覆盖消息往返延迟。
 const CONTENT_RESOLVE_TIMEOUT_MS = 1200;
 
@@ -23,23 +24,29 @@ type ResolveResultMessage = {
   result: ExtensionRuntimeResponse;
 };
 
-const nativeFetch = window.fetch.bind(window);
+type ResolveCancelMessage = {
+  channel: typeof CHANNEL;
+  type: "cancel";
+  id: string;
+};
+
+const originalFetch = window.fetch;
+const nativeFetch = originalFetch.bind(window);
 const NativeXMLHttpRequest = window.XMLHttpRequest;
 const pendingResolutions = new Map<string, (result: unknown) => void>();
+const requestIdPrefix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 let nextRequestId = 0;
 let monitoringEnabled = false;
 let monitoringWhitelist: string[] = [];
-
-if (!isMockConsolePage()) {
-  installFetchInterceptor();
-  installXhrInterceptor();
-}
+let interceptedFetch: typeof window.fetch | undefined;
+let interceptedXMLHttpRequest: typeof XMLHttpRequest | undefined;
 
 window.addEventListener("message", (event) => {
   if (event.source !== window) return;
   if (isMonitoringStateWindowMessage(event.data)) {
     monitoringEnabled = event.data.enabled;
     monitoringWhitelist = event.data.whitelist;
+    updateInterceptors();
     return;
   }
   if (!isResolveResultMessage(event.data)) return;
@@ -49,10 +56,35 @@ window.addEventListener("message", (event) => {
   resolve(event.data.result);
 });
 
+if (!isMockConsolePage()) {
+  window.postMessage({ channel: CHANNEL, type: MONITORING_STATE_REQUEST_TYPE }, "*");
+}
+
+function updateInterceptors() {
+  if (isMockConsolePage()) return;
+  const shouldIntercept = monitoringEnabled && monitoringWhitelist.length > 0;
+  const shouldInterceptXhr = shouldIntercept && isWhitelistedUrl(window.location.href);
+  if (shouldIntercept) installFetchInterceptor();
+  else if (interceptedFetch && window.fetch === interceptedFetch) window.fetch = originalFetch;
+
+  // Guarantee: XHR 的 Proxy 会改变第三方页面可观察的构造器/实例语义；页面自身不在白名单时保持原生 XHR，避免无关页面的上传被扩展触碰。
+  if (shouldInterceptXhr) installXhrInterceptor();
+  else if (interceptedXMLHttpRequest && window.XMLHttpRequest === interceptedXMLHttpRequest)
+    window.XMLHttpRequest = NativeXMLHttpRequest;
+}
+
 function installFetchInterceptor() {
-  window.fetch = (async function interceptedFetch(input: RequestInfo | URL, init?: RequestInit) {
+  if (interceptedFetch) {
+    window.fetch = interceptedFetch;
+    return;
+  }
+  const fetchInterceptor = (async function interceptedFetch(input: RequestInfo | URL, init?: RequestInit) {
+    if (!monitoringEnabled || monitoringWhitelist.length === 0) return nativeFetch(input, init);
+    // Guarantee: 未命中白名单时连 Request 都不构造，直接保留页面原始参数；只有进入 resolver 判定后才复用唯一的 Request。
+    const url = getRequestUrl(input);
+    if (!url || !isWhitelistedUrl(url)) return nativeFetch(input, init);
     const request = new Request(input, init);
-    if (!monitoringEnabled || !isWhitelistedUrl(request.url)) return nativeFetch(input, init);
+    if (isUploadRequest(request)) return nativeFetch(request);
 
     let decision: ExtensionRuntimeResponse;
     try {
@@ -62,9 +94,9 @@ function installFetchInterceptor() {
         headers: headersToRecord(request.headers),
       }, request.signal);
     } catch {
-      return nativeFetch(input, init);
+      return nativeFetch(request);
     }
-    if (!monitoringEnabled || !isWhitelistedUrl(request.url) || decision.action === "pass") return nativeFetch(input, init);
+    if (!monitoringEnabled || !isWhitelistedUrl(request.url) || decision.action === "pass") return nativeFetch(request);
 
     try {
       await waitForDelay(decision.delayMs, request.signal);
@@ -74,19 +106,20 @@ function installFetchInterceptor() {
     } catch (error) {
       if (isAbortError(error)) throw error;
       // Failure: 本地判定无效时保持浏览器原生请求，不把扩展错误变成页面请求失败。
-      return nativeFetch(input, init);
+      return nativeFetch(request);
     }
   }) as typeof window.fetch;
+  interceptedFetch = fetchInterceptor;
+  window.fetch = interceptedFetch;
 }
 
 function askResolver(request: ExtensionRuntimeRequest, signal?: AbortSignal): Promise<ExtensionRuntimeResponse> {
   if (signal?.aborted) return Promise.resolve({ action: "pass", reason: "invalid-request" });
 
   return new Promise((resolve) => {
-    const id = `${Date.now().toString(36)}-${nextRequestId++}`;
+    const id = `${requestIdPrefix}-${nextRequestId++}`;
     let settled = false;
-    const timer = window.setTimeout(() => settle({ action: "pass", reason: "invalid-request" }), CONTENT_RESOLVE_TIMEOUT_MS);
-    const onAbort = () => settle({ action: "pass", reason: "invalid-request" });
+    let timer = 0;
     const settle = (result: unknown) => {
       if (settled) return;
       settled = true;
@@ -95,9 +128,24 @@ function askResolver(request: ExtensionRuntimeRequest, signal?: AbortSignal): Pr
       pendingResolutions.delete(id);
       resolve(isRuntimeResponse(result) ? result : { action: "pass", reason: "invalid-request" });
     };
+    const cancel = () => {
+      if (settled) return;
+      try {
+        window.postMessage({ channel: CHANNEL, type: "cancel", id } satisfies ResolveCancelMessage, "*");
+      } catch {
+        // Ignore cancellation delivery failures; the local request still fails open.
+      }
+      settle({ action: "pass", reason: "invalid-request" });
+    };
+    const onAbort = cancel;
+    timer = window.setTimeout(cancel, CONTENT_RESOLVE_TIMEOUT_MS);
 
     pendingResolutions.set(id, settle);
     signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) {
+      cancel();
+      return;
+    }
     try {
       window.postMessage({ channel: CHANNEL, type: "resolve", id, request }, "*");
     } catch {
@@ -124,6 +172,10 @@ function waitForDelay(delayMs: number, signal: AbortSignal) {
 }
 
 function installXhrInterceptor() {
+  if (interceptedXMLHttpRequest) {
+    window.XMLHttpRequest = interceptedXMLHttpRequest;
+    return;
+  }
   function MockAwareXMLHttpRequest(this: unknown) {
     const target = new NativeXMLHttpRequest();
     let proxy: XMLHttpRequest;
@@ -142,6 +194,7 @@ function installXhrInterceptor() {
       generation: 0,
       readyState: 0,
       timeout: 0,
+      mockAbortController: new AbortController(),
       withCredentials: false,
       responseType: "",
       requestHeaders: {},
@@ -162,7 +215,8 @@ function installXhrInterceptor() {
     LOADING: { value: NativeXMLHttpRequest.LOADING },
     DONE: { value: NativeXMLHttpRequest.DONE },
   });
-  window.XMLHttpRequest = MockAwareXMLHttpRequest as unknown as typeof XMLHttpRequest;
+  interceptedXMLHttpRequest = MockAwareXMLHttpRequest as unknown as typeof XMLHttpRequest;
+  window.XMLHttpRequest = interceptedXMLHttpRequest;
 }
 
 type XhrMode = "unopened" | "pending" | "direct" | "mock";
@@ -186,6 +240,7 @@ type XhrState = {
   generation: number;
   readyState: number;
   timeout: number;
+  mockAbortController: AbortController;
   withCredentials: boolean;
   responseType: XMLHttpRequestResponseType;
   requestHeaders: Record<string, string>;
@@ -292,7 +347,8 @@ function setRequestHeader(state: XhrState, name: string, value: string) {
 function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | null) {
   if (state.mode === "direct") return state.target.send(body);
   if (!state.opened || state.sent) throw new DOMException("Invalid XMLHttpRequest state", "InvalidStateError");
-  if (!monitoringEnabled || !urlMatchesWhitelist(state.url, monitoringWhitelist)) return useDirectXhr(state, body);
+  if (isUploadBody(body) || !monitoringEnabled || !urlMatchesWhitelist(state.url, monitoringWhitelist))
+    return useDirectXhr(state, body);
   state.sent = true;
   const generation = state.generation;
   if (state.timeout > 0) state.timeoutTimer = window.setTimeout(() => timeoutXhr(state, generation), state.timeout);
@@ -302,7 +358,7 @@ function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | nul
     method: state.method.toUpperCase(),
     headers: { ...state.requestHeaders },
   };
-  void askResolver(request).then((decision) => {
+  void askResolver(request, state.mockAbortController.signal).then((decision) => {
     if (state.generation !== generation || state.aborted || state.finished) return;
     if (decision.action === "pass") return useDirectXhr(state, body);
     void useMockXhr(state, decision, generation);
@@ -330,7 +386,12 @@ async function useMockXhr(
   decision: Extract<ExtensionRuntimeResponse, { action: "mock" }>,
   generation: number,
 ) {
-  await sleep(decision.delayMs);
+  try {
+    await waitForDelay(decision.delayMs, state.mockAbortController.signal);
+  } catch (error) {
+    if (isAbortError(error)) return;
+    throw error;
+  }
   if (state.generation !== generation || state.aborted || state.finished) return;
   clearXhrTimeout(state);
   state.mode = "mock";
@@ -349,6 +410,7 @@ async function useMockXhr(
 function abortXhr(state: XhrState) {
   if (state.mode === "direct") return state.target.abort();
   if (!state.sent || state.finished) return;
+  state.mockAbortController.abort();
   state.aborted = true;
   clearXhrTimeout(state);
   state.readyState = XMLHttpRequest.DONE;
@@ -359,6 +421,7 @@ function abortXhr(state: XhrState) {
 
 function timeoutXhr(state: XhrState, generation: number) {
   if (state.generation !== generation || state.mode !== "pending" || state.finished) return;
+  state.mockAbortController.abort();
   state.finished = true;
   state.mode = "mock";
   state.readyState = XMLHttpRequest.DONE;
@@ -369,6 +432,8 @@ function timeoutXhr(state: XhrState, generation: number) {
 
 function resetXhr(state: XhrState) {
   clearXhrTimeout(state);
+  state.mockAbortController.abort();
+  state.mockAbortController = new AbortController();
   state.generation += 1;
   state.mode = "unopened";
   state.url = "";
@@ -445,16 +510,42 @@ function clearXhrTimeout(state: XhrState) {
   state.timeoutTimer = undefined;
 }
 
-function sleep(delayMs: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, delayMs));
-}
-
 function abortError() {
   return new DOMException("The operation was aborted.", "AbortError");
 }
 
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+function getRequestUrl(input: RequestInfo | URL) {
+  if (typeof input === "object" && input !== null && "url" in input && typeof input.url === "string") return input.url;
+  try {
+    return new URL(input instanceof URL ? input.href : String(input), window.location.href).href;
+  } catch {
+    return null;
+  }
+}
+
+function isUploadRequest(request: Request) {
+  const contentType = request.headers.get("content-type")?.toLowerCase() || "";
+  return contentType.startsWith("multipart/") ||
+    contentType.startsWith("image/") ||
+    contentType.startsWith("audio/") ||
+    contentType.startsWith("video/") ||
+    contentType === "application/octet-stream";
+}
+
+function isUploadBody(value: unknown) {
+  if (value == null || typeof value === "string") return false;
+  if (typeof URLSearchParams !== "undefined" && value instanceof URLSearchParams) return false;
+  return (
+    (typeof FormData !== "undefined" && value instanceof FormData) ||
+    (typeof Blob !== "undefined" && value instanceof Blob) ||
+    value instanceof ArrayBuffer ||
+    ArrayBuffer.isView(value) ||
+    (typeof ReadableStream !== "undefined" && value instanceof ReadableStream)
+  );
 }
 
 function isMonitoringStateWindowMessage(value: unknown): value is MonitoringStateWindowMessage {

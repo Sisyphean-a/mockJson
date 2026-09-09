@@ -1,11 +1,5 @@
-import type {
-  ExtensionRuntimeRequest,
-  ExtensionRuntimeResponse,
-  LogicalApi,
-  PackageConfig,
-  Scenario,
-  State,
-} from "../../shared/types.js";
+import type { ExtensionRuntimeRequest, ExtensionRuntimeResponse } from "@mock-json/extension-contract";
+import type { LogicalApi, PackageConfig, Scenario, State } from "../../shared/types.js";
 import { matchApi, type MatchContext } from "./matcher.js";
 
 type ActiveApi = State["packages"][number]["apis"][number];

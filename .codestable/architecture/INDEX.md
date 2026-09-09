@@ -2,37 +2,41 @@
 
 ## 范围地图
 
-- **workspace**：mockJson，Node.js 单仓库、npm workspaces。
-- **package:mock-console**：`packages/mock-console/`，本地 Mock / Proxy 控制台，包含 Fastify 服务、Vue 管理页面和共享领域契约。
-- **package:chrome-extension**：`packages/chrome-extension/`，Chrome Manifest V3 扩展，只负责页面 fetch / 异步 XMLHttpRequest 的拦截桥接，不持有 Mock 配置。
+- **workspace**：`mockJson`，Node.js 单仓库、npm workspaces。
+- **package:mock-console**：`packages/mock-console/`，本地 Mock / Proxy 控制台，负责配置、匹配、resolver、Proxy、日志和 Vue 管理页面。详见 [`packages/mock-console.md`](./packages/mock-console.md)。
+- **package:chrome-extension**：`packages/chrome-extension/`，Chrome Manifest V3 扩展，负责页面请求桥接、白名单、开关和原生放行。详见 [`packages/chrome-extension.md`](./packages/chrome-extension.md)。
+- **package:extension-contract**：`packages/extension-contract/`，只提供扩展与本机 resolver 之间的 TypeScript 线协议类型。详见 [`packages/extension-contract.md`](./packages/extension-contract.md)。
+- **shared:extension-runtime**：两个产品包共同遵守的 resolver 调用、Mock / pass 和放行语义。详见 [`shared/extension-runtime.md`](./shared/extension-runtime.md)。
 
-## 包边界与入口
+## 包边界与依赖方向
 
-| 范围 | 职责 | 代码锚点 |
+```text
+package:chrome-extension ─┐
+                          ├─> package:extension-contract
+package:mock-console ─────┘
+```
+
+- `package:mock-console` 拥有 Mock Package、Logical API、Match Rule、Scenario、resolver、Proxy 和运行日志。
+- `package:chrome-extension` 不保存或复制 Mock 配置，不导入 `package:mock-console` 的内部源码。
+- `package:extension-contract` 不依赖浏览器、Fastify 或任一产品包；产品包之间不得通过内部相对路径共享类型。
+- `requirements/CONTEXT.md` 维护领域规则；本目录只维护边界、入口、依赖和跨包机制，不复制完整业务规则。
+
+## 主要入口
+
+| 范围 | 入口 | 责任 |
 | --- | --- | --- |
-| package:mock-console/server/bootstrap | Fastify 组合根、启动、CORS、静态页面、loopback 管理/扩展接口和请求访问边界 | `packages/mock-console/server/src/index.ts` |
-| package:mock-console/server/config | Package / Logical API / Scenario 的业务变更、查找、状态归一化和持久化回滚 | `packages/mock-console/server/src/config-service.ts` `MockConfigService` |
-| package:mock-console/server/routes | 管理 API 与扩展判定 API 的 HTTP 参数转换、错误状态和响应转换 | `packages/mock-console/server/src/admin-routes.ts` `packages/mock-console/server/src/extension-routes.ts` |
-| package:mock-console/server/storage | 解析用户数据目录，校验配置、串行原子保存并从有效备份恢复 | `packages/mock-console/server/src/state-path.ts` `packages/mock-console/server/src/storage.ts` |
-| package:mock-console/server/validation | 管理 API 与持久化共用的数据边界校验 | `packages/mock-console/server/src/validation.ts` |
-| package:mock-console/server/matcher | 无 IO 的 Header / URL / Method 规则计算 | `packages/mock-console/server/src/matcher.ts` `matchApi` |
-| package:mock-console/server/runtime | 按当前 Package、优先级和 active scenario 生成扩展 Mock 判定；不执行真实请求 | `packages/mock-console/server/src/runtime-resolver.ts` `resolveExtensionRequest` |
-| package:mock-console/server/proxy | 当前 Package 匹配、Mock 返回和未命中流式转发；保持 Reqable / 代理语义 | `packages/mock-console/server/src/proxy.ts` `createProxy` |
-| package:mock-console/server/logs | Proxy 请求与 Chrome 扩展 resolver 判定结果、来源、匹配接口和受限响应预览的运行态内存记录 | `packages/mock-console/server/src/request-logs.ts` `packages/mock-console/server/src/proxy.ts` `packages/mock-console/server/src/extension-routes.ts` |
-| package:mock-console/shared | 前后端与扩展共用的 Mock 配置、运行日志和扩展判定 DTO | `packages/mock-console/shared/types.ts` |
-| package:mock-console/web | Vue 3 管理页面、管理请求、配置状态、拖拽排序动作和视图组件 | `packages/mock-console/web/src/` |
-| package:chrome-extension/main | MAIN world 包装页面 fetch 与异步 XHR；命中时构造 JSON 响应，未命中调用原生 API | `packages/chrome-extension/src/content-main.ts` |
-| package:chrome-extension/bridge | 隔离世界消息桥，转发页面与扩展 Service Worker 的判定消息 | `packages/chrome-extension/src/content-bridge.ts` |
-| package:chrome-extension/worker | 校验请求域名白名单、通过扩展 host permission 请求本机 resolver；失败时返回放行决定，并维护 Popup 的开关和连接状态 | `packages/chrome-extension/src/service-worker.ts` `packages/chrome-extension/src/domain-whitelist.ts` |
-| package:chrome-extension/popup | 展示连接状态，配置请求域名白名单，切换全局 Mock 或当前标签页 Mock；不读取或保存 Mock 规则 | `packages/chrome-extension/src/popup.ts` `packages/chrome-extension/public/popup.html` |
+| mock-console server | `packages/mock-console/server/src/index.ts` | Fastify 组合根、服务端口和运行边界 |
+| mock-console resolver | `packages/mock-console/server/src/extension-routes.ts`、`runtime-resolver.ts` | 扩展判定 HTTP 转换与 Mock / pass 结果 |
+| mock-console web | `packages/mock-console/web/src/` | Vue 管理页面和管理 API 客户端 |
+| chrome-extension main | `packages/chrome-extension/src/content-main.ts` | MAIN world fetch / 异步 XHR 桥接 |
+| chrome-extension bridge | `packages/chrome-extension/src/content-bridge.ts` | 隔离世界消息桥 |
+| chrome-extension worker | `packages/chrome-extension/src/service-worker.ts` | 白名单、resolver、开关和健康状态 |
+| chrome-extension popup | `packages/chrome-extension/src/popup.ts` | Popup 配置和连接状态 |
+| extension-contract | `packages/extension-contract/src/index.ts` | 跨包 DTO 和放行原因类型 |
 
-## 运行与数据
+## 运行入口
 
-- `npm run dev` 同时启动 Mock Console 服务（22333）与管理页面（22334）；`npm run build` 同时构建 `packages/mock-console/dist` 和 `packages/chrome-extension/dist`；`npm start` 运行 Mock Console。服务端终端默认只保留启动、错误和安全拒绝信息，Proxy 与 Chrome 扩展 resolver 判定结果通过控制台日志面板查看，并可按来源筛选。
-- 请求日志视图使用单列全宽布局，不渲染 Logical API 配置侧栏；日志行只负责选择请求，详情通过显式操作跳转到接口配置，完整 URL 不再与 `host` 重复拼接。
-- Mock Console 正式页面、管理 API、Reqable Mock / Proxy 仍由 `http://127.0.0.1:22333` 提供。配置文件默认保存在当前用户数据目录，仓库只保留脱敏示例。
-- Chrome 扩展默认只连接 `http://127.0.0.1:22333/__mock_extension/resolve`。判定接口只允许 loopback，命中返回一次性 `{ action: "mock", status, delayMs, body, headers }`，未命中返回 `{ action: "pass" }`，不会使用 `targetBaseUrl` 代理真实请求；Service Worker 等待上限为 1 秒，页面桥接层等待上限为 1.2 秒，异常结果按放行处理。
-- 扩展不保存 Package、Logical API、Match Rule 或 Scenario；场景和规则仍由 Mock Console 单一拥有。请求域名白名单保存在 `chrome.storage.local`，新安装且未配置时默认包含 `localhost` 和 `127.0.0.1`；Popup 的全局/当前标签页开关只保存在 `chrome.storage.session`。扩展模式的真实请求由页面原生 fetch / XHR 发出，因此现有 Proxy 日志不会自动获得真实放行请求的最终响应信息。
-- 扩展当前覆盖请求目标域名命中白名单的 `fetch` 和异步 `XMLHttpRequest`，不覆盖非白名单请求、导航、资源加载、WebSocket、Worker / Service Worker 请求、同步 XHR、流式或二进制 Mock。扩展只能传递页面脚本可观察到的请求 Header。
-- 管理 API 与扩展 resolver 都受本机访问边界保护；扩展通过 Service Worker 访问本机，页面不直接访问管理 API。Mock Console 页面自身的 22333/22334 页面不会注入扩展拦截器。
-- Logical API 使用 `PUT /__mock_admin/packages/:packageId/apis/order`、Scenario 使用 `PUT /__mock_admin/apis/:id/scenarios/order` 原子保存完整 ID 顺序；接口拖拽不改运行时 `priority`，搜索过滤时前端禁用接口排序。
+- `npm run dev`：启动 Mock Console 服务（22333）和管理页面（22334）。
+- `npm run build`：构建 Mock Console 与 Chrome 扩展；扩展产物位于 `packages/chrome-extension/dist`。
+- `npm start`：运行正式 Mock Console 服务。
+- 扩展默认通过 `http://127.0.0.1:22333/__mock_extension/resolve` 请求本机 resolver；resolver 未命中或失败时由浏览器直接放行真实请求。

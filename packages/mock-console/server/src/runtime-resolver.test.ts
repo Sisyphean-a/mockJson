@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { ExtensionRuntimeRequest, State } from "../../shared/types.js";
+import type { ExtensionRuntimeRequest } from "@mock-json/extension-contract";
+import type { State } from "../../shared/types.js";
 import { resolveExtensionRequest } from "./runtime-resolver.js";
 
 const request: ExtensionRuntimeRequest = {

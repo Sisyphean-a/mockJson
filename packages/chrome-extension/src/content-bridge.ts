@@ -1,6 +1,7 @@
-import type { ExtensionRuntimeRequest, ExtensionRuntimeResponse } from "../../mock-console/shared/types.js";
+import type { ExtensionRuntimeRequest, ExtensionRuntimeResponse } from "@mock-json/extension-contract";
 const CHANNEL = "__mock_console_extension_v1";
 const MONITORING_STATE_TYPE = "monitoring-state";
+const MONITORING_STATE_REQUEST_TYPE = "monitoring-state-request";
 const REFRESH_MONITORING_TYPE = "refresh-monitoring";
 
 type ResolveMessage = {
@@ -17,11 +18,22 @@ type ResolveResultMessage = {
   result: ExtensionRuntimeResponse;
 };
 
+type ResolveCancelMessage = {
+  channel: typeof CHANNEL;
+  type: "cancel";
+  id: string;
+};
+
 type MonitoringStateWindowMessage = {
   channel: typeof CHANNEL;
   type: typeof MONITORING_STATE_TYPE;
   enabled: boolean;
   whitelist: string[];
+};
+
+type MonitoringStateRequestMessage = {
+  channel: typeof CHANNEL;
+  type: typeof MONITORING_STATE_REQUEST_TYPE;
 };
 
 type MonitoringRefreshMessage = {
@@ -34,18 +46,32 @@ type MonitoringStateResponse = {
   whitelist: string[];
 };
 
-void syncMonitoringState();
+const cancelledResolutions = new Set<string>();
+let monitoringSync: Promise<void> | undefined;
+
+void requestMonitoringState();
 
 chrome.runtime.onMessage.addListener((message) => {
   if (!isMonitoringRefreshMessage(message)) return;
-  void syncMonitoringState();
+  void requestMonitoringState();
 });
 
 window.addEventListener("message", (event) => {
-  if (event.source !== window || !isResolveMessage(event.data)) return;
+  if (event.source !== window) return;
+  if (isMonitoringStateRequestMessage(event.data)) {
+    void requestMonitoringState();
+    return;
+  }
+  if (isResolveCancelMessage(event.data)) {
+    cancelledResolutions.add(event.data.id);
+    void chrome.runtime.sendMessage(event.data).catch(() => undefined);
+    return;
+  }
+  if (!isResolveMessage(event.data)) return;
 
   const message = event.data;
   void resolve(message).then((result) => {
+    if (cancelledResolutions.delete(message.id)) return;
     const response: ResolveResultMessage = {
       channel: CHANNEL,
       type: "resolve-result",
@@ -55,6 +81,15 @@ window.addEventListener("message", (event) => {
     window.postMessage(response, "*");
   });
 });
+
+function requestMonitoringState() {
+  if (!monitoringSync) {
+    monitoringSync = syncMonitoringState().finally(() => {
+      monitoringSync = undefined;
+    });
+  }
+  return monitoringSync;
+}
 
 async function syncMonitoringState() {
   let state: MonitoringStateResponse = { enabled: false, whitelist: [] };
@@ -87,6 +122,10 @@ function isMonitoringRefreshMessage(value: unknown): value is MonitoringRefreshM
   return isRecord(value) && value.channel === CHANNEL && value.type === REFRESH_MONITORING_TYPE;
 }
 
+function isMonitoringStateRequestMessage(value: unknown): value is MonitoringStateRequestMessage {
+  return isRecord(value) && value.channel === CHANNEL && value.type === MONITORING_STATE_REQUEST_TYPE;
+}
+
 function isMonitoringStateResponse(value: unknown): value is MonitoringStateResponse {
   return (
     isRecord(value) &&
@@ -99,6 +138,10 @@ function isMonitoringStateResponse(value: unknown): value is MonitoringStateResp
 function isResolveMessage(value: unknown): value is ResolveMessage {
   if (!isRecord(value) || value.channel !== CHANNEL || value.type !== "resolve" || typeof value.id !== "string") return false;
   return isRuntimeRequest(value.request);
+}
+
+function isResolveCancelMessage(value: unknown): value is ResolveCancelMessage {
+  return isRecord(value) && value.channel === CHANNEL && value.type === "cancel" && typeof value.id === "string";
 }
 
 function isRuntimeRequest(value: unknown): value is ExtensionRuntimeRequest {

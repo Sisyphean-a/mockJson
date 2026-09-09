@@ -1,5 +1,8 @@
 {
   "name": "@mock-json/mock-console",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@mock-json/extension-contract": "*"
+  }
 }
