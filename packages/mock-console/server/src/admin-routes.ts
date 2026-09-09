@@ -73,6 +73,14 @@ export function registerAdminRoutes(
     }
   });
 
+  app.put("/__mock_admin/packages/:packageId/apis/order", async (req, reply) => {
+    try {
+      return await service.reorderApis(routeId(req, "packageId"), body(req));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
   app.patch("/__mock_admin/apis/:id", async (req, reply) => {
     try {
       return await service.updateApi(routeId(req, "id"), body(req));
@@ -93,6 +101,14 @@ export function registerAdminRoutes(
     try {
       const scenario = await service.createScenario(routeId(req, "id"), body(req));
       return reply.code(201).send(scenario);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.put("/__mock_admin/apis/:id/scenarios/order", async (req, reply) => {
+    try {
+      return await service.reorderScenarios(routeId(req, "id"), body(req));
     } catch (error) {
       return sendError(reply, error);
     }

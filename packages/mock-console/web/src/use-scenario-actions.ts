@@ -152,6 +152,27 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     } catch (error) { notify(message(error)); }
   }
 
+  async function reorderScenarios(orderedIds: string[], previousIds: string[]) {
+    const current = model.api.value;
+    if (!current || sameOrder(orderedIds, previousIds)) return;
+
+    const byId = new Map(current.scenarios.map((scenario) => [scenario.id, scenario]));
+    const previous = previousIds.map((id) => byId.get(id));
+    const next = orderedIds.map((id) => byId.get(id));
+    if (previous.some((scenario) => !scenario) || next.some((scenario) => !scenario)) return;
+
+    current.scenarios.splice(0, current.scenarios.length, ...(next as Scene[]));
+    try {
+      const saved = await model.runAdminRequest(() => client.reorderScenarios(current.id, orderedIds));
+      current.scenarios.splice(0, current.scenarios.length, ...saved);
+      model.synchronizeSelection();
+      notify("场景顺序已保存");
+    } catch (error) {
+      current.scenarios.splice(0, current.scenarios.length, ...(previous as Scene[]));
+      notify(message(error));
+    }
+  }
+
   async function duplicateScene(scene: Scene) {
     const api = model.api.value;
     if (!api) return;
@@ -172,7 +193,11 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     catch (error) { notify(message(error)); }
   }
 
-  return { openSceneCreate, openSceneEdit, createScene, saveScene, saveJson, toggleScene, duplicateScene, deleteScene };
+  return { openSceneCreate, openSceneEdit, createScene, saveScene, saveJson, toggleScene, reorderScenarios, duplicateScene, deleteScene };
+}
+
+function sameOrder(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
 function message(error: unknown) {

@@ -16,6 +16,7 @@ class MemoryRepository implements StateRepository {
 
 function logEntry(): Omit<RequestLog, "id"> {
   return {
+    source: "proxy",
     timestamp: "2026-09-04T00:00:00.000Z",
     durationMs: 2,
     packageId: null,
@@ -32,6 +33,36 @@ function logEntry(): Omit<RequestLog, "id"> {
     response: { contentType: "application/json", body: "{}", byteLength: 2, truncated: false },
   };
 }
+
+test("管理 API 可以持久化接口和场景排序", async () => {
+  const service = new MockConfigService(new MemoryRepository());
+  await service.initialize();
+  const packageConfig = await service.createPackage({ name: "测试包" });
+  const firstApi = await service.createApi(packageConfig.id, { name: "第一个" });
+  const secondApi = await service.createApi(packageConfig.id, { name: "第二个" });
+  const firstScene = await service.createScenario(firstApi.id, { name: "第一个场景", responseBody: {} });
+  const secondScene = await service.createScenario(firstApi.id, { name: "第二个场景", responseBody: {} });
+  const logs = new RequestLogStore();
+  const app = Fastify();
+  registerAdminRoutes(app, service, logs);
+
+  const apiOrder = await app.inject({
+    method: "PUT",
+    url: `/__mock_admin/packages/${packageConfig.id}/apis/order`,
+    payload: { ids: [secondApi.id, firstApi.id] },
+  });
+  const scenarioOrder = await app.inject({
+    method: "PUT",
+    url: `/__mock_admin/apis/${firstApi.id}/scenarios/order`,
+    payload: { ids: [secondScene.id, firstScene.id] },
+  });
+
+  assert.equal(apiOrder.statusCode, 200);
+  assert.deepEqual(apiOrder.json().map((item: { id: string }) => item.id), [secondApi.id, firstApi.id]);
+  assert.equal(scenarioOrder.statusCode, 200);
+  assert.deepEqual(scenarioOrder.json().map((item: { id: string }) => item.id), [secondScene.id, firstScene.id]);
+  await app.close();
+});
 
 test("管理 API 可以读取和清空运行态请求日志", async () => {
   const service = new MockConfigService(new MemoryRepository());

@@ -4,6 +4,43 @@ import type { RequestLog, RequestLogsDeltaResponse } from "../../shared/types.js
 
 export { MAX_REQUEST_LOGS } from "../../shared/types.js";
 
+export const MAX_LOG_BODY_BYTES = 32 * 1024;
+
+export function textLogResponse(contentType: string | null, body: string): RequestLog["response"] {
+  const byteLength = Buffer.byteLength(body);
+  return {
+    contentType,
+    body: utf8Preview(body, MAX_LOG_BODY_BYTES, byteLength),
+    byteLength,
+    truncated: byteLength > MAX_LOG_BODY_BYTES,
+  };
+}
+
+export function emptyLogResponse(contentType: string | null): RequestLog["response"] {
+  return { contentType, body: "", byteLength: 0, truncated: false };
+}
+
+function utf8Preview(body: string, maxBytes: number, byteLength: number) {
+  if (byteLength <= maxBytes) return body;
+
+  let low = 0;
+  let high = Math.min(body.length, maxBytes) + 1;
+  while (low + 1 < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (Buffer.byteLength(body.slice(0, middle)) <= maxBytes) low = middle;
+    else high = middle;
+  }
+  if (
+    low < body.length &&
+    low > 0 &&
+    body.charCodeAt(low - 1) >= 0xd800 &&
+    body.charCodeAt(low - 1) <= 0xdbff &&
+    body.charCodeAt(low) >= 0xdc00 &&
+    body.charCodeAt(low) <= 0xdfff
+  ) low -= 1;
+  return Buffer.from(body.slice(0, low)).toString("utf8");
+}
+
 type RequestLogEntry = Omit<RequestLog, "id">;
 type StoredEntry = { revision: number; log: RequestLog };
 

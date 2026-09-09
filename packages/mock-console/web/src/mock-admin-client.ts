@@ -104,12 +104,20 @@ export class MockAdminClient {
     return this.request<LogicalApi>(`/__mock_admin/packages/${packageId}/apis`, json("POST", { name }));
   }
 
+  async reorderApis(packageId: string, ids: string[]) {
+    return this.request<LogicalApi[]>(`/__mock_admin/packages/${packageId}/apis/order`, json("PUT", { ids }));
+  }
+
   async updateApi(id: string, input: Partial<Pick<LogicalApi, "name" | "enabled" | "priority" | "matchMode" | "matchRules">>) {
     return this.request<LogicalApi>(`/__mock_admin/apis/${id}`, json("PATCH", input));
   }
 
   async deleteApi(id: string) {
     return this.request<{ success: true }>(`/__mock_admin/apis/${id}`, { method: "DELETE" });
+  }
+
+  async reorderScenarios(apiId: string, ids: string[]) {
+    return this.request<Scenario[]>(`/__mock_admin/apis/${apiId}/scenarios/order`, json("PUT", { ids }));
   }
 
   async createScenario(apiId: string, input: {
@@ -159,6 +167,6 @@ export class MockAdminClient {
   }
 }
 
-function json(method: "POST" | "PATCH", body: unknown): RequestInit {
+function json(method: "POST" | "PATCH" | "PUT", body: unknown): RequestInit {
   return { method, body: JSON.stringify(body) };
 }

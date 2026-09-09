@@ -314,6 +314,7 @@ aside {
   min-height: 0;
   max-height: calc(100dvh - 210px);
   overflow: auto;
+  overscroll-behavior: contain;
   margin-top: 10px;
 }
 
@@ -331,6 +332,45 @@ aside {
 
 .api-item:hover {
   background: var(--surface-muted);
+}
+
+.drag-handle {
+  flex: 0 0 12px;
+  width: 12px;
+  color: var(--ink-faint);
+  cursor: grab;
+  font-size: 15px;
+  line-height: 1;
+  text-align: center;
+  user-select: none;
+  touch-action: none;
+}
+
+.drag-handle:hover {
+  color: var(--accent);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-ghost {
+  opacity: 0.35;
+  background: var(--accent-soft);
+}
+
+.drag-chosen {
+  box-shadow: 0 4px 12px rgb(15 23 42 / 12%);
+}
+
+.drag-dragging {
+  cursor: grabbing;
+}
+
+.sort-hint {
+  padding: 5px 6px 0 24px;
+  color: var(--ink-faint);
+  font-size: 10px;
 }
 
 .api-item.active {

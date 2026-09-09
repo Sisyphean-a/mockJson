@@ -7,8 +7,10 @@ type RequestLogPanelController = Pick<ConsoleController, "pkg" | "logs" | "logsL
 const { controller: c } = defineProps<{ controller: RequestLogPanelController }>();
 
 type LogFilter = "all" | RequestLog["outcome"];
+type SourceFilter = "all" | RequestLog["source"];
 
 const filter = ref<LogFilter>("all");
+const sourceFilter = ref<SourceFilter>("all");
 const search = ref("");
 const selectedId = ref<string | null>(null);
 
@@ -21,6 +23,7 @@ const filteredLogs = computed(() => {
   const query = search.value.trim().toLowerCase();
   return packageLogs.value.filter((log) => {
     if (filter.value !== "all" && log.outcome !== filter.value) return false;
+    if (sourceFilter.value !== "all" && log.source !== sourceFilter.value) return false;
     if (!query) return true;
     return [log.method, log.host, log.url, log.apiName, log.scenarioName]
       .filter((item): item is string => Boolean(item))
@@ -42,7 +45,20 @@ const outcomeLabels: Record<RequestLog["outcome"], string> = {
   mocked: "Mock 命中",
   forwarded: "已转发",
   unmatched: "未命中",
+  passed: "扩展放行",
   error: "代理错误",
+};
+
+const sourceLabels: Record<RequestLog["source"], string> = {
+  proxy: "Proxy",
+  extension: "Chrome 扩展",
+};
+
+const passReasonLabels: Record<NonNullable<RequestLog["passReason"]>, string> = {
+  unmatched: "未命中规则",
+  disabled: "扩展已暂停",
+  "invalid-request": "请求无效",
+  "unsupported-status": "状态码暂不支持",
 };
 
 function outcomeLabel(outcome: RequestLog["outcome"]) {
@@ -59,7 +75,17 @@ function responseText(log: RequestLog) {
   }
 }
 
+function sourceLabel(source: RequestLog["source"]) {
+  return sourceLabels[source];
+}
+
+function passReasonLabel(reason: RequestLog["passReason"]) {
+  return reason ? passReasonLabels[reason] : "已放行";
+}
+
 function responseSummary(log: RequestLog) {
+  if (log.outcome === "passed") return `浏览器原生请求已放行 · ${passReasonLabel(log.passReason)}`;
+  if (log.source === "extension" && log.outcome === "unmatched") return "扩展判定未命中，浏览器将直接请求原始地址";
   if (log.response.body === null) return `非文本响应 · ${formatBytes(log.response.byteLength)}`;
   const cached = responseSummaryCache.get(log);
   if (cached?.body === log.response.body) return cached.summary;
@@ -91,12 +117,17 @@ function formatDuration(value: number) {
   return value < 1000 ? `${value} ms` : `${(value / 1000).toFixed(2)} s`;
 }
 
+function formatStatus(value: number) {
+  return value > 0 ? String(value) : "—";
+}
+
 function endpoint(log: RequestLog) {
   return `${log.host ? `${log.host}` : ""}${log.url}` || "（未知地址）";
 }
 
 function clearFilters() {
   filter.value = "all";
+  sourceFilter.value = "all";
   search.value = "";
 }
 </script>
@@ -128,7 +159,16 @@ function clearFilters() {
           <option value="mocked">Mock 命中</option>
           <option value="forwarded">已转发</option>
           <option value="unmatched">未命中</option>
+          <option value="passed">扩展放行</option>
           <option value="error">代理错误</option>
+        </select>
+      </label>
+      <label class="log-filter">
+        <span>来源</span>
+        <select v-model="sourceFilter" aria-label="按请求来源筛选">
+          <option value="all">全部</option>
+          <option value="extension">Chrome 扩展</option>
+          <option value="proxy">Proxy / Reqable</option>
         </select>
       </label>
       <span class="log-count">{{ filteredLogs.length }} 条</span>
@@ -159,6 +199,7 @@ function clearFilters() {
         >
           <div class="log-row-head">
             <span class="log-method">{{ log.method }}</span>
+            <span :class="['log-source', `source-${log.source}`]">{{ sourceLabel(log.source) }}</span>
             <span :class="['log-outcome', `outcome-${log.outcome}`]">{{ outcomeLabel(log.outcome) }}</span>
             <time>{{ formatTime(log.timestamp) }}</time>
           </div>
@@ -166,7 +207,7 @@ function clearFilters() {
           <div class="log-row-meta">
             <strong>{{ log.apiName || "未命中逻辑接口" }}</strong>
             <span v-if="log.scenarioName">· {{ log.scenarioName }}</span>
-            <span class="log-status" :class="{ failed: log.status >= 400 }">{{ log.status }}</span>
+            <span class="log-status" :class="{ failed: log.status >= 400 }">{{ formatStatus(log.status) }}</span>
           </div>
           <p class="log-preview">{{ responseSummary(log) }}</p>
         </button>
@@ -178,14 +219,19 @@ function clearFilters() {
             <span class="panel-context">请求详情</span>
             <h2>{{ selectedLog.apiName || "未命中逻辑接口" }}</h2>
           </div>
-          <span :class="['log-outcome', `outcome-${selectedLog.outcome}`]">{{ outcomeLabel(selectedLog.outcome) }}</span>
+          <div class="log-detail-badges">
+            <span :class="['log-source', `source-${selectedLog.source}`]">{{ sourceLabel(selectedLog.source) }}</span>
+            <span :class="['log-outcome', `outcome-${selectedLog.outcome}`]">{{ outcomeLabel(selectedLog.outcome) }}</span>
+          </div>
         </div>
 
         <div class="log-detail-grid">
+          <div><span>请求来源</span><b>{{ sourceLabel(selectedLog.source) }}</b></div>
           <div><span>请求地址</span><code>{{ endpoint(selectedLog) }}</code></div>
           <div><span>请求时间</span><b>{{ formatDateTime(selectedLog.timestamp) }}</b></div>
-          <div><span>HTTP 状态</span><b :class="{ failed: selectedLog.status >= 400 }">{{ selectedLog.status }}</b></div>
+          <div><span>HTTP 状态</span><b :class="{ failed: selectedLog.status >= 400 }">{{ formatStatus(selectedLog.status) }}</b></div>
           <div><span>耗时</span><b>{{ formatDuration(selectedLog.durationMs) }}</b></div>
+          <div v-if="selectedLog.passReason"><span>放行原因</span><b>{{ passReasonLabel(selectedLog.passReason) }}</b></div>
           <div><span>响应场景</span><b>{{ selectedLog.scenarioName || "—" }}</b></div>
           <div><span>响应类型</span><b>{{ selectedLog.response.contentType || "未知" }}</b></div>
         </div>

@@ -5,6 +5,7 @@ import type { RequestLog } from "../../shared/types.js";
 
 function entry(name: string): Omit<RequestLog, "id"> {
   return {
+    source: "proxy",
     timestamp: "2026-09-04T00:00:00.000Z",
     durationMs: 1,
     packageId: "pkg",

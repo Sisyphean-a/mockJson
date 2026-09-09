@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { ExtensionRuntimeRequest } from "../../shared/types.js";
+import type { ExtensionRuntimeRequest, RequestLogOutcome } from "../../shared/types.js";
 import { MockConfigService } from "./config-service.js";
-import { resolveExtensionRequest } from "./runtime-resolver.js";
+import { emptyLogResponse, RequestLogStore, textLogResponse } from "./request-logs.js";
+import { resolveExtension, type ExtensionResolution } from "./runtime-resolver.js";
 
 const MAX_URL_LENGTH = 8 * 1024;
 const MAX_METHOD_LENGTH = 32;
@@ -9,19 +10,61 @@ const MAX_HEADER_NAME_LENGTH = 256;
 const MAX_HEADER_VALUE_LENGTH = 8 * 1024;
 const MAX_HEADERS = 128;
 
-export function registerExtensionRoutes(app: FastifyInstance, service: MockConfigService) {
+export function registerExtensionRoutes(app: FastifyInstance, service: MockConfigService, logs?: RequestLogStore) {
   app.get("/__mock_extension/status", async () => ({
     online: true,
     hasPackage: service.getState().currentPackageId !== null,
   }));
 
   app.post("/__mock_extension/resolve", async (req, reply) => {
+    const startedAt = Date.now();
     try {
       const request = parseRequest(req);
-      return resolveExtensionRequest(service.getState(), request);
+      const resolution = resolveExtension(service.getState(), request);
+      recordExtensionDecision(logs, request, resolution, startedAt);
+      return resolution.response;
     } catch (error) {
       return sendInvalidRequest(reply, error);
     }
+  });
+}
+
+function recordExtensionDecision(
+  logs: RequestLogStore | undefined,
+  request: ExtensionRuntimeRequest,
+  resolution: ExtensionResolution,
+  startedAt: number,
+) {
+  if (!logs) return;
+  const response = resolution.response;
+  const outcome: RequestLogOutcome = response.action === "mock"
+    ? "mocked"
+    : response.reason === "unmatched"
+      ? "unmatched"
+      : response.reason === "invalid-request"
+        ? "error"
+        : "passed";
+  const responseBody = response.action === "mock"
+    ? textLogResponse(response.headers["content-type"] || null, response.body)
+    : emptyLogResponse(null);
+
+  logs.record({
+    source: "extension",
+    timestamp: new Date().toISOString(),
+    durationMs: Math.max(0, Date.now() - startedAt),
+    packageId: resolution.packageConfig?.id || null,
+    packageName: resolution.packageConfig?.name || null,
+    method: request.method,
+    host: new URL(request.url).host,
+    url: request.url,
+    outcome,
+    ...(response.action === "pass" && response.reason ? { passReason: response.reason } : {}),
+    apiId: resolution.api?.id || null,
+    apiName: resolution.api?.name || null,
+    scenarioId: resolution.scenario?.id || null,
+    scenarioName: resolution.scenario?.name || null,
+    status: response.action === "mock" ? response.status : 0,
+    response: responseBody,
   });
 }
 

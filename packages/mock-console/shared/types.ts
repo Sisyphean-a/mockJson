@@ -49,7 +49,9 @@ export type State = {
 
 export const MAX_REQUEST_LOGS = 200;
 
-export type RequestLogOutcome = "mocked" | "forwarded" | "unmatched" | "error";
+export type RequestLogSource = "proxy" | "extension";
+export type ExtensionPassReason = "unmatched" | "disabled" | "invalid-request" | "unsupported-status";
+export type RequestLogOutcome = "mocked" | "forwarded" | "unmatched" | "passed" | "error";
 
 export type RequestLogResponse = {
   contentType: string | null;
@@ -60,6 +62,7 @@ export type RequestLogResponse = {
 
 export type RequestLog = {
   id: string;
+  source: RequestLogSource;
   timestamp: string;
   durationMs: number;
   packageId: string | null;
@@ -68,6 +71,7 @@ export type RequestLog = {
   host: string | null;
   url: string;
   outcome: RequestLogOutcome;
+  passReason?: ExtensionPassReason;
   apiId: string | null;
   apiName: string | null;
   scenarioId: string | null;
@@ -106,5 +110,5 @@ export type ExtensionRuntimeResponse =
     }
   | {
       action: "pass";
-      reason?: "unmatched" | "disabled" | "invalid-request" | "unsupported-status";
+      reason?: ExtensionPassReason;
     };

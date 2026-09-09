@@ -4,7 +4,7 @@ import { Transform } from "node:stream";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { RequestLogOutcome, RequestLogResponse, State } from "../../shared/types.js";
 import { selectMatchingApi } from "./runtime-resolver.js";
-import { RequestLogStore } from "./request-logs.js";
+import { emptyLogResponse, MAX_LOG_BODY_BYTES, RequestLogStore, textLogResponse } from "./request-logs.js";
 
 const hop = new Set([
   "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
@@ -48,8 +48,6 @@ function targetUrl(requestUrl: string, baseUrl: string) {
   return base;
 }
 
-const MAX_LOG_BODY_BYTES = 32 * 1024;
-
 function headerText(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value.join(", ");
   return value || null;
@@ -57,42 +55,6 @@ function headerText(value: string | string[] | undefined) {
 
 function isTextualContentType(contentType: string | null) {
   return !contentType || contentType.startsWith("text/") || /json|xml|javascript|graphql|x-www-form-urlencoded/i.test(contentType);
-}
-
-function utf8Preview(body: string, maxBytes: number, byteLength: number) {
-  if (byteLength <= maxBytes) return body;
-
-  // Rule: 只按需编码预览前缀，避免为整份大响应额外分配 UTF-8 Buffer。
-  let low = 0;
-  let high = Math.min(body.length, maxBytes) + 1;
-  while (low + 1 < high) {
-    const middle = Math.floor((low + high) / 2);
-    if (Buffer.byteLength(body.slice(0, middle)) <= maxBytes) low = middle;
-    else high = middle;
-  }
-  if (
-    low < body.length &&
-    low > 0 &&
-    body.charCodeAt(low - 1) >= 0xd800 &&
-    body.charCodeAt(low - 1) <= 0xdbff &&
-    body.charCodeAt(low) >= 0xdc00 &&
-    body.charCodeAt(low) <= 0xdfff
-  ) low -= 1;
-  return Buffer.from(body.slice(0, low)).toString("utf8");
-}
-
-function textResponse(contentType: string | null, body: string): RequestLogResponse {
-  const byteLength = Buffer.byteLength(body);
-  return {
-    contentType,
-    body: utf8Preview(body, MAX_LOG_BODY_BYTES, byteLength),
-    byteLength,
-    truncated: byteLength > MAX_LOG_BODY_BYTES,
-  };
-}
-
-function emptyResponse(contentType: string | null): RequestLogResponse {
-  return { contentType, body: "", byteLength: 0, truncated: false };
 }
 
 function copyReplyHeaders(res: FastifyReply) {
@@ -162,6 +124,7 @@ export async function createProxy(
     error?: string,
   ) => {
     logs?.record({
+      source: "proxy",
       timestamp: new Date().toISOString(),
       durationMs: Math.max(0, Date.now() - startedAt),
       packageId: p?.id || null,
@@ -184,7 +147,7 @@ export async function createProxy(
     if (streamRequestBody) await consumeRequestBody(req);
     await sleep(scene.delayMs);
     const body = JSON.stringify(scene.responseBody);
-    record("mocked", scene.status, textResponse("application/json; charset=utf-8", body || ""));
+    record("mocked", scene.status, textLogResponse("application/json; charset=utf-8", body || ""));
     return streamRequestBody
       ? sendRaw(res, scene.status, "application/json; charset=utf-8", body)
       : res.code(scene.status).type("application/json; charset=utf-8").send(body);
@@ -193,7 +156,7 @@ export async function createProxy(
     if (streamRequestBody) await consumeRequestBody(req);
     const body = { error: "未命中 Mock，且当前 Package 未配置真实服务器" };
     const serialized = JSON.stringify(body);
-    record("unmatched", 502, textResponse("application/json; charset=utf-8", serialized));
+    record("unmatched", 502, textLogResponse("application/json; charset=utf-8", serialized));
     return streamRequestBody
       ? sendRaw(res, 502, "application/json; charset=utf-8", serialized)
       : res.code(502).send(body);
@@ -256,15 +219,15 @@ export async function createProxy(
           })
         : undefined;
       tee?.on("error", (error) => {
-        recordOnce("error", responseStatus, responseCollector?.preview(responseContentType, responseContentEncoding) || emptyResponse(responseContentType), error.message);
+        recordOnce("error", responseStatus, responseCollector?.preview(responseContentType, responseContentEncoding) || emptyLogResponse(responseContentType), error.message);
         finish();
       });
       upstreamResponse.on("end", () => {
-        recordOnce("forwarded", responseStatus, responseCollector?.preview(responseContentType, responseContentEncoding) || emptyResponse(responseContentType));
+        recordOnce("forwarded", responseStatus, responseCollector?.preview(responseContentType, responseContentEncoding) || emptyLogResponse(responseContentType));
         finish();
       });
       upstreamResponse.on("error", (error) => {
-        recordOnce("error", responseStatus, responseCollector?.preview(responseContentType, responseContentEncoding) || emptyResponse(responseContentType), error.message);
+        recordOnce("error", responseStatus, responseCollector?.preview(responseContentType, responseContentEncoding) || emptyLogResponse(responseContentType), error.message);
         finish();
       });
       res.raw.statusCode = responseStatus;
@@ -302,12 +265,12 @@ export async function createProxy(
         res.raw.statusCode = 502;
         res.raw.setHeader("content-type", "application/json; charset=utf-8");
         res.raw.end(serialized);
-        recordOnce("error", 502, textResponse("application/json; charset=utf-8", serialized), error.message);
+        recordOnce("error", 502, textLogResponse("application/json; charset=utf-8", serialized), error.message);
       } else if (!streamRequestBody && !res.sent && !res.raw.headersSent) {
         res.code(502).send(body);
-        recordOnce("error", 502, textResponse("application/json; charset=utf-8", serialized), error.message);
+        recordOnce("error", 502, textLogResponse("application/json; charset=utf-8", serialized), error.message);
       } else {
-        recordOnce("error", responseStatus, responseCollector?.preview(responseContentType, responseContentEncoding) || emptyResponse(responseContentType), error.message);
+        recordOnce("error", responseStatus, responseCollector?.preview(responseContentType, responseContentEncoding) || emptyLogResponse(responseContentType), error.message);
       }
       finish();
     });

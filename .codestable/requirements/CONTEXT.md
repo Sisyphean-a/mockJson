@@ -21,9 +21,10 @@
 - **Match Rule（匹配规则）**：支持任意 Header、URL（fullUrl / host / path）与 HTTP Method，接口内按 AND 或 OR 组合；Header 名称比较不区分大小写；零条规则表示不匹配任何请求，不作为全量兜底。
 - **Scenario（响应场景）**：保存完整且合法的 JSON、HTTP 状态码和 0–30000ms 延迟；新建场景默认不启用，选择场景只切换编辑对象，独立开关负责启用、停用或切换当前响应，一个逻辑接口最多启用一个场景。
 - Package、Logical API 和 Scenario 都可在控制台完成创建、修改和删除；Logical API 的 Match Rule 也支持新增、编辑和删除，编辑保留原规则 ID；新建 Logical API 默认关闭，配置场景与规则后再显式开启，未完成接口或没有启用场景的接口不得遮挡其他可用 Mock。
+- 控制台的 Logical API 和 Scenario 列表支持通过拖拽手柄长按排序；排序只持久化各自配置数组的 UI 顺序，Logical API 的 `priority` 仍是独立的运行时匹配优先级；Logical API 搜索时禁用排序并提示清除搜索。
 - 接口 `enabled=false`、没有启用场景或没有规则命中时，Reqable / 本地 Proxy 路径转发当前 Package 的 `targetBaseUrl`；转发保留 JSON 和原始流请求体，保留 `targetBaseUrl` 的基础路径，按目标地址协议选择 HTTP / HTTPS 上游连接，并对无响应上游设置超时。
 - URL 规则中 `path` 仅匹配路径、`host` 匹配收到的 Host、`fullUrl` 包含查询字符串；通过 Reqable 改写目标时优先使用 `path`，因为 Host 可能变成本机地址。
-- Fastify 接收 Reqable 转发的请求 Header，用于匹配并生成本地运行日志；日志只保留最近 200 条 Proxy 请求的匹配结果、接口/场景、状态、耗时和响应体预览，不写入配置文件，也不记录管理/UI 请求。服务端终端默认不逐条输出请求访问日志，只保留启动、错误和安全拒绝信息。
+- Fastify 接收 Reqable 转发的请求 Header，用于匹配并生成本地运行日志；日志只保留最近 200 条 Proxy 或 Chrome 扩展判定的匹配结果、接口/场景、来源、状态、耗时和响应体预览，不写入配置文件，也不记录管理/UI 请求。扩展日志是 resolver 判定日志：扩展未命中时记录放行决定，但浏览器随后发出的真实请求响应不经过 Mock Console；白名单过滤、扩展暂停和扩展侧超时不会产生服务端日志。服务端终端默认不逐条输出请求访问日志，只保留启动、错误和安全拒绝信息。
 - 管理 API 只允许本机访问，局域网客户端仅使用 Mock / Proxy 路径；产品不提供通用请求历史或抓包 Inspector。
 - 配置写入串行化并采用临时文件替换；主文件损坏时仅恢复结构有效的 `.bak`，两者均损坏时明确失败，不静默清空。
 

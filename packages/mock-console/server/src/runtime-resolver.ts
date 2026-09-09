@@ -2,6 +2,8 @@ import type {
   ExtensionRuntimeRequest,
   ExtensionRuntimeResponse,
   LogicalApi,
+  PackageConfig,
+  Scenario,
   State,
 } from "../../shared/types.js";
 import { matchApi, type MatchContext } from "./matcher.js";
@@ -46,10 +48,17 @@ export function selectMatchingApi(apis: LogicalApi[] | undefined, context: Match
   return undefined;
 }
 
-export function resolveExtensionRequest(
+export type ExtensionResolution = {
+  packageConfig: PackageConfig | undefined;
+  api: LogicalApi | undefined;
+  scenario: Scenario | undefined;
+  response: ExtensionRuntimeResponse;
+};
+
+export function resolveExtension(
   state: State,
   request: ExtensionRuntimeRequest,
-): ExtensionRuntimeResponse {
+): ExtensionResolution {
   const packageConfig = state.packages.find((item) => item.id === state.currentPackageId);
   const url = new URL(request.url);
   const selected = selectMatchingApi(packageConfig?.apis, {
@@ -58,14 +67,36 @@ export function resolveExtensionRequest(
     headers: request.headers,
   });
 
-  if (!selected) return { action: "pass", reason: "unmatched" };
-  if (selected.scenario.status < 200) return { action: "pass", reason: "unsupported-status" };
+  if (!selected) return {
+    packageConfig,
+    api: undefined,
+    scenario: undefined,
+    response: { action: "pass", reason: "unmatched" },
+  };
+  if (selected.scenario.status < 200) return {
+    packageConfig,
+    api: selected.api,
+    scenario: selected.scenario,
+    response: { action: "pass", reason: "unsupported-status" },
+  };
 
   return {
-    action: "mock",
-    status: selected.scenario.status,
-    delayMs: selected.scenario.delayMs,
-    body: JSON.stringify(selected.scenario.responseBody) ?? "null",
-    headers: { "content-type": "application/json; charset=utf-8" },
+    packageConfig,
+    api: selected.api,
+    scenario: selected.scenario,
+    response: {
+      action: "mock",
+      status: selected.scenario.status,
+      delayMs: selected.scenario.delayMs,
+      body: JSON.stringify(selected.scenario.responseBody) ?? "null",
+      headers: { "content-type": "application/json; charset=utf-8" },
+    },
   };
+}
+
+export function resolveExtensionRequest(
+  state: State,
+  request: ExtensionRuntimeRequest,
+): ExtensionRuntimeResponse {
+  return resolveExtension(state, request).response;
 }

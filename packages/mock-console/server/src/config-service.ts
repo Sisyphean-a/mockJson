@@ -40,6 +40,20 @@ export class MockConfigService {
     return this.requirePackage(id).apis;
   }
 
+  async reorderApis(packageId: string, input: { ids?: unknown }) {
+    const packageConfig = this.requirePackage(packageId);
+    packageConfig.apis = reorderByIds(packageConfig.apis, input.ids, "接口");
+    await this.save();
+    return packageConfig.apis;
+  }
+
+  async reorderScenarios(apiId: string, input: { ids?: unknown }) {
+    const api = this.requireApi(apiId).api;
+    api.scenarios = reorderByIds(api.scenarios, input.ids, "场景");
+    await this.save();
+    return api.scenarios;
+  }
+
   async switchPackage(id: string) {
     const state = this.getState();
     this.requirePackage(id);
@@ -239,6 +253,19 @@ export class MockConfigService {
       throw error;
     }
   }
+}
+
+function reorderByIds<T extends { id: string }>(items: T[], value: unknown, label: string) {
+  if (!Array.isArray(value) || value.length !== items.length || value.some((id) => typeof id !== "string"))
+    throw new Error(`${label}排序 ID 无效`);
+
+  const ids = value as string[];
+  const knownIds = new Set(items.map((item) => item.id));
+  if (new Set(ids).size !== ids.length || ids.some((id) => !knownIds.has(id)))
+    throw new Error(`${label}排序必须包含全部且唯一的 ID`);
+
+  const byId = new Map(items.map((item) => [item.id, item]));
+  return ids.map((id) => byId.get(id)!);
 }
 
 function normalizeState(state: State) {

@@ -59,7 +59,7 @@ if (hasDist)
   await app.register(staticPlugin, { root: distRoot, prefix: "/__mock_ui/", index: false });
 
 registerAdminRoutes(app, config, requestLogs);
-registerExtensionRoutes(app, config);
+registerExtensionRoutes(app, config, requestLogs);
 
 app.setNotFoundHandler((req, reply) => {
   if (req.url.startsWith("/__mock_admin/")) return reply.code(404).send({ error: "管理接口不存在" });

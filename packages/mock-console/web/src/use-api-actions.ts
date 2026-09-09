@@ -119,6 +119,27 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     } catch (error) { notify(message(error)); }
   }
 
+  async function reorderApis(orderedIds: string[], previousIds: string[]) {
+    const current = model.pkg.value;
+    if (!current || sameOrder(orderedIds, previousIds)) return;
+
+    const byId = new Map(current.apis.map((api) => [api.id, api]));
+    const previous = previousIds.map((id) => byId.get(id));
+    const next = orderedIds.map((id) => byId.get(id));
+    if (previous.some((api) => !api) || next.some((api) => !api)) return;
+
+    current.apis.splice(0, current.apis.length, ...(next as Api[]));
+    try {
+      const saved = await model.runAdminRequest(() => client.reorderApis(current.id, orderedIds));
+      current.apis.splice(0, current.apis.length, ...saved);
+      model.synchronizeSelection();
+      notify("接口顺序已保存");
+    } catch (error) {
+      current.apis.splice(0, current.apis.length, ...(previous as Api[]));
+      notify(message(error));
+    }
+  }
+
   async function updateLogic(mode: "AND" | "OR") {
     const api = model.api.value;
     if (!api) return;
@@ -146,9 +167,14 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     cancelRuleEdit,
     addRule,
     removeRule,
+    reorderApis,
     updateLogic,
     changeSource,
   };
+}
+
+function sameOrder(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
 function message(error: unknown) {
