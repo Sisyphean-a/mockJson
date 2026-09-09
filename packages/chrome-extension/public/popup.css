@@ -9,7 +9,7 @@
 
 body {
   width: 336px;
-  min-height: 300px;
+  min-height: 430px;
   margin: 0;
 }
 
@@ -125,6 +125,49 @@ h1 {
 .switch-row input:checked + .switch::after { transform: translateX(16px); }
 .switch-row input:disabled + .switch { opacity: .45; }
 .switch-row:has(input:disabled) { cursor: default; }
+
+.whitelist-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #e2e5ef;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.whitelist-card label { font-size: 12px; }
+.whitelist-card small, .field-status { color: #737b99; font-size: 11px; line-height: 1.45; }
+.field-status.invalid { color: #c64d5c; }
+
+#domain-whitelist {
+  width: 100%;
+  min-height: 66px;
+  resize: vertical;
+  padding: 8px 9px;
+  border: 1px solid #d9ddea;
+  border-radius: 8px;
+  background: #fbfcff;
+  color: #20243a;
+  font: 12px/1.5 "Cascadia Mono", Consolas, monospace;
+}
+
+#domain-whitelist:focus { outline: 2px solid #cfd5ff; border-color: #5368e8; }
+
+.save {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: #5368e8;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.save:hover { background: #4358d8; }
+.save:disabled { cursor: wait; opacity: .6; }
 
 .hint {
   min-height: 30px;

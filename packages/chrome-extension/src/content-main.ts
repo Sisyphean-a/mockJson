@@ -2,8 +2,18 @@ import type {
   ExtensionRuntimeRequest,
   ExtensionRuntimeResponse,
 } from "../../mock-console/shared/types.js";
+import { urlMatchesWhitelist } from "./domain-whitelist.js";
+
 const CHANNEL = "__mock_console_extension_v1";
+const MONITORING_STATE_TYPE = "monitoring-state";
 const RESOLVE_TIMEOUT_MS = 200;
+
+type MonitoringStateWindowMessage = {
+  channel: typeof CHANNEL;
+  type: typeof MONITORING_STATE_TYPE;
+  enabled: boolean;
+  whitelist: string[];
+};
 
 type ResolveResultMessage = {
   channel: typeof CHANNEL;
@@ -16,6 +26,8 @@ const nativeFetch = window.fetch.bind(window);
 const NativeXMLHttpRequest = window.XMLHttpRequest;
 const pendingResolutions = new Map<string, (result: ExtensionRuntimeResponse) => void>();
 let nextRequestId = 0;
+let monitoringEnabled = false;
+let monitoringWhitelist: string[] = [];
 
 if (!isMockConsolePage()) {
   installFetchInterceptor();
@@ -23,7 +35,13 @@ if (!isMockConsolePage()) {
 }
 
 window.addEventListener("message", (event) => {
-  if (event.source !== window || !isResolveResultMessage(event.data)) return;
+  if (event.source !== window) return;
+  if (isMonitoringStateWindowMessage(event.data)) {
+    monitoringEnabled = event.data.enabled;
+    monitoringWhitelist = event.data.whitelist;
+    return;
+  }
+  if (!isResolveResultMessage(event.data)) return;
   const resolve = pendingResolutions.get(event.data.id);
   if (!resolve) return;
   pendingResolutions.delete(event.data.id);
@@ -33,14 +51,14 @@ window.addEventListener("message", (event) => {
 function installFetchInterceptor() {
   window.fetch = (async function interceptedFetch(input: RequestInfo | URL, init?: RequestInit) {
     const request = new Request(input, init);
-    if (!isHttpUrl(request.url)) return nativeFetch(input, init);
+    if (!monitoringEnabled || !isWhitelistedUrl(request.url)) return nativeFetch(input, init);
 
     const decision = await askResolver({
       url: request.url,
       method: request.method,
       headers: headersToRecord(request.headers),
     }, request.signal);
-    if (decision.action === "pass") return nativeFetch(input, init);
+    if (!monitoringEnabled || !isWhitelistedUrl(request.url) || decision.action === "pass") return nativeFetch(input, init);
 
     try {
       await waitForDelay(decision.delayMs, request.signal);
@@ -245,7 +263,7 @@ function openXhr(state: XhrState, args: unknown[]) {
     installNativeListeners(state);
     return;
   }
-  if (!async || !isHttpUrl(url.href)) {
+  if (!monitoringEnabled || !urlMatchesWhitelist(url.href, monitoringWhitelist) || !async || !isHttpUrl(url.href)) {
     state.mode = "direct";
     state.target.open(...args as [string, string, boolean, string?, string?]);
     installNativeListeners(state);
@@ -268,6 +286,7 @@ function setRequestHeader(state: XhrState, name: string, value: string) {
 function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | null) {
   if (state.mode === "direct") return state.target.send(body);
   if (!state.opened || state.sent) throw new DOMException("Invalid XMLHttpRequest state", "InvalidStateError");
+  if (!monitoringEnabled || !urlMatchesWhitelist(state.url, monitoringWhitelist)) return useDirectXhr(state, body);
   state.sent = true;
   const generation = state.generation;
   if (state.timeout > 0) state.timeoutTimer = window.setTimeout(() => timeoutXhr(state, generation), state.timeout);
@@ -429,6 +448,10 @@ function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+function isMonitoringStateWindowMessage(value: unknown): value is MonitoringStateWindowMessage {
+  return isRecord(value) && value.channel === CHANNEL && value.type === MONITORING_STATE_TYPE && typeof value.enabled === "boolean";
+}
+
 function isResolveResultMessage(value: unknown): value is ResolveResultMessage {
   if (!isRecord(value) || value.channel !== CHANNEL || value.type !== "resolve-result" || typeof value.id !== "string") return false;
   const result = value.result;
@@ -449,6 +472,15 @@ function headersToRecord(headers: Headers) {
   const result: Record<string, string> = {};
   headers.forEach((value, name) => { result[name] = value; });
   return result;
+}
+
+function isWhitelistedUrl(value: string) {
+  if (!isHttpUrl(value)) return false;
+  try {
+    return urlMatchesWhitelist(new URL(value, window.location.href).href, monitoringWhitelist);
+  } catch {
+    return false;
+  }
 }
 
 function isHttpUrl(value: string) {

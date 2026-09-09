@@ -362,7 +362,7 @@
   min-height: 38px;
   border-top: 1px solid var(--line-soft);
   display: grid;
-  grid-template-columns: minmax(84px, 0.75fr) minmax(120px, 1fr) minmax(95px, 0.8fr) minmax(180px, 2.4fr) 52px;
+  grid-template-columns: minmax(84px, 0.75fr) minmax(120px, 1fr) minmax(95px, 0.8fr) minmax(180px, 2.4fr) minmax(82px, auto);
   align-items: center;
   gap: 8px;
   color: var(--ink-muted);
@@ -408,17 +408,26 @@
   white-space: nowrap;
 }
 
+.rule-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.edit-rule,
 .remove-rule {
   border: 0;
   background: transparent;
-  color: #9a5a55;
   cursor: pointer;
   font-size: 11px;
 }
 
-.remove-rule:hover {
-  color: var(--danger);
-}
+.edit-rule { color: var(--accent); }
+.edit-rule:hover { color: var(--accent-strong); }
+.remove-rule { color: #9a5a55; }
+.remove-rule:hover { color: var(--danger); }
 
 .no-rules {
   margin: 0 14px 8px;

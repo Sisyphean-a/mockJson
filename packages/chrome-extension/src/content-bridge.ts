@@ -1,5 +1,7 @@
 import type { ExtensionRuntimeRequest, ExtensionRuntimeResponse } from "../../mock-console/shared/types.js";
 const CHANNEL = "__mock_console_extension_v1";
+const MONITORING_STATE_TYPE = "monitoring-state";
+const REFRESH_MONITORING_TYPE = "refresh-monitoring";
 
 type ResolveMessage = {
   channel: typeof CHANNEL;
@@ -14,6 +16,30 @@ type ResolveResultMessage = {
   id: string;
   result: ExtensionRuntimeResponse;
 };
+
+type MonitoringStateWindowMessage = {
+  channel: typeof CHANNEL;
+  type: typeof MONITORING_STATE_TYPE;
+  enabled: boolean;
+  whitelist: string[];
+};
+
+type MonitoringRefreshMessage = {
+  channel: typeof CHANNEL;
+  type: typeof REFRESH_MONITORING_TYPE;
+};
+
+type MonitoringStateResponse = {
+  enabled: boolean;
+  whitelist: string[];
+};
+
+void syncMonitoringState();
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (!isMonitoringRefreshMessage(message)) return;
+  void syncMonitoringState();
+});
 
 window.addEventListener("message", (event) => {
   if (event.source !== window || !isResolveMessage(event.data)) return;
@@ -30,6 +56,23 @@ window.addEventListener("message", (event) => {
   });
 });
 
+async function syncMonitoringState() {
+  let state: MonitoringStateResponse = { enabled: false, whitelist: [] };
+  try {
+    const result: unknown = await chrome.runtime.sendMessage({ channel: CHANNEL, type: "get-monitoring" });
+    if (isMonitoringStateResponse(result)) state = result;
+  } catch {
+    // A missing or unavailable extension keeps the page on native requests.
+  }
+  const message: MonitoringStateWindowMessage = {
+    channel: CHANNEL,
+    type: MONITORING_STATE_TYPE,
+    enabled: state.enabled,
+    whitelist: state.whitelist,
+  };
+  window.postMessage(message, "*");
+}
+
 async function resolve(message: ResolveMessage) {
   try {
     const result = await chrome.runtime.sendMessage(message);
@@ -38,6 +81,19 @@ async function resolve(message: ResolveMessage) {
     // The page must keep its original request semantics when Mock Console is unavailable.
   }
   return { action: "pass", reason: "invalid-request" } as const;
+}
+
+function isMonitoringRefreshMessage(value: unknown): value is MonitoringRefreshMessage {
+  return isRecord(value) && value.channel === CHANNEL && value.type === REFRESH_MONITORING_TYPE;
+}
+
+function isMonitoringStateResponse(value: unknown): value is MonitoringStateResponse {
+  return (
+    isRecord(value) &&
+    typeof value.enabled === "boolean" &&
+    Array.isArray(value.whitelist) &&
+    value.whitelist.every((domain) => typeof domain === "string")
+  );
 }
 
 function isResolveMessage(value: unknown): value is ResolveMessage {

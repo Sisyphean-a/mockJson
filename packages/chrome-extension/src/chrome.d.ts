@@ -13,9 +13,14 @@ declare const chrome: {
   };
   tabs: {
     query(queryInfo: { active?: boolean; currentWindow?: boolean }): Promise<Array<{ id?: number; url?: string }>>;
+    sendMessage(tabId: number, message: unknown): Promise<unknown>;
   };
   storage: {
     session: {
+      get(keys: string[]): Promise<Record<string, unknown>>;
+      set(items: Record<string, unknown>): Promise<void>;
+    };
+    local: {
       get(keys: string[]): Promise<Record<string, unknown>>;
       set(items: Record<string, unknown>): Promise<void>;
     };

@@ -144,7 +144,7 @@
   }
 
   .rule {
-    grid-template-columns: 90px minmax(110px, 1fr) minmax(90px, 1fr) minmax(150px, 2fr) 52px;
+    grid-template-columns: 90px minmax(110px, 1fr) minmax(90px, 1fr) minmax(150px, 2fr) minmax(82px, auto);
   }
 
   .scenario-workspace {
@@ -328,10 +328,9 @@
     white-space: pre-wrap;
   }
 
-  .remove-rule {
-    grid-column: 2;
+  .rule-actions {
+    grid-column: 1 / -1;
     justify-self: end;
-    grid-row: 1;
   }
 
   .no-rules {

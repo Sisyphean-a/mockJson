@@ -41,6 +41,14 @@
         </label>
       </section>
 
+      <section class="whitelist-card" aria-label="请求域名白名单">
+        <label for="domain-whitelist"><strong>请求域名白名单</strong></label>
+        <textarea id="domain-whitelist" rows="3" placeholder="api.example.com\nlocalhost"></textarea>
+        <small>默认监控 localhost 和 127.0.0.1；每行一个请求域名，example.com 同时匹配其子域名。留空则不监控任何请求。</small>
+        <span id="whitelist-status" class="field-status"></span>
+        <button id="save-whitelist" class="save" type="button">保存白名单</button>
+      </section>
+
       <p id="hint" class="hint">规则和场景仍由 Mock Console 管理。</p>
       <button id="refresh" class="refresh" type="button">刷新状态</button>
     </main>

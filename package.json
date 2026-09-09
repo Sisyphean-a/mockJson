@@ -13,7 +13,7 @@
     "build:extension": "vite build --config packages/chrome-extension/vite.config.ts",
     "typecheck": "vue-tsc --noEmit",
     "start": "tsx packages/mock-console/server/src/index.ts",
-    "test": "node --import tsx --test packages/mock-console/server/src/**/*.test.ts packages/mock-console/web/src/**/*.test.ts"
+    "test": "node --import tsx --test packages/mock-console/server/src/**/*.test.ts packages/mock-console/web/src/**/*.test.ts packages/chrome-extension/src/**/*.test.ts"
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",

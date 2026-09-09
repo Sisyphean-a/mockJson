@@ -24,6 +24,7 @@ export function useConsoleForms() {
   const ruleField = ref("apiName");
   const ruleOperator = ref("equals");
   const ruleValue = ref("");
+  const editingRuleId = ref<string | null>(null);
   const addingRule = ref(false);
 
   const operators = [
@@ -48,7 +49,7 @@ export function useConsoleForms() {
     draft, jsonError, expanded, draftDirty, showApi, showScene, showPackage, sceneEditMode,
     apiName, apiEditName, apiPriority, sceneName, editSceneName, editSceneStatus,
     editSceneDelay, editSceneColor, packageName, editingPackageId, targetUrl,
-    ruleSource, ruleField, ruleOperator, ruleValue, addingRule,
+    ruleSource, ruleField, ruleOperator, ruleValue, editingRuleId, addingRule,
     operators, urlFields, methodFields, ruleHint,
   };
 }

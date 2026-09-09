@@ -63,20 +63,48 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     } catch (error) { notify(message(error)); }
   }
 
+  function openRuleCreate() {
+    forms.editingRuleId.value = null;
+    forms.ruleSource.value = "header";
+    forms.ruleField.value = "apiName";
+    forms.ruleOperator.value = "equals";
+    forms.ruleValue.value = "";
+    forms.addingRule.value = true;
+  }
+
+  function openRuleEdit(rule: MatchRule) {
+    forms.editingRuleId.value = rule.id;
+    forms.ruleSource.value = rule.source;
+    forms.ruleField.value = rule.field;
+    forms.ruleOperator.value = rule.operator;
+    forms.ruleValue.value = rule.value;
+    forms.addingRule.value = true;
+  }
+
+  function cancelRuleEdit() {
+    forms.editingRuleId.value = null;
+    forms.addingRule.value = false;
+  }
+
   async function addRule() {
     const api = model.api.value;
     if (!api || (forms.ruleOperator.value !== "exists" && forms.ruleOperator.value !== "notExists" && !forms.ruleValue.value.trim())) return;
     const value = forms.ruleSource.value === "method" ? forms.ruleValue.value.trim().toUpperCase() : forms.ruleValue.value.trim();
-    const rules: MatchRule[] = [...api.matchRules, {
-      id: crypto.randomUUID(), source: forms.ruleSource.value, field: forms.ruleField.value,
-      operator: forms.ruleOperator.value as MatchRule["operator"], value,
-    }];
+    const editingRuleId = forms.editingRuleId.value;
+    const draft: Omit<MatchRule, "id"> = {
+      source: forms.ruleSource.value,
+      field: forms.ruleField.value,
+      operator: forms.ruleOperator.value as MatchRule["operator"],
+      value,
+    };
+    const rules: MatchRule[] = editingRuleId
+      ? api.matchRules.map((rule) => rule.id === editingRuleId ? { ...rule, ...draft } : rule)
+      : [...api.matchRules, { id: crypto.randomUUID(), ...draft }];
     try {
       const saved = await model.runAdminRequest(() => client.updateApi(api.id, { matchRules: rules }));
       model.replaceApi(saved);
-      forms.ruleValue.value = "";
-      forms.addingRule.value = false;
-      notify("匹配条件已添加");
+      cancelRuleEdit();
+      notify(editingRuleId ? "匹配条件已更新" : "匹配条件已添加");
     } catch (error) { notify(message(error)); }
   }
 
@@ -86,6 +114,7 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     try {
       const saved = await model.runAdminRequest(() => client.updateApi(api.id, { matchRules: api.matchRules.filter((rule) => rule.id !== id) }));
       model.replaceApi(saved);
+      if (forms.editingRuleId.value === id) cancelRuleEdit();
       notify("匹配条件已删除");
     } catch (error) { notify(message(error)); }
   }
@@ -104,7 +133,22 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     forms.ruleField.value = forms.ruleSource.value === "header" ? "apiName" : forms.ruleSource.value === "url" ? "path" : "method";
   }
 
-  return { openApiCreate, openApiEdit, createApi, saveApi, deleteApi, deleteApiTarget, toggle, addRule, removeRule, updateLogic, changeSource };
+  return {
+    openApiCreate,
+    openApiEdit,
+    createApi,
+    saveApi,
+    deleteApi,
+    deleteApiTarget,
+    toggle,
+    openRuleCreate,
+    openRuleEdit,
+    cancelRuleEdit,
+    addRule,
+    removeRule,
+    updateLogic,
+    changeSource,
+  };
 }
 
 function message(error: unknown) {

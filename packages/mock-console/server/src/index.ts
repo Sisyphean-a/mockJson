@@ -1,4 +1,4 @@
-import Fastify, { type FastifyRequest } from "fastify";
+import Fastify, { LogController, type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import staticPlugin from "@fastify/static";
 import { existsSync } from "node:fs";
@@ -18,7 +18,7 @@ const distRoot = resolve(packageRoot, "dist");
 const repository = new JsonFileRepository(resolveStateFile());
 const config = new MockConfigService(repository);
 const requestLogs = new RequestLogStore();
-const app = Fastify({ logger: true });
+const app = Fastify({ logger: { level: "warn" }, logController: new LogController({ disableRequestLogging: true }) });
 const loopback = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 function requestChannel(req: FastifyRequest) {
@@ -41,21 +41,15 @@ await app.register(cors, {
 });
 
 app.addHook("onRequest", async (req, reply) => {
-  if (req.url.startsWith("/__mock_admin/") && !loopback.has(req.ip))
+  if (req.url.startsWith("/__mock_admin/") && !loopback.has(req.ip)) {
+    app.log.warn({ method: req.method, url: req.url, ip: req.ip }, "rejected non-loopback admin request");
     return reply.code(403).send({ error: "管理接口只允许本机访问" });
-  if (req.url.startsWith("/__mock_extension/") && !loopback.has(req.ip))
+  }
+  if (req.url.startsWith("/__mock_extension/") && !loopback.has(req.ip)) {
+    app.log.warn({ method: req.method, url: req.url, ip: req.ip }, "rejected non-loopback extension request");
     return reply.code(403).send({ error: "扩展接口只允许本机访问" });
+  }
   const channel = requestChannel(req);
-  app.log.info(
-    {
-      channel,
-      method: req.method,
-      url: req.url,
-      host: req.headers.host,
-      apiName: req.headers.apiname,
-    },
-    "request received",
-  );
   if (channel === "proxy" && hasRequestBody(req))
     await createProxy(req, reply, config.getState(), requestLogs, { streamRequestBody: true });
 });

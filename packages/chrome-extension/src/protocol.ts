@@ -24,12 +24,28 @@ export type ResolveResultMessage = {
   result: ExtensionRuntimeResponse;
 };
 
+export type MonitoringQueryMessage = {
+  channel: typeof CHANNEL;
+  type: "get-monitoring";
+};
+
+export type MonitoringRefreshMessage = {
+  channel: typeof CHANNEL;
+  type: "refresh-monitoring";
+};
+
+export type MonitoringStateResponse = {
+  enabled: boolean;
+  whitelist: string[];
+};
+
 export type PopupState = {
   serverOnline: boolean;
   hasPackage: boolean;
   supportedPage: boolean;
   tabId: number | null;
   host: string | null;
+  whitelist: string[];
   globalEnabled: boolean;
   tabEnabled: boolean;
   effectiveEnabled: boolean;
@@ -38,7 +54,8 @@ export type PopupState = {
 export type PopupMessage =
   | { channel: typeof POPUP_CHANNEL; type: "get-state" }
   | { channel: typeof POPUP_CHANNEL; type: "set-global"; enabled: boolean }
-  | { channel: typeof POPUP_CHANNEL; type: "set-tab"; tabId: number; enabled: boolean };
+  | { channel: typeof POPUP_CHANNEL; type: "set-tab"; tabId: number; enabled: boolean }
+  | { channel: typeof POPUP_CHANNEL; type: "set-whitelist"; domains: string[] };
 
 export type PopupResponse =
   | { ok: true; state: PopupState }

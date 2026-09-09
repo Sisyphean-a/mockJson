@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ConsoleController } from "../console-controller";
 
-type MatchPanelController = Pick<ConsoleController, "api" | "updateLogic" | "addingRule" | "ruleSource" | "changeSource" | "ruleField" | "urlFields" | "methodFields" | "ruleOperator" | "operators" | "ruleValue" | "ruleHint" | "addRule" | "removeRule">;
+type MatchPanelController = Pick<ConsoleController, "api" | "updateLogic" | "addingRule" | "editingRuleId" | "openRuleCreate" | "openRuleEdit" | "cancelRuleEdit" | "ruleSource" | "changeSource" | "ruleField" | "urlFields" | "methodFields" | "ruleOperator" | "operators" | "ruleValue" | "ruleHint" | "addRule" | "removeRule">;
 const { controller: c } = defineProps<{ controller: MatchPanelController }>();
 </script>
 
@@ -19,7 +19,7 @@ const { controller: c } = defineProps<{ controller: MatchPanelController }>();
             <option value="AND">同时满足（AND）</option><option value="OR">满足任一（OR）</option>
           </select>
         </div>
-        <button class="add-rule" @click="c.addingRule.value = !c.addingRule.value">＋ 添加条件</button>
+        <button class="add-rule" @click="c.addingRule.value ? c.cancelRuleEdit() : c.openRuleCreate()">{{ c.addingRule.value ? "取消" : "＋ 添加条件" }}</button>
       </div>
     </div>
 
@@ -34,7 +34,7 @@ const { controller: c } = defineProps<{ controller: MatchPanelController }>();
       <select v-model="c.ruleOperator.value" aria-label="匹配运算符"><option v-for="operator in c.operators" :key="operator.value" :value="operator.value">{{ operator.label }}</option></select>
       <input v-model="c.ruleValue.value" aria-label="匹配值" :placeholder="c.ruleOperator.value === 'exists' || c.ruleOperator.value === 'notExists' ? '此操作不需要填写值' : '输入匹配值'" @keyup.enter="c.addRule" />
       <div class="rule-hint">{{ c.ruleHint.value }}</div>
-      <button class="primary small" @click="c.addRule">保存条件</button>
+      <button class="primary small" @click="c.addRule">{{ c.editingRuleId.value ? "保存修改" : "保存条件" }}</button>
     </div>
 
     <div v-if="c.api.value.matchRules.length" class="rules">
@@ -46,7 +46,10 @@ const { controller: c } = defineProps<{ controller: MatchPanelController }>();
         <span class="rule-field">{{ rule.field }}</span>
         <span class="operator">{{ c.operators.find((item) => item.value === rule.operator)?.label || rule.operator }}</span>
         <code class="rule-value">{{ rule.value || "—" }}</code>
-        <button class="remove-rule" :aria-label="`删除匹配条件 ${rule.field}`" @click="c.removeRule(rule.id)">删除</button>
+        <div class="rule-actions">
+          <button class="edit-rule" :aria-label="`编辑匹配条件 ${rule.field}`" @click="c.openRuleEdit(rule)">编辑</button>
+          <button class="remove-rule" :aria-label="`删除匹配条件 ${rule.field}`" @click="c.removeRule(rule.id)">删除</button>
+        </div>
       </div>
     </div>
     <div v-else class="no-rules">未添加匹配条件</div>
