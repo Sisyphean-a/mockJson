@@ -39,7 +39,6 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     draftRevision += 1;
     scheduleJsonAutosave();
   });
-  watch(model.pkg, (current) => { forms.targetUrl.value = current?.targetBaseUrl || ""; }, { immediate: true });
   onBeforeUnmount(clearJsonAutosave);
 
   function openSceneCreate() {

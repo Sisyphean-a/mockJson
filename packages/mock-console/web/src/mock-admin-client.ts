@@ -3,6 +3,7 @@ import {
   type LogicalApi,
   type MatchRule,
   type PackageConfig,
+  type RealService,
   type RequestLog,
   type RequestLogsDeltaResponse,
   type RequestLogsResponse,
@@ -11,7 +12,7 @@ import {
 } from "../../shared/types";
 import { createRuntimeEndpoints, type RuntimeEndpoints } from "./runtime-endpoints";
 
-export type { LogicalApi, MatchRule, PackageConfig, RequestLog, RequestLogsDeltaResponse, RequestLogsResponse, Scenario, State };
+export type { LogicalApi, MatchRule, PackageConfig, RealService, RequestLog, RequestLogsDeltaResponse, RequestLogsResponse, Scenario, State };
 export type Api = LogicalApi;
 export type Pkg = PackageConfig;
 export type Scene = Scenario;
@@ -94,6 +95,22 @@ export class MockAdminClient {
 
   async updatePackage(id: string, input: { name?: string; targetBaseUrl?: string }) {
     return this.request<PackageConfig>(`/__mock_admin/packages/${id}`, json("PATCH", input));
+  }
+
+  async createRealService(packageId: string, input: { name: string; baseUrl?: string }) {
+    return this.request<RealService>(`/__mock_admin/packages/${packageId}/real-services`, json("POST", input));
+  }
+
+  async updateRealService(id: string, input: Partial<Pick<RealService, "name" | "baseUrl">>) {
+    return this.request<RealService>(`/__mock_admin/real-services/${id}`, json("PATCH", input));
+  }
+
+  async deleteRealService(id: string) {
+    return this.request<{ success: true; activeRealServiceId: string | null }>(`/__mock_admin/real-services/${id}`, { method: "DELETE" });
+  }
+
+  async activateRealService(packageId: string, serviceId: string) {
+    return this.request<{ success: true; activeRealServiceId: string }>(`/__mock_admin/packages/${packageId}/active-real-service/${serviceId}`, { method: "POST" });
   }
 
   async deletePackage(id: string) {

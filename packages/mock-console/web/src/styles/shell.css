@@ -138,13 +138,11 @@ header {
   max-width: min(420px, 34vw);
 }
 
-.target-config input {
-  width: 220px;
-  max-width: 22vw;
-  padding: 6px 9px;
-  outline: none;
-  font-family: var(--font-mono);
-  font-size: 11px;
+.target-config select {
+  min-width: 160px;
+  max-width: min(280px, 28vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .save-target,

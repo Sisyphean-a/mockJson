@@ -14,12 +14,18 @@ const matchingRules = (): State["packages"][number]["apis"][number]["matchRules"
 function createState(rules: State["packages"][number]["apis"][number]["matchRules"]): State {
   return {
     currentPackageId: "pkg",
-    packages: [{ id: "pkg", name: "测试包", targetBaseUrl: "", apis: [{
+    packages: [{ id: "pkg", name: "测试包", realServices: [], activeRealServiceId: null, apis: [{
       id: "api", name: "测试接口", enabled: true, priority: 10, matchMode: "AND", matchRules: rules,
       activeScenarioId: "ok", scenarios: [{ id: "ok", name: "命中", status: 200, delayMs: 0, responseBody: { matched: true } }],
     }] }],
   };
 }
+
+function setRealServiceUrl(state: State, baseUrl: string) {
+  state.packages[0].realServices = [{ id: "real", name: "测试环境", baseUrl }];
+  state.packages[0].activeRealServiceId = "real";
+}
+
 async function request(
   state: State,
   options: Record<string, unknown> = {},
@@ -31,6 +37,39 @@ async function request(
   await app.close();
   return response;
 }
+
+test("代理使用当前选中的真实服务", async () => {
+  const createUpstream = (body: string) => http.createServer((_req, res) => res.end(body));
+  const testUpstream = createUpstream("test");
+  const productionUpstream = createUpstream("production");
+  await Promise.all([
+    new Promise<void>((resolve) => testUpstream.listen(0, "127.0.0.1", () => resolve())),
+    new Promise<void>((resolve) => productionUpstream.listen(0, "127.0.0.1", () => resolve())),
+  ]);
+  const testAddress = testUpstream.address();
+  const productionAddress = productionUpstream.address();
+  assert.ok(testAddress && typeof testAddress !== "string");
+  assert.ok(productionAddress && typeof productionAddress !== "string");
+
+  const state = createState([]);
+  state.packages[0].apis[0].enabled = false;
+  state.packages[0].realServices = [
+    { id: "test", name: "测试环境", baseUrl: `http://127.0.0.1:${testAddress.port}` },
+    { id: "production", name: "生产环境", baseUrl: `http://127.0.0.1:${productionAddress.port}` },
+  ];
+  state.packages[0].activeRealServiceId = "test";
+
+  const testResponse = await request(state);
+  state.packages[0].activeRealServiceId = "production";
+  const productionResponse = await request(state);
+  await Promise.all([
+    new Promise<void>((resolve) => testUpstream.close(() => resolve())),
+    new Promise<void>((resolve) => productionUpstream.close(() => resolve())),
+  ]);
+
+  assert.equal(testResponse.body, "test");
+  assert.equal(productionResponse.body, "production");
+});
 
 test("Fastify 收到请求头后可按 Header 规则命中场景", async () => {
   const response = await request(createState(matchingRules()));
@@ -131,7 +170,7 @@ test("响应日志按类型控制预览内存且不改变原始流", async () =>
   assert.ok(address && typeof address !== "string");
   const state = createState([]);
   state.packages[0].apis[0].enabled = false;
-  state.packages[0].targetBaseUrl = `http://127.0.0.1:${address.port}`;
+  setRealServiceUrl(state, `http://127.0.0.1:${address.port}`);
   const logs = new RequestLogStore();
 
   const binaryResponse = await request(state, { url: "/binary" }, logs);
@@ -172,13 +211,13 @@ test("没有匹配规则时不处理请求", async () => {
   const logs = new RequestLogStore();
   const response = await request(createState([]), {}, logs);
   assert.equal(response.statusCode, 502);
-  assert.deepEqual(response.json(), { error: "未命中 Mock，且当前 Package 未配置真实服务器" });
+  assert.deepEqual(response.json(), { error: "未命中 Mock，且当前 Package 未配置真实服务" });
 
   const [log] = logs.list();
   assert.ok(log);
   assert.equal(log.outcome, "unmatched");
   assert.equal(log.apiName, null);
-  assert.deepEqual(JSON.parse(log.response.body || ""), { error: "未命中 Mock，且当前 Package 未配置真实服务器" });
+  assert.deepEqual(JSON.parse(log.response.body || ""), { error: "未命中 Mock，且当前 Package 未配置真实服务" });
 });
 
 test("接口关闭时不处理请求", async () => {
@@ -193,7 +232,7 @@ test("活动场景失效时不回退到其他场景", async () => {
   state.packages[0].apis[0].activeScenarioId = "missing";
   const response = await request(state);
   assert.equal(response.statusCode, 502);
-  assert.deepEqual(response.json(), { error: "未命中 Mock，且当前 Package 未配置真实服务器" });
+  assert.deepEqual(response.json(), { error: "未命中 Mock，且当前 Package 未配置真实服务" });
 });
 
 test("未命中代理会保留 multipart 原始字节", async () => {
@@ -208,7 +247,7 @@ test("未命中代理会保留 multipart 原始字节", async () => {
   assert.ok(address && typeof address !== "string");
   const state = createState([]);
   state.packages[0].apis[0].enabled = false;
-  state.packages[0].targetBaseUrl = `http://127.0.0.1:${address.port}`;
+  setRealServiceUrl(state, `http://127.0.0.1:${address.port}`);
   const app = Fastify();
   app.addContentTypeParser("*", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
   app.setNotFoundHandler((req, reply) => createProxy(req, reply, state));
@@ -232,7 +271,7 @@ test("有请求体的代理在解析前直接流式转发", async () => {
   assert.ok(address && typeof address !== "string");
   const state = createState([]);
   state.packages[0].apis[0].enabled = false;
-  state.packages[0].targetBaseUrl = `http://127.0.0.1:${address.port}`;
+  setRealServiceUrl(state, `http://127.0.0.1:${address.port}`);
   const app = Fastify();
   app.addContentTypeParser("*", { parseAs: "buffer" }, () => {
     throw new Error("请求体不应先被解析");
@@ -275,7 +314,7 @@ test("客户端中断请求体时会释放上游请求", async () => {
   assert.ok(address && typeof address !== "string");
   const state = createState([]);
   state.packages[0].apis[0].enabled = false;
-  state.packages[0].targetBaseUrl = `http://127.0.0.1:${address.port}`;
+  setRealServiceUrl(state, `http://127.0.0.1:${address.port}`);
   const app = Fastify();
   app.addContentTypeParser("*", { parseAs: "buffer" }, () => {
     throw new Error("请求体不应先被解析");
@@ -328,7 +367,7 @@ test("未命中代理会转发 JSON 请求体并保留目标基础路径", async
   assert.ok(address && typeof address !== "string");
   const state = createState([]);
   state.packages[0].apis[0].enabled = false;
-  state.packages[0].targetBaseUrl = `http://127.0.0.1:${address.port}/base`;
+  setRealServiceUrl(state, `http://127.0.0.1:${address.port}/base`);
   const logs = new RequestLogStore();
   const response = await request(state, { method: "POST", url: "/echo?x=1", headers: { "content-type": "application/json" }, payload: { hello: "world" } }, logs);
   await new Promise<void>((resolve) => upstream.close(() => resolve()));

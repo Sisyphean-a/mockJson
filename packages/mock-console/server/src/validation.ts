@@ -1,26 +1,48 @@
-import type { PackageConfig, State } from "../../shared/types.js";
+import type { PersistedPackageConfig, PersistedState } from "../../shared/types.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 const isUuidLike = (value: unknown) =>
   typeof value === "string" && value.length > 0 && value.length <= 200;
 
-export function isValidState(value: unknown): value is State {
+export function isValidState(value: unknown): value is PersistedState {
   if (!isRecord(value) || !Array.isArray(value.packages)) return false;
   if (value.currentPackageId !== null && !isUuidLike(value.currentPackageId))
     return false;
   return value.packages.every(isValidPackage);
 }
 
-export function isValidPackage(value: unknown): value is PackageConfig {
-  if (!isRecord(value)) return false;
-  return (
+export function isValidPackage(value: unknown): value is PersistedPackageConfig {
+  if (!isRecord(value) || !isUuidLike(value.id) || typeof value.name !== "string" || !Array.isArray(value.apis))
+    return false;
+  if (!value.apis.every(isValidApi)) return false;
+  if (Object.hasOwn(value, "realServices") || Object.hasOwn(value, "activeRealServiceId")) {
+    return (
+      Array.isArray(value.realServices) &&
+      (value.activeRealServiceId === null || isUuidLike(value.activeRealServiceId)) &&
+      value.realServices.every(isValidRealService)
+    );
+  }
+  return typeof value.targetBaseUrl === "string" && isValidTarget(value.targetBaseUrl);
+}
+
+function isValidRealService(value: unknown) {
+  return isRecord(value) &&
     isUuidLike(value.id) &&
     typeof value.name === "string" &&
-    typeof value.targetBaseUrl === "string" &&
-    Array.isArray(value.apis) &&
-    value.apis.every(isValidApi)
-  );
+    isValidTarget(value.baseUrl);
+}
+
+function isValidTarget(value: unknown) {
+  if (typeof value !== "string") return false;
+  const target = value.trim();
+  if (!target) return true;
+  try {
+    const parsed = new URL(target);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function isValidApi(value: unknown) {
@@ -79,7 +101,7 @@ export function validTarget(value: unknown) {
   const target = typeof value === "string" ? value.trim() : "";
   if (!target) return "";
   const parsed = new URL(target);
-  if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("targetBaseUrl 必须是 http:// 或 https:// 地址");
+  if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("真实服务地址必须是 http:// 或 https:// 地址");
   return target;
 }
 

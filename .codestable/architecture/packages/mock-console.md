@@ -16,7 +16,7 @@
 | 区域 | 入口 | 责任 |
 | --- | --- | --- |
 | server/bootstrap | `packages/mock-console/server/src/index.ts` | Fastify、CORS、静态页面、端口和组合根 |
-| server/config | `config-service.ts` | Package、Logical API、Scenario 的业务变更和持久化协调 |
+| server/config | `config-service.ts` | Package、RealService、Logical API、Scenario 的业务变更和持久化协调 |
 | server/routes | `admin-routes.ts`、`extension-routes.ts` | 管理 API 与扩展 resolver 的 HTTP 转换 |
 | server/runtime | `runtime-resolver.ts` | 按当前 Package、优先级和 active scenario 生成 Mock / pass 判定 |
 | server/proxy | `proxy.ts` | Reqable / 本地 Proxy 请求匹配、Mock 返回和真实转发 |
@@ -34,4 +34,4 @@
 - 正式运行入口：`http://127.0.0.1:22333`。
 - 管理 API：`/__mock_admin/*`，仅限本机访问。
 - 扩展 resolver：`POST /__mock_extension/resolve`，未命中返回 pass，命中返回一次性 JSON Mock 判定。
-- Chrome 扩展模式不使用 Package 的 `targetBaseUrl`；真实放行请求由浏览器自己发出。
+- Chrome 扩展模式不使用 Package 的 RealService 配置；真实放行请求由浏览器自己发出。

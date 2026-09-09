@@ -2,7 +2,7 @@ import http from "node:http";
 import https from "node:https";
 import { Transform } from "node:stream";
 import type { FastifyRequest, FastifyReply } from "fastify";
-import type { RequestLogOutcome, RequestLogResponse, State } from "../../shared/types.js";
+import type { PackageConfig, RequestLogOutcome, RequestLogResponse, State } from "../../shared/types.js";
 import { selectMatchingApi } from "./runtime-resolver.js";
 import { emptyLogResponse, MAX_LOG_BODY_BYTES, RequestLogStore, textLogResponse } from "./request-logs.js";
 
@@ -36,6 +36,10 @@ function consumeRequestBody(req: FastifyRequest) {
     req.raw.once("error", finish);
     req.raw.resume();
   });
+}
+
+function activeRealServiceUrl(packageConfig: PackageConfig | undefined) {
+  return packageConfig?.realServices.find((item) => item.id === packageConfig.activeRealServiceId)?.baseUrl || "";
 }
 
 function targetUrl(requestUrl: string, baseUrl: string) {
@@ -152,9 +156,10 @@ export async function createProxy(
       ? sendRaw(res, scene.status, "application/json; charset=utf-8", body)
       : res.code(scene.status).type("application/json; charset=utf-8").send(body);
   }
-  if (!p?.targetBaseUrl) {
+  const realServiceUrl = activeRealServiceUrl(p);
+  if (!realServiceUrl) {
     if (streamRequestBody) await consumeRequestBody(req);
-    const body = { error: "未命中 Mock，且当前 Package 未配置真实服务器" };
+    const body = { error: "未命中 Mock，且当前 Package 未配置真实服务" };
     const serialized = JSON.stringify(body);
     record("unmatched", 502, textLogResponse("application/json; charset=utf-8", serialized));
     return streamRequestBody
@@ -162,7 +167,7 @@ export async function createProxy(
       : res.code(502).send(body);
   }
 
-  const target = targetUrl(req.url, p.targetBaseUrl);
+  const target = targetUrl(req.url, realServiceUrl);
   const headers: Record<string, string | string[] | undefined> = Object.fromEntries(
     Object.entries(req.headers).filter(
       ([key]) => !hop.has(key.toLowerCase()) && key.toLowerCase() !== "host",

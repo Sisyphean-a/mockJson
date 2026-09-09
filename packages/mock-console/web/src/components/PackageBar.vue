@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ConsoleController } from "../console-controller";
 
-type PackageBarController = Pick<ConsoleController, "state" | "switchPkg" | "targetUrl" | "saveTargetUrl" | "openPackage" | "pkg" | "deletePackage" | "serverReady" | "loading" | "activeView" | "showWorkspace" | "showLogs">;
+type PackageBarController = Pick<ConsoleController, "state" | "switchPkg" | "pkg" | "selectRealService" | "openRealServices" | "openPackage" | "deletePackage" | "serverReady" | "loading" | "activeView" | "showWorkspace" | "showLogs">;
 const { controller: c } = defineProps<{ controller: PackageBarController }>();
 </script>
 
@@ -23,9 +23,12 @@ const { controller: c } = defineProps<{ controller: PackageBarController }>();
         </select>
       </div>
       <div class="target-config">
-        <label for="target-url">真实服务</label>
-        <input id="target-url" v-model="c.targetUrl.value" placeholder="https://api.example.com" @keyup.enter="c.saveTargetUrl" />
-        <button class="save-target" @click="c.saveTargetUrl">保存</button>
+        <label for="real-service-select">真实服务</label>
+        <select id="real-service-select" :value="c.pkg.value?.activeRealServiceId || ''" :disabled="!c.pkg.value?.realServices.length" :title="c.pkg.value?.realServices.find((item) => item.id === c.pkg.value?.activeRealServiceId)?.baseUrl || '未配置真实服务'" @change="c.selectRealService(($event.target as HTMLSelectElement).value)">
+          <option v-if="!c.pkg.value?.realServices.length" value="">未配置真实服务</option>
+          <option v-for="service in c.pkg.value?.realServices || []" :key="service.id" :value="service.id">{{ service.name }}（{{ service.baseUrl || "未配置地址" }}）</option>
+        </select>
+        <button class="save-target" @click="c.openRealServices">{{ c.pkg.value?.realServices.length ? "管理" : "配置" }}</button>
       </div>
       <div class="package-actions">
         <button class="save-target package-add" @click="c.openPackage()">＋ 包</button>

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { JsonFileRepository } from "./storage.js";
-import type { State } from "../../shared/types.js";
+import type { PersistedState, State } from "../../shared/types.js";
 
 const state: State = { currentPackageId: null, packages: [] };
 
@@ -18,12 +18,26 @@ test("并发保存串行执行且不会留下半写文件", async () => {
 test("主配置损坏时恢复有效备份，不用空状态覆盖数据", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mock-storage-"));
   const file = join(dir, "state.json");
-  const backup: State = { currentPackageId: "p", packages: [{ id: "p", name: "恢复包", targetBaseUrl: "", apis: [] }] };
+  const backup: State = {
+    currentPackageId: "p",
+    packages: [{ id: "p", name: "恢复包", realServices: [], activeRealServiceId: null, apis: [] }],
+  };
   await writeFile(file, "{broken");
   await writeFile(file + ".bak", JSON.stringify(backup));
   const repo = new JsonFileRepository(file);
   assert.deepEqual(await repo.read(), backup);
   assert.deepEqual(JSON.parse(await readFile(file, "utf8")), backup);
+});
+
+test("旧版单一真实服务配置仍可被读取", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mock-storage-"));
+  const file = join(dir, "state.json");
+  const legacy: PersistedState = {
+    currentPackageId: "p",
+    packages: [{ id: "p", name: "旧配置", targetBaseUrl: "https://legacy.example.com", apis: [] }],
+  };
+  await writeFile(file, JSON.stringify(legacy));
+  assert.deepEqual(await new JsonFileRepository(file).read(), legacy);
 });
 
 test("配置尚不存在时按首次启动返回空状态", async () => {

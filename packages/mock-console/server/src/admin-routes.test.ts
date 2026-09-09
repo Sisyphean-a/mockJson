@@ -64,6 +64,33 @@ test("管理 API 可以持久化接口和场景排序", async () => {
   await app.close();
 });
 
+test("管理 API 可以新增、切换和删除真实服务", async () => {
+  const service = new MockConfigService(new MemoryRepository());
+  await service.initialize();
+  const packageConfig = await service.createPackage({ name: "测试包" });
+  const logs = new RequestLogStore();
+  const app = Fastify();
+  registerAdminRoutes(app, service, logs);
+
+  const created = await app.inject({
+    method: "POST",
+    url: `/__mock_admin/packages/${packageConfig.id}/real-services`,
+    payload: { name: "测试环境", baseUrl: "https://test.example.com" },
+  });
+  assert.equal(created.statusCode, 201);
+  const serviceId = created.json().id;
+
+  const switched = await app.inject({
+    method: "POST",
+    url: `/__mock_admin/packages/${packageConfig.id}/active-real-service/${serviceId}`,
+  });
+  assert.deepEqual(switched.json(), { success: true, activeRealServiceId: serviceId });
+
+  const deleted = await app.inject({ method: "DELETE", url: `/__mock_admin/real-services/${serviceId}` });
+  assert.deepEqual(deleted.json(), { success: true, activeRealServiceId: null });
+  await app.close();
+});
+
 test("管理 API 可以读取和清空运行态请求日志", async () => {
   const service = new MockConfigService(new MemoryRepository());
   await service.initialize();

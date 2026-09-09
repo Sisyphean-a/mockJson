@@ -13,7 +13,8 @@ class MemoryRepository implements StateRepository {
       packages: [{
         id: "pkg",
         name: "测试包",
-        targetBaseUrl: "https://real.example.com",
+        realServices: [{ id: "real", name: "测试环境", baseUrl: "https://real.example.com" }],
+        activeRealServiceId: "real",
         apis: [{
           id: "api",
           name: "测试接口",

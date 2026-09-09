@@ -40,6 +40,39 @@ export function registerAdminRoutes(
     }
   });
 
+  app.post("/__mock_admin/packages/:packageId/real-services", async (req, reply) => {
+    try {
+      const realService = await service.createRealService(routeId(req, "packageId"), body(req));
+      return reply.code(201).send(realService);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.patch("/__mock_admin/real-services/:id", async (req, reply) => {
+    try {
+      return await service.updateRealService(routeId(req, "id"), body(req));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.delete("/__mock_admin/real-services/:id", async (req, reply) => {
+    try {
+      return await service.deleteRealService(routeId(req, "id"));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post("/__mock_admin/packages/:packageId/active-real-service/:serviceId", async (req, reply) => {
+    try {
+      return await service.activateRealService(routeId(req, "packageId"), routeId(req, "serviceId"));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
   app.delete("/__mock_admin/packages/:id", async (req, reply) => {
     try {
       return await service.deletePackage(routeId(req, "id"));

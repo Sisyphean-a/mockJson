@@ -1,4 +1,4 @@
-import type { MockAdminClient, Pkg } from "./mock-admin-client";
+import type { MockAdminClient, Pkg, RealService } from "./mock-admin-client";
 import type { useConsoleForms } from "./use-console-forms";
 import type { useMockState } from "./use-mock-state";
 
@@ -39,18 +39,74 @@ export function usePackageActions(client: MockAdminClient, model: Model, forms: 
     catch (error) { notify(message(error)); }
   }
 
-  async function saveTargetUrl() {
+  function openNewRealService() {
+    forms.realServiceEditId.value = null;
+    forms.realServiceName.value = "";
+    forms.targetUrl.value = "";
+  }
+
+  function openRealServices() {
+    if (!model.pkg.value) return;
+    openNewRealService();
+    forms.showRealServices.value = true;
+  }
+
+  function openRealServiceEdit(service: RealService) {
+    forms.realServiceEditId.value = service.id;
+    forms.realServiceName.value = service.name;
+    forms.targetUrl.value = service.baseUrl;
+    forms.showRealServices.value = true;
+  }
+
+  async function selectRealService(id: string) {
     const current = model.pkg.value;
-    if (!current) return;
+    if (!current || !id || current.activeRealServiceId === id) return;
     try {
-      const value = forms.targetUrl.value.trim();
-      await model.runAdminRequest(() => client.updatePackage(current.id, { targetBaseUrl: value }));
-      current.targetBaseUrl = value;
-      notify(value ? "真实服务地址已保存" : "已清空真实服务地址");
+      const result = await model.runAdminRequest(() => client.activateRealService(current.id, id));
+      current.activeRealServiceId = result.activeRealServiceId;
+      notify("真实服务已切换");
     } catch (error) { notify(message(error)); }
   }
 
-  return { switchPackage, openPackage, savePackage, deletePackage, saveTargetUrl };
+  async function saveRealService() {
+    const current = model.pkg.value;
+    if (!current || !forms.realServiceName.value.trim()) return;
+    const name = forms.realServiceName.value.trim();
+    const baseUrl = forms.targetUrl.value.trim();
+    try {
+      if (forms.realServiceEditId.value) {
+        const saved = await model.runAdminRequest(() => client.updateRealService(forms.realServiceEditId.value!, { name, baseUrl }));
+        const service = current.realServices.find((item) => item.id === saved.id);
+        if (service) Object.assign(service, saved);
+        notify("真实服务已更新");
+      } else {
+        const created = await model.runAdminRequest(() => client.createRealService(current.id, { name, baseUrl }));
+        current.realServices.push(created);
+        if (!current.activeRealServiceId) current.activeRealServiceId = created.id;
+        notify("真实服务已添加");
+        openNewRealService();
+      }
+    } catch (error) { notify(message(error)); }
+  }
+
+  async function deleteRealService(service: RealService) {
+    const current = model.pkg.value;
+    if (!current || !window.confirm(`确定删除真实服务“${service.name}”吗？`)) return;
+    try {
+      const result = await model.runAdminRequest(() => client.deleteRealService(service.id));
+      const index = current.realServices.findIndex((item) => item.id === service.id);
+      if (index >= 0) current.realServices.splice(index, 1);
+      current.activeRealServiceId = result.activeRealServiceId;
+      if (forms.realServiceEditId.value === service.id) openNewRealService();
+      notify("真实服务已删除");
+    } catch (error) { notify(message(error)); }
+  }
+
+  return {
+    switchPackage, openPackage, savePackage, deletePackage,
+    openNewRealService, openRealServices, openRealServiceEdit, selectRealService,
+    saveRealService, deleteRealService,
+  };
 }
 
 function message(error: unknown) {

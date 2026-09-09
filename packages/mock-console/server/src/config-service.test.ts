@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MockConfigService, NotFoundError, type StateRepository } from "./config-service.js";
-import type { State } from "../../shared/types.js";
+import type { PersistedState, State } from "../../shared/types.js";
 
 class MemoryRepository implements StateRepository {
   constructor(public state: State = { currentPackageId: null, packages: [] }, public failWrites = false) {}
@@ -25,6 +25,50 @@ test("新建接口默认启用并使用 OR，首个场景默认启用且后续�
   const second = await service.createScenario(api.id, { name: "备用", responseBody: { ok: false } });
   assert.equal(service.getState().packages[0].apis[0].activeScenarioId, first.id);
   assert.notEqual(second.id, first.id);
+});
+
+test("旧版单一真实服务配置会迁移为默认服务", async () => {
+  const legacyState: PersistedState = {
+    currentPackageId: "legacy-package",
+    packages: [{ id: "legacy-package", name: "旧配置", targetBaseUrl: "https://legacy.example.com", apis: [] }],
+  };
+  const service = new MockConfigService({
+    async read() { return legacyState; },
+    async write() {},
+  });
+  await service.initialize();
+
+  const [packageConfig] = service.getPackages();
+  assert.ok(packageConfig);
+  assert.deepEqual(packageConfig.realServices, [{
+    id: packageConfig.realServices[0].id,
+    name: "默认服务",
+    baseUrl: "https://legacy.example.com",
+  }]);
+  assert.equal(packageConfig.activeRealServiceId, packageConfig.realServices[0].id);
+});
+
+test("真实服务可以切换、编辑并在删除当前服务后回退", async () => {
+  const service = new MockConfigService(new MemoryRepository());
+  await service.initialize();
+  const packageConfig = await service.createPackage({ name: "测试包" });
+  await assert.rejects(
+    () => service.createRealService(packageConfig.id, { name: "错误环境", baseUrl: "ftp://invalid.example.com" }),
+    /真实服务地址必须是 http:\/\/ 或 https:\/\/ 地址/,
+  );
+  const testService = await service.createRealService(packageConfig.id, { name: "测试环境", baseUrl: "https://test.example.com" });
+  const productionService = await service.createRealService(packageConfig.id, { name: "生产环境", baseUrl: "https://prod.example.com" });
+
+  assert.equal(service.getState().packages[0].activeRealServiceId, testService.id);
+  await service.activateRealService(packageConfig.id, productionService.id);
+  await service.updateRealService(productionService.id, { baseUrl: "https://production.example.com" });
+  assert.equal(service.getState().packages[0].activeRealServiceId, productionService.id);
+  assert.equal(service.getState().packages[0].realServices[1].baseUrl, "https://production.example.com");
+
+  const result = await service.deleteRealService(productionService.id);
+  assert.equal(result.activeRealServiceId, testService.id);
+  assert.deepEqual(service.getState().packages[0].realServices.map((item) => item.name), ["测试环境"]);
+  await assert.rejects(() => service.activateRealService(packageConfig.id, "missing"), NotFoundError);
 });
 
 test("配置服务拥有 Package、API、Scenario 的完整变更流程", async () => {

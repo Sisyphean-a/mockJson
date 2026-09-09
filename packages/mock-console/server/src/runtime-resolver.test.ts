@@ -16,7 +16,8 @@ function createState(): State {
     packages: [{
       id: "pkg",
       name: "测试包",
-      targetBaseUrl: "https://real.example.com",
+      realServices: [{ id: "real", name: "测试环境", baseUrl: "https://real.example.com" }],
+      activeRealServiceId: "real",
       apis: [{
         id: "api",
         name: "测试接口",
@@ -41,7 +42,7 @@ test("扩展判定复用当前接口和场景", () => {
   });
 });
 
-test("扩展未命中时只返回放行，不使用 targetBaseUrl", () => {
+test("扩展未命中时只返回放行，不使用真实服务配置", () => {
   const state = createState();
   state.packages[0].apis[0].matchRules[0].value = "other";
   assert.deepEqual(resolveExtensionRequest(state, request), { action: "pass", reason: "unmatched" });

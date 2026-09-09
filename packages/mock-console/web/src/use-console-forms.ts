@@ -8,6 +8,7 @@ export function useConsoleForms() {
   const showApi = ref(false);
   const showScene = ref(false);
   const showPackage = ref(false);
+  const showRealServices = ref(false);
   const sceneEditMode = ref(false);
   const apiName = ref("");
   const apiEditName = ref("");
@@ -19,6 +20,8 @@ export function useConsoleForms() {
   const editSceneColor = ref("blue");
   const packageName = ref("");
   const editingPackageId = ref<string | null>(null);
+  const realServiceName = ref("");
+  const realServiceEditId = ref<string | null>(null);
   const targetUrl = ref("");
   const ruleSource = ref<"header" | "url" | "method">("header");
   const ruleField = ref("apiName");
@@ -46,9 +49,9 @@ export function useConsoleForms() {
   });
 
   return {
-    draft, jsonError, expanded, draftDirty, showApi, showScene, showPackage, sceneEditMode,
+    draft, jsonError, expanded, draftDirty, showApi, showScene, showPackage, showRealServices, sceneEditMode,
     apiName, apiEditName, apiPriority, sceneName, editSceneName, editSceneStatus,
-    editSceneDelay, editSceneColor, packageName, editingPackageId, targetUrl,
+    editSceneDelay, editSceneColor, packageName, editingPackageId, realServiceName, realServiceEditId, targetUrl,
     ruleSource, ruleField, ruleOperator, ruleValue, editingRuleId, addingRule,
     operators, urlFields, methodFields, ruleHint,
   };

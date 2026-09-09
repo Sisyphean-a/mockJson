@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
-import type { State } from "../../shared/types.js";
+import type { PersistedState, State } from "../../shared/types.js";
 import { isValidState } from "./validation.js";
 
 const emptyState = (): State => ({ currentPackageId: null, packages: [] });
@@ -9,7 +9,7 @@ export class JsonFileRepository {
   private writeQueue: Promise<void> = Promise.resolve();
   constructor(private readonly file: string) {}
 
-  async read(): Promise<State> {
+  async read(): Promise<PersistedState> {
     const parse = async (file: string) => {
       const value: unknown = JSON.parse(await fs.readFile(file, "utf8"));
       if (!isValidState(value)) throw new Error("配置结构无效");

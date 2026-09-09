@@ -37,16 +37,37 @@ export type LogicalApi = {
   scenarios: Scenario[];
 };
 
+export type RealService = {
+  id: string;
+  name: string;
+  baseUrl: string;
+};
+
 export type PackageConfig = {
+  id: string;
+  name: string;
+  realServices: RealService[];
+  activeRealServiceId: string | null;
+  apis: LogicalApi[];
+};
+
+export type LegacyPackageConfig = {
   id: string;
   name: string;
   targetBaseUrl: string;
   apis: LogicalApi[];
 };
 
+export type PersistedPackageConfig = PackageConfig | LegacyPackageConfig;
+
 export type State = {
   currentPackageId: string | null;
   packages: PackageConfig[];
+};
+
+export type PersistedState = {
+  currentPackageId: string | null;
+  packages: PersistedPackageConfig[];
 };
 
 export const MAX_REQUEST_LOGS = 200;

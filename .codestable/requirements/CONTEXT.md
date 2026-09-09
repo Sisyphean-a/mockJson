@@ -16,14 +16,15 @@
 
 ## Mock Console 领域规则
 
-- **Package（测试包）**：当前被测试的 APK / 产品版本；同一时间只有一个 `currentPackageId`，并拥有独立的真实服务地址和 Logical API 集合。多个浏览器页面和扩展请求共享当前 Package。
+- **Package（测试包）**：当前被测试的 APK / 产品版本；同一时间只有一个 `currentPackageId`，并拥有独立的真实服务环境列表、当前选中的 `activeRealServiceId` 和 Logical API 集合。多个浏览器页面和扩展请求共享当前 Package。
+- **RealService（真实服务）**：Package 级的环境配置，保存服务名称和基础地址；同一 Package 可配置测试、生产等多个环境，切换当前服务只改变 Reqable / 本地 Proxy 未命中 Mock 时的转发目标，不复制 Package 或 Mock 配置。
 - **Logical API（逻辑接口）**：用户按业务理解的接口，不以 `apiName` 作为名称或主键；按 `priority` 从高到低匹配并在首个命中后停止。
 - **Match Rule（匹配规则）**：支持任意 Header、URL（fullUrl / host / path）与 HTTP Method，接口内按 AND 或 OR 组合；新建 Logical API 默认使用 OR（满足任一条件），可切换为 AND；Header 名称比较不区分大小写；零条规则表示不匹配任何请求，不作为全量兜底。
 - **Scenario（响应场景）**：保存完整且合法的 JSON、HTTP 状态码和 0–30000ms 延迟；接口此前没有场景时，新建的首个场景默认启用，已有场景时新增场景默认不启用；选择场景只切换编辑对象，独立开关负责启用、停用或切换当前响应，一个逻辑接口最多启用一个场景。
 - Package、Logical API 和 Scenario 都可在控制台完成创建、修改和删除；Logical API 的 Match Rule 也支持新增、编辑和删除，编辑保留原规则 ID；新建 Logical API 默认启用，未完成接口或没有启用场景的接口不得遮挡其他可用 Mock。
 - 控制台的 Logical API 和 Scenario 列表支持通过拖拽手柄长按排序；排序只持久化各自配置数组的 UI 顺序，Logical API 的 `priority` 仍是独立的运行时匹配优先级；Logical API 搜索时禁用排序并提示清除搜索。
 - 请求日志是独立的全宽运行观测视图，不显示 Logical API 配置侧栏；日志列表点击只切换详情，详情中的“查看接口配置”才负责切回接口配置并选中对应 Logical API。
-- 接口 `enabled=false`、没有启用场景或没有规则命中时，Reqable / 本地 Proxy 路径转发当前 Package 的 `targetBaseUrl`；转发保留 JSON 和原始流请求体，保留 `targetBaseUrl` 的基础路径，按目标地址协议选择 HTTP / HTTPS 上游连接，并对无响应上游设置超时。
+- 接口 `enabled=false`、没有启用场景或没有规则命中时，Reqable / 本地 Proxy 路径转发当前 Package 选中的 RealService 基础地址；转发保留 JSON 和原始流请求体，保留真实服务的基础路径，按目标地址协议选择 HTTP / HTTPS 上游连接，并对无响应上游设置超时。没有选中的真实服务时明确返回未配置错误。
 - URL 规则中 `path` 仅匹配路径、`host` 匹配收到的 Host、`fullUrl` 包含查询字符串；通过 Reqable 改写目标时优先使用 `path`，因为 Host 可能变成本机地址。
 - Fastify 接收 Reqable 转发的请求 Header，用于匹配并生成本地运行日志；日志只保留最近 200 条 Proxy 或 Chrome 扩展判定的匹配结果、接口/场景、来源、状态、耗时和响应体预览，不写入配置文件，也不记录管理/UI 请求。扩展日志是 resolver 判定日志：扩展未命中时记录放行决定，但浏览器随后发出的真实请求响应不经过 Mock Console；白名单过滤、扩展暂停和扩展侧超时不会产生服务端日志。服务端终端默认不逐条输出请求访问日志，只保留启动、错误和安全拒绝信息。
 - 管理 API 只允许本机访问，局域网客户端仅使用 Mock / Proxy 路径；产品不提供通用请求历史或抓包 Inspector。
@@ -38,7 +39,7 @@
 - MAIN world Content Script 必须构建为自包含的普通脚本，不得保留运行时 `import` 或依赖 Vite 共享 chunk；Chrome Manifest 的 `content_scripts` 直接注入该脚本，模块解析失败会使整个拦截器失效。
 - resolver 接收绝对 `http` / `https` URL、Method 和页面脚本可观察的 Header。命中当前 Package 中启用且有 active scenario 的接口时返回状态码、延迟、JSON body 和 `content-type`；Service Worker 的判定等待上限为 1 秒，页面桥接层再保留 200ms 消息往返余量；连续两次 resolver 失败后短路 3 秒，并在当前扩展会话保存健康状态，单个 Service Worker 同时最多处理 32 个 resolver，取消会传播到本机请求并立即放行，未命中、服务不可用或超时扩展调用原生浏览器 API继续真实请求，异常或缺失的桥接结果也必须按放行处理而不能读取未定义的 `action`。
 - Popup 提供请求域名白名单、全局 Mock、当前标签页 Mock 和 Mock Console 连接状态；白名单为空或请求目标域名未命中时不发送 resolver 请求，全局/当前标签页暂停时请求直接放行。
-- 扩展模式不使用 `targetBaseUrl`，因为未命中请求必须由浏览器以原始 URL、Cookie、凭据和 CORS 语义直接发出；当前 Package 仍是全局选择。
+- 扩展模式不使用 Package 的 RealService 配置，因为未命中请求必须由浏览器以原始 URL、Cookie、凭据和 CORS 语义直接发出；当前 Package 仍是全局选择。
 - 扩展 resolver 只允许 loopback 访问，不承担真实请求代理，也不记录真实放行请求的最终响应；现有 Reqable / Proxy 路径和其日志语义保持不变。
 - 扩展 MVP 支持白名单请求中的 JSON、200–599 状态码和异步请求；非白名单请求、1xx 场景、同步 XHR、导航/资源加载、Worker / Service Worker 请求、WebSocket、流式或二进制 Mock 不由扩展接管。浏览器自动补充且页面不可观察的 Header 不保证可用于扩展匹配。
 

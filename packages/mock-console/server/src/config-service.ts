@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type { LogicalApi, MatchRule, PackageConfig, Scenario, State } from "../../shared/types.js";
+import type {
+  LogicalApi,
+  MatchRule,
+  PackageConfig,
+  PersistedPackageConfig,
+  PersistedState,
+  RealService,
+  Scenario,
+  State,
+} from "../../shared/types.js";
 import {
   parseJsonBody,
   validTarget,
@@ -10,7 +19,7 @@ import {
 } from "./validation.js";
 
 export interface StateRepository {
-  read(): Promise<State>;
+  read(): Promise<PersistedState>;
   write(state: State, serializedState?: string): Promise<void>;
 }
 
@@ -64,10 +73,13 @@ export class MockConfigService {
 
   async createPackage(input: { name?: unknown; targetBaseUrl?: unknown }) {
     const state = this.getState();
+    const targetBaseUrl = validTarget(input.targetBaseUrl);
+    const realServices = targetBaseUrl ? [newRealService("默认服务", targetBaseUrl)] : [];
     const created: PackageConfig = {
       id: randomUUID(),
       name: validateName(input.name, "Package"),
-      targetBaseUrl: validTarget(input.targetBaseUrl),
+      realServices,
+      activeRealServiceId: realServices[0]?.id || null,
       apis: [],
     };
     state.packages.push(created);
@@ -79,9 +91,52 @@ export class MockConfigService {
   async updatePackage(id: string, input: { name?: unknown; targetBaseUrl?: unknown }) {
     const packageConfig = this.requirePackage(id);
     if (input.name !== undefined) packageConfig.name = validateName(input.name, "Package");
-    if (input.targetBaseUrl !== undefined) packageConfig.targetBaseUrl = validTarget(input.targetBaseUrl);
+    if (input.targetBaseUrl !== undefined) {
+      const targetBaseUrl = validTarget(input.targetBaseUrl);
+      const active = findActiveRealService(packageConfig);
+      if (active) active.baseUrl = targetBaseUrl;
+      else if (targetBaseUrl) {
+        const service = newRealService("默认服务", targetBaseUrl);
+        packageConfig.realServices = [...packageConfig.realServices, service];
+        packageConfig.activeRealServiceId = service.id;
+      }
+    }
     await this.save();
     return packageConfig;
+  }
+
+  async createRealService(packageId: string, input: { name?: unknown; baseUrl?: unknown }) {
+    const packageConfig = this.requirePackage(packageId);
+    const service = newRealService(validateName(input.name, "真实服务"), validTarget(input.baseUrl));
+    packageConfig.realServices = [...packageConfig.realServices, service];
+    if (!packageConfig.activeRealServiceId) packageConfig.activeRealServiceId = service.id;
+    await this.save();
+    return service;
+  }
+
+  async updateRealService(id: string, input: { name?: unknown; baseUrl?: unknown }) {
+    const found = this.requireRealService(id);
+    if (input.name !== undefined) found.service.name = validateName(input.name, "真实服务");
+    if (input.baseUrl !== undefined) found.service.baseUrl = validTarget(input.baseUrl);
+    await this.save();
+    return found.service;
+  }
+
+  async deleteRealService(id: string) {
+    const found = this.requireRealService(id);
+    const wasActive = found.packageConfig.activeRealServiceId === found.service.id;
+    found.packageConfig.realServices = found.packageConfig.realServices.filter((item) => item.id !== found.service.id);
+    if (wasActive) found.packageConfig.activeRealServiceId = found.packageConfig.realServices[0]?.id || null;
+    await this.save();
+    return { success: true, activeRealServiceId: found.packageConfig.activeRealServiceId };
+  }
+
+  async activateRealService(packageId: string, serviceId: string) {
+    const packageConfig = this.requirePackage(packageId);
+    if (!packageConfig.realServices.some((item) => item.id === serviceId)) throw new NotFoundError("Real service not found");
+    packageConfig.activeRealServiceId = serviceId;
+    await this.save();
+    return { success: true, activeRealServiceId: serviceId };
   }
 
   async deletePackage(id: string) {
@@ -228,6 +283,14 @@ export class MockConfigService {
     throw new NotFoundError("API not found");
   }
 
+  private requireRealService(id: string) {
+    for (const packageConfig of this.getState().packages) {
+      const service = packageConfig.realServices.find((item) => item.id === id);
+      if (service) return { packageConfig, service };
+    }
+    throw new NotFoundError("Real service not found");
+  }
+
   private requireScenario(id: string) {
     for (const packageConfig of this.getState().packages) {
       for (const api of packageConfig.apis) {
@@ -269,15 +332,49 @@ function reorderByIds<T extends { id: string }>(items: T[], value: unknown, labe
   return ids.map((id) => byId.get(id)!);
 }
 
-function normalizeState(state: State) {
-  for (const packageConfig of state.packages) {
+function newRealService(name: string, baseUrl: string): RealService {
+  return { id: randomUUID(), name, baseUrl };
+}
+
+function findActiveRealService(packageConfig: PackageConfig) {
+  return packageConfig.realServices.find((item) => item.id === packageConfig.activeRealServiceId);
+}
+
+function normalizePackage(packageConfig: PersistedPackageConfig): PackageConfig {
+  if ("realServices" in packageConfig) {
+    const active = packageConfig.realServices.find((item) => item.id === packageConfig.activeRealServiceId);
+    return {
+      ...packageConfig,
+      realServices: [...packageConfig.realServices],
+      activeRealServiceId: active?.id || packageConfig.realServices[0]?.id || null,
+    };
+  }
+
+  // Rule: 旧版单地址配置只在读取时转换，首次保存其他改动时才落成新结构。
+  const targetBaseUrl = validTarget(packageConfig.targetBaseUrl);
+  const realServices = targetBaseUrl ? [newRealService("默认服务", targetBaseUrl)] : [];
+  return {
+    id: packageConfig.id,
+    name: packageConfig.name,
+    realServices,
+    activeRealServiceId: realServices[0]?.id || null,
+    apis: packageConfig.apis,
+  };
+}
+
+function normalizeState(state: PersistedState): State {
+  const normalized: State = {
+    currentPackageId: state.currentPackageId,
+    packages: state.packages.map(normalizePackage),
+  };
+  for (const packageConfig of normalized.packages) {
     for (const api of packageConfig.apis) {
       if (api.activeScenarioId && !api.scenarios.some((scenario) => scenario.id === api.activeScenarioId))
         api.activeScenarioId = null;
     }
   }
-  if (state.currentPackageId && !state.packages.some((item) => item.id === state.currentPackageId))
-    state.currentPackageId = state.packages[0]?.id || null;
-  if (!state.currentPackageId && state.packages[0]) state.currentPackageId = state.packages[0].id;
-  return state;
+  if (normalized.currentPackageId && !normalized.packages.some((item) => item.id === normalized.currentPackageId))
+    normalized.currentPackageId = normalized.packages[0]?.id || null;
+  if (!normalized.currentPackageId && normalized.packages[0]) normalized.currentPackageId = normalized.packages[0].id;
+  return normalized;
 }

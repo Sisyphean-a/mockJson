@@ -4,7 +4,14 @@
     {
       "id": "example-package",
       "name": "示例配置",
-      "targetBaseUrl": "https://api.example.test",
+      "realServices": [
+        {
+          "id": "example-real-service",
+          "name": "测试环境",
+          "baseUrl": "https://api.example.test"
+        }
+      ],
+      "activeRealServiceId": "example-real-service",
       "apis": [
         {
           "id": "example-api",
