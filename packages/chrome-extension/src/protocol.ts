@@ -7,7 +7,8 @@ export const CHANNEL = "__mock_console_extension_v1";
 export const RESOLVER_PATH = "/__mock_extension/resolve";
 export const STATUS_PATH = "/__mock_extension/status";
 export const DEFAULT_RUNTIME_URL = "http://127.0.0.1:22333";
-export const RESOLVE_TIMEOUT_MS = 200;
+// Rule: 页面桥接层比 Service Worker 多等待一段时间，避免有效响应只因跨扩展消息边界而丢失。
+export const RESOLVE_TIMEOUT_MS = 1000;
 export const POPUP_CHANNEL = "__mock_console_popup_v1";
 
 export type ResolveMessage = {

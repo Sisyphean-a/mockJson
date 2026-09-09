@@ -82,8 +82,8 @@ function openContextMenu(event: MouseEvent, target: ContextTarget) {
 <template>
   <div class="app-shell">
     <PackageBar :controller="c" />
-    <main :class="{ 'startup-state': c.loading.value || c.loadError.value }">
-      <ApiSidebar v-if="!c.loading.value && !c.loadError.value" :controller="c" :open-context-menu="openContextMenu" />
+    <main :class="{ 'startup-state': c.loading.value || c.loadError.value, 'logs-mode': c.activeView.value === 'logs' }">
+      <ApiSidebar v-if="!c.loading.value && !c.loadError.value && c.activeView.value === 'workspace'" :controller="c" :open-context-menu="openContextMenu" />
       <section class="content" :aria-busy="c.loading.value">
         <div v-if="c.loading.value" class="loading-panel" role="status" aria-live="polite">
           <div class="loading-mark" aria-hidden="true">✦</div>

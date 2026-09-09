@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import type { ConsoleController } from "../console-controller";
 import type { RequestLog } from "../mock-admin-client";
 
-type RequestLogPanelController = Pick<ConsoleController, "pkg" | "logs" | "logsLoading" | "logsError" | "refreshLogs" | "clearLogs">;
+type RequestLogPanelController = Pick<ConsoleController, "pkg" | "logs" | "logsLoading" | "logsError" | "refreshLogs" | "clearLogs" | "selectApi" | "showWorkspace">;
 const { controller: c } = defineProps<{ controller: RequestLogPanelController }>();
 
 type LogFilter = "all" | RequestLog["outcome"];
@@ -34,6 +34,10 @@ const filteredLogs = computed(() => {
 const selectedLog = computed(() =>
   filteredLogs.value.find((log) => log.id === selectedId.value) || filteredLogs.value[0] || null,
 );
+const selectedApi = computed(() => {
+  const apiId = selectedLog.value?.apiId;
+  return apiId ? c.pkg.value?.apis.find((api) => api.id === apiId) || null : null;
+});
 
 const responseSummaryCache = new WeakMap<RequestLog, { body: string; summary: string }>();
 
@@ -122,7 +126,16 @@ function formatStatus(value: number) {
 }
 
 function endpoint(log: RequestLog) {
-  return `${log.host ? `${log.host}` : ""}${log.url}` || "（未知地址）";
+  const url = log.url.trim();
+  if (/^https?:\/\//i.test(url)) return url;
+  const host = log.host?.trim() || "";
+  if (!host) return url || "（未知地址）";
+  return `${host}${url.startsWith("/") || host.endsWith("/") ? "" : "/"}${url}`;
+}
+
+function openSelectedApi() {
+  if (!selectedApi.value || !c.selectApi(selectedApi.value)) return;
+  c.showWorkspace();
 }
 
 function clearFilters() {
@@ -205,7 +218,7 @@ function clearFilters() {
           </div>
           <code class="log-url">{{ endpoint(log) }}</code>
           <div class="log-row-meta">
-            <strong>{{ log.apiName || "未命中逻辑接口" }}</strong>
+            <span :class="['log-match', { unmatched: !log.apiName }]">{{ log.apiName ? `命中：${log.apiName}` : "未命中逻辑接口" }}</span>
             <span v-if="log.scenarioName">· {{ log.scenarioName }}</span>
             <span class="log-status" :class="{ failed: log.status >= 400 }">{{ formatStatus(log.status) }}</span>
           </div>
@@ -215,9 +228,10 @@ function clearFilters() {
 
       <div v-if="selectedLog" class="log-detail">
         <div class="log-detail-head">
-          <div>
-            <span class="panel-context">请求详情</span>
-            <h2>{{ selectedLog.apiName || "未命中逻辑接口" }}</h2>
+          <div class="log-detail-title">
+            <span class="panel-context">当前请求</span>
+            <h2>{{ selectedLog.method }} 请求</h2>
+            <code class="log-detail-url">{{ endpoint(selectedLog) }}</code>
           </div>
           <div class="log-detail-badges">
             <span :class="['log-source', `source-${selectedLog.source}`]">{{ sourceLabel(selectedLog.source) }}</span>
@@ -225,9 +239,16 @@ function clearFilters() {
           </div>
         </div>
 
+        <div class="log-detail-api">
+          <div>
+            <span>命中逻辑接口</span>
+            <b>{{ selectedLog.apiName || "未命中" }}</b>
+          </div>
+          <button v-if="selectedApi" class="text-action" type="button" @click="openSelectedApi">查看接口配置</button>
+        </div>
+
         <div class="log-detail-grid">
           <div><span>请求来源</span><b>{{ sourceLabel(selectedLog.source) }}</b></div>
-          <div><span>请求地址</span><code>{{ endpoint(selectedLog) }}</code></div>
           <div><span>请求时间</span><b>{{ formatDateTime(selectedLog.timestamp) }}</b></div>
           <div><span>HTTP 状态</span><b :class="{ failed: selectedLog.status >= 400 }">{{ formatStatus(selectedLog.status) }}</b></div>
           <div><span>耗时</span><b>{{ formatDuration(selectedLog.durationMs) }}</b></div>

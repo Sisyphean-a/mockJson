@@ -35,6 +35,7 @@ npm start
 4. 创建逻辑接口，添加任意 Header、URL.path 或 HTTP Method 匹配条件；已有条件可在操作列直接编辑或删除；新接口默认关闭，配置完成后再开启。接口列表可通过左侧拖拽手柄长按排序，搜索时暂不允许排序。
 5. 创建场景并设置完整 JSON、状态码和延迟；新场景默认不启用，使用场景旁的开关启用、停用或快速切换当前返回。场景列表也支持拖拽排序，顺序会保存到当前接口。
 6. Reqable 将需要 Mock 的请求重写到 `http://电脑局域网IP:22333/原始路径`，保留查询参数和业务 Header。
+7. 顶部「请求日志」进入独立的全宽观测视图；点击日志行查看详情，命中接口可在详情中通过「查看接口配置」返回对应接口。
 
 如果 Reqable / 本地 Proxy 请求没有命中接口：
 
@@ -70,7 +71,7 @@ packages/chrome-extension/dist
 扩展默认连接本机 `http://127.0.0.1:22333`。只有请求目标域名命中白名单时，页面中的 `fetch` 和异步 `XMLHttpRequest` 才会把 URL、Method 和页面可观察的 Header 交给 Mock Console 判定：
 
 - 命中启用接口和当前场景：返回场景中的 JSON、状态码和延迟。
-- 未命中、接口未启用、Mock Console 未启动或 200ms 内未完成判定：调用浏览器原生 API，继续真实请求。已到达 Mock Console 的扩展判定会写入请求日志并标记为 `Chrome 扩展`；白名单过滤、扩展暂停或超时发生在扩展侧时不会产生服务端日志。
+- 未命中、接口未启用、Mock Console 未启动或判定超时：调用浏览器原生 API，继续真实请求。Service Worker 最多等待 1 秒，页面桥接再保留 200ms 消息往返余量；已到达 Mock Console 的扩展判定会写入请求日志并标记为 `Chrome 扩展`，白名单过滤、扩展暂停或扩展侧超时不会产生服务端日志。
 
 扩展模式不使用 Package 的 `targetBaseUrl`，也不保存接口、规则或场景。当前只覆盖页面脚本的 `fetch` / 异步 XHR，不覆盖导航、图片/脚本资源、WebSocket、Worker / Service Worker 请求、同步 XHR、流式或二进制响应。浏览器自动补充且页面不可观察的 Header（例如 Cookie）不保证可参与扩展匹配。
 
@@ -81,7 +82,7 @@ packages/chrome-extension/dist
 - 任意 Header（名称大小写不敏感）、URL 与 HTTP Method 匹配
 - 优先级命中、场景即时切换、JSON/状态码/延迟校验
 - Reqable / 本地 Proxy 未命中或关闭 Mock 时透明转发到 `targetBaseUrl`
-- 请求日志记录 Proxy 与 Chrome 扩展判定来源，并支持按来源和结果筛选
+- 请求日志独立全宽展示 Proxy 与 Chrome 扩展判定来源，并支持按来源和结果筛选；详情可跳转到对应逻辑接口配置
 - 逻辑接口和响应场景支持长按拖拽排序，排序保存为配置数组顺序，不改变接口 `priority` 匹配规则
 - Chrome 扩展对页面 `fetch` / 异步 XHR 提供独立的 Mock 判定通道，并通过 Popup 控制全局或当前标签页启停
 - Vue 3 + TypeScript 页面，场景区和 JSON 编辑器为主要操作区域

@@ -268,13 +268,18 @@
   font-size: 10px;
 }
 
-.log-row-meta strong {
+.log-match {
   min-width: 0;
   overflow: hidden;
   color: var(--ink);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.log-match.unmatched {
+  color: var(--ink-muted);
+  font-weight: 500;
 }
 
 .log-row-meta > span:not(.log-status) {
@@ -343,11 +348,24 @@
   gap: 14px;
 }
 
+.log-detail-title {
+  min-width: 0;
+}
+
 .log-detail-head h2 {
   overflow: hidden;
   font-size: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.log-detail-url {
+  display: block;
+  max-width: 100%;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: var(--ink-muted);
+  font: 10px/1.45 var(--font-mono);
 }
 
 .log-detail-badges {
@@ -357,8 +375,46 @@
   gap: 6px;
 }
 
-.log-detail-grid {
+.log-detail-api {
+  min-width: 0;
   margin-top: 14px;
+  padding: 9px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.log-detail-api > div {
+  min-width: 0;
+  display: grid;
+  gap: var(--label-gap);
+}
+
+.log-detail-api span {
+  color: var(--ink-muted);
+  font-size: 10px;
+}
+
+.log-detail-api b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-detail-api .text-action {
+  flex: 0 0 auto;
+}
+
+.log-detail-grid {
+  margin-top: 10px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;

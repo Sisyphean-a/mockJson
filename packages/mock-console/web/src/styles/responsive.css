@@ -395,6 +395,11 @@
     flex-basis: 100%;
   }
 
+  .log-detail-api {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .log-detail-grid {
     grid-template-columns: 1fr;
   }

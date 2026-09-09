@@ -228,7 +228,8 @@ main {
   gap: 14px;
 }
 
-main.startup-state {
+main.startup-state,
+main.logs-mode {
   grid-template-columns: minmax(0, 1fr);
 }
 

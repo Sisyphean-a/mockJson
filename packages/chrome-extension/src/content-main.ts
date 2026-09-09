@@ -6,7 +6,8 @@ import type {
 // MAIN world 内容脚本必须自包含，不能依赖 Vite 生成的共享 chunk；Chrome 会按普通脚本解析它。
 const CHANNEL = "__mock_console_extension_v1";
 const MONITORING_STATE_TYPE = "monitoring-state";
-const RESOLVE_TIMEOUT_MS = 200;
+// Flow: 页面层比 Service Worker 的 1 秒超时多等 200ms，覆盖消息往返延迟。
+const CONTENT_RESOLVE_TIMEOUT_MS = 1200;
 
 type MonitoringStateWindowMessage = {
   channel: typeof CHANNEL;
@@ -24,7 +25,7 @@ type ResolveResultMessage = {
 
 const nativeFetch = window.fetch.bind(window);
 const NativeXMLHttpRequest = window.XMLHttpRequest;
-const pendingResolutions = new Map<string, (result: ExtensionRuntimeResponse) => void>();
+const pendingResolutions = new Map<string, (result: unknown) => void>();
 let nextRequestId = 0;
 let monitoringEnabled = false;
 let monitoringWhitelist: string[] = [];
@@ -53,11 +54,16 @@ function installFetchInterceptor() {
     const request = new Request(input, init);
     if (!monitoringEnabled || !isWhitelistedUrl(request.url)) return nativeFetch(input, init);
 
-    const decision = await askResolver({
-      url: request.url,
-      method: request.method,
-      headers: headersToRecord(request.headers),
-    }, request.signal);
+    let decision: ExtensionRuntimeResponse;
+    try {
+      decision = await askResolver({
+        url: request.url,
+        method: request.method,
+        headers: headersToRecord(request.headers),
+      }, request.signal);
+    } catch {
+      return nativeFetch(input, init);
+    }
     if (!monitoringEnabled || !isWhitelistedUrl(request.url) || decision.action === "pass") return nativeFetch(input, init);
 
     try {
@@ -67,7 +73,7 @@ function installFetchInterceptor() {
       return new Response(body, { status: decision.status, headers: decision.headers });
     } catch (error) {
       if (isAbortError(error)) throw error;
-      // A malformed local decision must not turn a working browser request into a failure.
+      // Failure: 本地判定无效时保持浏览器原生请求，不把扩展错误变成页面请求失败。
       return nativeFetch(input, init);
     }
   }) as typeof window.fetch;
@@ -79,15 +85,15 @@ function askResolver(request: ExtensionRuntimeRequest, signal?: AbortSignal): Pr
   return new Promise((resolve) => {
     const id = `${Date.now().toString(36)}-${nextRequestId++}`;
     let settled = false;
-    const timer = window.setTimeout(() => settle({ action: "pass", reason: "invalid-request" }), RESOLVE_TIMEOUT_MS);
+    const timer = window.setTimeout(() => settle({ action: "pass", reason: "invalid-request" }), CONTENT_RESOLVE_TIMEOUT_MS);
     const onAbort = () => settle({ action: "pass", reason: "invalid-request" });
-    const settle = (result: ExtensionRuntimeResponse) => {
+    const settle = (result: unknown) => {
       if (settled) return;
       settled = true;
       window.clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
       pendingResolutions.delete(id);
-      resolve(result);
+      resolve(isRuntimeResponse(result) ? result : { action: "pass", reason: "invalid-request" });
     };
 
     pendingResolutions.set(id, settle);
@@ -300,6 +306,9 @@ function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | nul
     if (state.generation !== generation || state.aborted || state.finished) return;
     if (decision.action === "pass") return useDirectXhr(state, body);
     void useMockXhr(state, decision, generation);
+  }).catch(() => {
+    if (state.generation !== generation || state.aborted || state.finished) return;
+    useDirectXhr(state, body);
   });
 }
 
@@ -452,16 +461,19 @@ function isMonitoringStateWindowMessage(value: unknown): value is MonitoringStat
   return isRecord(value) && value.channel === CHANNEL && value.type === MONITORING_STATE_TYPE && typeof value.enabled === "boolean";
 }
 
-function isResolveResultMessage(value: unknown): value is ResolveResultMessage {
-  if (!isRecord(value) || value.channel !== CHANNEL || value.type !== "resolve-result" || typeof value.id !== "string") return false;
-  const result = value.result;
-  if (!isRecord(result) || (result.action !== "mock" && result.action !== "pass")) return false;
-  if (result.action === "pass") return true;
+function isRuntimeResponse(value: unknown): value is ExtensionRuntimeResponse {
+  if (!isRecord(value) || (value.action !== "mock" && value.action !== "pass")) return false;
+  if (value.action === "pass") return true;
   return (
-    typeof result.status === "number" && Number.isInteger(result.status) && result.status >= 200 && result.status <= 599 &&
-    typeof result.delayMs === "number" && Number.isInteger(result.delayMs) && result.delayMs >= 0 && result.delayMs <= 30000 &&
-    typeof result.body === "string" && isRecord(result.headers) && Object.values(result.headers).every((header) => typeof header === "string")
+    typeof value.status === "number" && Number.isInteger(value.status) && value.status >= 200 && value.status <= 599 &&
+    typeof value.delayMs === "number" && Number.isInteger(value.delayMs) && value.delayMs >= 0 && value.delayMs <= 30000 &&
+    typeof value.body === "string" && isRecord(value.headers) && Object.values(value.headers).every((header) => typeof header === "string")
   );
+}
+
+function isResolveResultMessage(value: unknown): value is ResolveResultMessage {
+  return isRecord(value) && value.channel === CHANNEL && value.type === "resolve-result" &&
+    typeof value.id === "string" && isRuntimeResponse(value.result);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -29,8 +29,9 @@
 ## 运行与数据
 
 - `npm run dev` 同时启动 Mock Console 服务（22333）与管理页面（22334）；`npm run build` 同时构建 `packages/mock-console/dist` 和 `packages/chrome-extension/dist`；`npm start` 运行 Mock Console。服务端终端默认只保留启动、错误和安全拒绝信息，Proxy 与 Chrome 扩展 resolver 判定结果通过控制台日志面板查看，并可按来源筛选。
+- 请求日志视图使用单列全宽布局，不渲染 Logical API 配置侧栏；日志行只负责选择请求，详情通过显式操作跳转到接口配置，完整 URL 不再与 `host` 重复拼接。
 - Mock Console 正式页面、管理 API、Reqable Mock / Proxy 仍由 `http://127.0.0.1:22333` 提供。配置文件默认保存在当前用户数据目录，仓库只保留脱敏示例。
-- Chrome 扩展默认只连接 `http://127.0.0.1:22333/__mock_extension/resolve`。判定接口只允许 loopback，命中返回一次性 `{ action: "mock", status, delayMs, body, headers }`，未命中返回 `{ action: "pass" }`，不会使用 `targetBaseUrl` 代理真实请求。
+- Chrome 扩展默认只连接 `http://127.0.0.1:22333/__mock_extension/resolve`。判定接口只允许 loopback，命中返回一次性 `{ action: "mock", status, delayMs, body, headers }`，未命中返回 `{ action: "pass" }`，不会使用 `targetBaseUrl` 代理真实请求；Service Worker 等待上限为 1 秒，页面桥接层等待上限为 1.2 秒，异常结果按放行处理。
 - 扩展不保存 Package、Logical API、Match Rule 或 Scenario；场景和规则仍由 Mock Console 单一拥有。请求域名白名单保存在 `chrome.storage.local`，新安装且未配置时默认包含 `localhost` 和 `127.0.0.1`；Popup 的全局/当前标签页开关只保存在 `chrome.storage.session`。扩展模式的真实请求由页面原生 fetch / XHR 发出，因此现有 Proxy 日志不会自动获得真实放行请求的最终响应信息。
 - 扩展当前覆盖请求目标域名命中白名单的 `fetch` 和异步 `XMLHttpRequest`，不覆盖非白名单请求、导航、资源加载、WebSocket、Worker / Service Worker 请求、同步 XHR、流式或二进制 Mock。扩展只能传递页面脚本可观察到的请求 Header。
 - 管理 API 与扩展 resolver 都受本机访问边界保护；扩展通过 Service Worker 访问本机，页面不直接访问管理 API。Mock Console 页面自身的 22333/22334 页面不会注入扩展拦截器。
