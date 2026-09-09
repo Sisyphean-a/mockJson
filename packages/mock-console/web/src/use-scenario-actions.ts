@@ -63,13 +63,15 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
   async function createScene() {
     const api = model.api.value;
     if (!api || !forms.sceneName.value.trim()) return;
+    const isFirstScene = api.scenarios.length === 0;
     try {
       const created = await model.runAdminRequest(() => client.createScenario(api.id, { name: forms.sceneName.value, responseBody: {} }));
       api.scenarios.push(created);
+      if (isFirstScene) api.activeScenarioId = created.id;
       forms.sceneName.value = "";
       forms.showScene.value = false;
       model.sceneId.value = created.id;
-      notify("场景已创建，配置完成后再启用");
+      notify(isFirstScene ? "场景已创建并启用" : "场景已创建");
     } catch (error) { notify(message(error)); }
   }
 

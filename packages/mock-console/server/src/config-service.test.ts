@@ -12,6 +12,21 @@ class MemoryRepository implements StateRepository {
   }
 }
 
+test("新建接口默认启用并使用 OR，首个场景默认启用且后续场景不切换", async () => {
+  const service = new MockConfigService(new MemoryRepository());
+  await service.initialize();
+  const packageConfig = await service.createPackage({ name: "测试包" });
+  const api = await service.createApi(packageConfig.id, { name: "借款首页" });
+
+  assert.equal(api.enabled, true);
+  assert.equal(api.matchMode, "OR");
+
+  const first = await service.createScenario(api.id, { name: "成功", responseBody: { ok: true } });
+  const second = await service.createScenario(api.id, { name: "备用", responseBody: { ok: false } });
+  assert.equal(service.getState().packages[0].apis[0].activeScenarioId, first.id);
+  assert.notEqual(second.id, first.id);
+});
+
 test("配置服务拥有 Package、API、Scenario 的完整变更流程", async () => {
   const service = new MockConfigService(new MemoryRepository());
   await service.initialize();

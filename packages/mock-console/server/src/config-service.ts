@@ -98,9 +98,9 @@ export class MockConfigService {
     const api: LogicalApi = {
       id: randomUUID(),
       name: validateName(input.name, "接口"),
-      enabled: false,
+      enabled: true,
       priority: Math.max(0, ...packageConfig.apis.map((item) => item.priority)) + 10,
-      matchMode: "AND",
+      matchMode: "OR",
       matchRules: [],
       activeScenarioId: null,
       scenarios: [],
@@ -156,6 +156,7 @@ export class MockConfigService {
     activate?: unknown;
   }) {
     const api = this.requireApi(apiId).api;
+    const shouldActivate = input.activate === true || (input.activate === undefined && api.scenarios.length === 0);
     const scenario: Scenario = {
       id: randomUUID(),
       name: validateName(input.name, "场景"),
@@ -165,7 +166,7 @@ export class MockConfigService {
       color: typeof input.color === "string" ? input.color : "blue",
     };
     api.scenarios.push(scenario);
-    if (input.activate === true) api.activeScenarioId = scenario.id;
+    if (shouldActivate) api.activeScenarioId = scenario.id;
     await this.save();
     return scenario;
   }
