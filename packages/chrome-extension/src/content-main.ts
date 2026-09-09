@@ -2,8 +2,8 @@ import type {
   ExtensionRuntimeRequest,
   ExtensionRuntimeResponse,
 } from "../../mock-console/shared/types.js";
-import { urlMatchesWhitelist } from "./domain-whitelist.js";
 
+// MAIN world 内容脚本必须自包含，不能依赖 Vite 生成的共享 chunk；Chrome 会按普通脚本解析它。
 const CHANNEL = "__mock_console_extension_v1";
 const MONITORING_STATE_TYPE = "monitoring-state";
 const RESOLVE_TIMEOUT_MS = 200;
@@ -472,6 +472,20 @@ function headersToRecord(headers: Headers) {
   const result: Record<string, string> = {};
   headers.forEach((value, name) => { result[name] = value; });
   return result;
+}
+
+function urlMatchesWhitelist(value: string, whitelist: readonly string[]) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase().replace(/\.$/, "");
+    return whitelist.some((domain) => {
+      const normalizedDomain = domain.toLowerCase().replace(/^\*\./, "").replace(/\.$/, "");
+      return host === normalizedDomain || host.endsWith(`.${normalizedDomain}`);
+    });
+  } catch {
+    return false;
+  }
 }
 
 function isWhitelistedUrl(value: string) {

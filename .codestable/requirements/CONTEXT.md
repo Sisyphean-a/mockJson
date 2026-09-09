@@ -31,6 +31,7 @@
 
 - 扩展只保存瞬时的请求判定结果、请求域名白名单和 Popup 的启用状态，不保存 Package、Logical API、Match Rule 或 Scenario；所有 Mock 配置和匹配规则仍以 Mock Console 为唯一来源。请求域名白名单保存在 `chrome.storage.local`，新安装且未配置时默认包含 `localhost` 和 `127.0.0.1`；全局开关和当前标签页开关保存在 `chrome.storage.session`。
 - 页面 MAIN world 在请求目标域名命中白名单且开关启用时包装 `fetch` 和异步 `XMLHttpRequest`，通过隔离世界 Content Script 和 Service Worker 请求本机 `POST /__mock_extension/resolve`；非白名单请求不发送 resolver 请求，页面不直接访问管理 API。
+- MAIN world Content Script 必须构建为自包含的普通脚本，不得保留运行时 `import` 或依赖 Vite 共享 chunk；Chrome Manifest 的 `content_scripts` 直接注入该脚本，模块解析失败会使整个拦截器失效。
 - resolver 接收绝对 `http` / `https` URL、Method 和页面脚本可观察的 Header。命中当前 Package 中启用且有 active scenario 的接口时返回状态码、延迟、JSON body 和 `content-type`；未命中或服务不可用时扩展调用原生浏览器 API继续真实请求。
 - Popup 提供请求域名白名单、全局 Mock、当前标签页 Mock 和 Mock Console 连接状态；白名单为空或请求目标域名未命中时不发送 resolver 请求，全局/当前标签页暂停时请求直接放行。
 - 扩展模式不使用 `targetBaseUrl`，因为未命中请求必须由浏览器以原始 URL、Cookie、凭据和 CORS 语义直接发出；当前 Package 仍是全局选择。
