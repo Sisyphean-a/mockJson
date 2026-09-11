@@ -454,12 +454,19 @@ function installNativeListeners(state: XhrState) {
 
 function addXhrListener(state: XhrState, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) {
   if (state.mode === "direct") return state.target.addEventListener(type, listener, options);
+  // Rule: 与原生 addEventListener 一致，相同类型、监听器和捕获阶段的重复注册是幂等的。
+  if (state.listeners.some((item) => sameXhrListener(item, type, listener, options))) return;
   state.listeners.push({ type, listener, options });
 }
 
 function removeXhrListener(state: XhrState, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) {
+  // Rule: 无论当前模式都先清理本地记录，避免 direct 往返时把已移除的监听器重新装回原生实例。
+  state.listeners = state.listeners.filter((item) => !sameXhrListener(item, type, listener, options));
   if (state.mode === "direct") return state.target.removeEventListener(type, listener, options);
-  state.listeners = state.listeners.filter((item) => item.type !== type || item.listener !== listener || sameListenerOptions(item.options, options));
+}
+
+function sameXhrListener(item: XhrListener, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions | EventListenerOptions) {
+  return item.type === type && item.listener === listener && sameListenerOptions(item.options, options);
 }
 
 function emitXhrEvent(state: XhrState, type: string) {

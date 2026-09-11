@@ -28,7 +28,7 @@ export function useRequestLogs(client: MockAdminClient, runAdminRequest: RunAdmi
   }
 
   async function clearLogs() {
-    if (requestInFlight || !window.confirm("确定清空最近的请求日志吗？清空后无法恢复。")) return false;
+    if (requestInFlight) return false;
     requestInFlight = true;
     logsLoading.value = true;
     try {

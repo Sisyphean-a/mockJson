@@ -13,7 +13,26 @@ const compiledSource = transpileModule(source, {
 function createContentScriptHarness(mode: "pass" | "throw" | "timeout") {
   const forwarded: Request[] = [];
   const messageListeners: Array<(event: { source: unknown; data: unknown }) => void> = [];
-  const NativeXMLHttpRequest = class {};
+  const nativeXhrInstances: NativeXMLHttpRequest[] = [];
+  class NativeXMLHttpRequest {
+    timeout = 0;
+    withCredentials = false;
+    responseType = "";
+    listeners: Array<{ type: string; listener: EventListener; options?: boolean | AddEventListenerOptions }> = [];
+    constructor() {
+      nativeXhrInstances.push(this);
+    }
+    open(..._args: unknown[]) {}
+    send(_body?: unknown) {}
+    setRequestHeader(_name: string, _value: string) {}
+    abort() {}
+    addEventListener(type: string, listener: EventListener, options?: boolean | AddEventListenerOptions) {
+      this.listeners.push({ type, listener, options });
+    }
+    removeEventListener(type: string, listener: EventListener) {
+      this.listeners = this.listeners.filter((item) => !(item.type === type && item.listener === listener));
+    }
+  }
   Object.assign(NativeXMLHttpRequest, {
     UNSENT: 0,
     OPENED: 1,
@@ -68,6 +87,7 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout") {
     Headers,
     AbortController,
     DOMException,
+    Event,
     Blob,
     FormData,
     ReadableStream,
@@ -81,7 +101,7 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout") {
   new Script(compiledSource).runInNewContext(sandbox);
   const messageListener = messageListeners[0];
   assert.ok(messageListener);
-  return { fakeWindow, forwarded, messageListener, originalFetch, originalXMLHttpRequest };
+  return { fakeWindow, forwarded, messageListener, originalFetch, originalXMLHttpRequest, nativeXhrInstances };
 }
 
 async function runForwardedFetch(
@@ -152,6 +172,32 @@ test("XHR stays native on a page whose own origin is outside the whitelist", () 
     },
   });
   assert.equal(harness.fakeWindow.XMLHttpRequest, harness.originalXMLHttpRequest);
+});
+
+test("XHR removeEventListener detaches before a direct fallback reinstalls listeners", async () => {
+  const harness = createContentScriptHarness("pass");
+  harness.messageListener({
+    source: harness.fakeWindow,
+    data: {
+      channel: "__mock_console_extension_v1",
+      type: "monitoring-state",
+      enabled: true,
+      whitelist: ["upload.test"],
+    },
+  });
+  const xhr = new harness.fakeWindow.XMLHttpRequest();
+  const listener = () => {};
+  xhr.open("GET", "https://upload.test/api");
+  // 重复注册与原生 addEventListener 一样幂等，移除一次后不应再被装回原生实例。
+  xhr.addEventListener("load", listener);
+  xhr.addEventListener("load", listener);
+  xhr.removeEventListener("load", listener);
+  xhr.send();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const native = harness.nativeXhrInstances.at(-1);
+  assert.ok(native);
+  assert.equal(native.listeners.filter((item) => item.listener === listener).length, 0);
 });
 
 test("non-whitelisted fetch keeps the original Request untouched", async () => {

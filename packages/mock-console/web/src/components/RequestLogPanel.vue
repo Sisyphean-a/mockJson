@@ -146,20 +146,7 @@ function clearFilters() {
 </script>
 
 <template>
-  <section class="request-log-panel" aria-labelledby="request-log-title" role="tabpanel">
-    <div class="log-panel-head">
-      <div>
-        <span class="panel-context">运行观测 · 当前测试包</span>
-        <h1 id="request-log-title">请求日志</h1>
-        <p>实时查看请求命中的逻辑接口、响应场景和实际返回数据</p>
-      </div>
-      <div class="log-panel-actions">
-        <span class="log-retention">自动刷新 · 最近 200 条</span>
-        <button class="secondary" :disabled="c.logsLoading.value" @click="c.refreshLogs">刷新</button>
-        <button class="secondary danger-action" :disabled="!c.logs.value.length || c.logsLoading.value" @click="c.clearLogs">清空日志</button>
-      </div>
-    </div>
-
+  <section class="request-log-panel" aria-label="请求日志" role="tabpanel">
     <div class="log-toolbar">
       <label class="log-search">
         <span aria-hidden="true">⌕</span>
@@ -185,6 +172,9 @@ function clearFilters() {
         </select>
       </label>
       <span class="log-count">{{ filteredLogs.length }} 条</span>
+      <span class="log-retention">自动刷新 · 最近 200 条</span>
+      <button class="secondary" :disabled="c.logsLoading.value" @click="c.refreshLogs">刷新</button>
+      <button class="secondary danger-action" :disabled="!c.logs.value.length || c.logsLoading.value" @click="c.clearLogs">清空日志</button>
     </div>
 
     <div v-if="c.logsError.value" class="log-error" role="alert">

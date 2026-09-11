@@ -11,47 +11,12 @@
   flex-direction: column;
 }
 
-.log-panel-head {
-  min-height: 68px;
-  padding: 13px 16px 11px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.log-panel-head h1,
 .log-detail-head h2,
 .log-response-head h3 {
   margin: 0;
   color: var(--ink-strong);
   font-weight: 700;
   letter-spacing: -0.035em;
-}
-
-.log-panel-head h1 {
-  font-size: 18px;
-}
-
-.log-panel-head p {
-  margin: 4px 0 0;
-  color: var(--ink-muted);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.log-panel-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.log-panel-actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 .log-retention {
@@ -76,6 +41,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.log-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .log-search {
