@@ -149,18 +149,19 @@ header {
 .secondary,
 .add-rule,
 .text-action,
-.icon-action {
+.icon-action,
+.edit-rule,
+.remove-rule,
+.primary {
+  min-height: var(--control-height-sm);
   border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--accent-strong);
+  padding: 4px 8px;
   cursor: pointer;
-}
-
-.save-target,
-.secondary {
-  min-height: var(--control-height);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
+  font-size: 13px;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -174,7 +175,10 @@ header {
 .secondary:hover,
 .add-rule:hover,
 .text-action:hover,
-.icon-action:hover {
+.icon-action:hover,
+.edit-rule:hover,
+.remove-rule:hover,
+.primary:hover {
   border-color: #9eb8eb;
   background: #f3f7ff;
   color: var(--accent-strong);
@@ -405,14 +409,6 @@ aside {
   color: var(--ink-muted);
   text-align: center;
   line-height: 1.8;
-}
-
-.empty-side button {
-  border: 0;
-  background: none;
-  color: var(--accent-strong);
-  cursor: pointer;
-  font-size: 12px;
 }
 
 .side-foot {

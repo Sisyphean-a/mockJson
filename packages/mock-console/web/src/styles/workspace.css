@@ -213,14 +213,6 @@
   font-size: 16px;
 }
 
-.text-action,
-.icon-action {
-  border-radius: var(--radius-sm);
-  padding: 6px 9px;
-  font-size: 11px;
-  white-space: nowrap;
-}
-
 .danger {
   color: var(--danger);
 }
@@ -286,12 +278,6 @@
   gap: var(--control-gap);
 }
 
-.match-controls .add-rule,
-.section-head .secondary {
-  min-height: var(--control-height-sm);
-  padding: 5px 9px;
-}
-
 .logic-control {
   display: flex;
   align-items: center;
@@ -318,14 +304,6 @@
 .logic-select {
   min-width: 154px;
   padding: 5px 25px 5px 8px;
-}
-
-.add-rule,
-.secondary {
-  min-height: var(--control-height);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  white-space: nowrap;
 }
 
 .rule-form {
@@ -416,18 +394,14 @@
   white-space: nowrap;
 }
 
-.edit-rule,
-.remove-rule {
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  font-size: 11px;
-}
-
 .edit-rule { color: var(--accent); }
 .edit-rule:hover { color: var(--accent-strong); }
 .remove-rule { color: #9a5a55; }
-.remove-rule:hover { color: var(--danger); }
+.remove-rule:hover {
+  border-color: #e9b8b4;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
 
 .no-rules {
   margin: 0 14px 8px;
@@ -662,12 +636,9 @@
 }
 
 .primary {
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
+  border-color: var(--accent);
   background: var(--accent);
   color: #fff;
-  padding: 8px 13px;
-  cursor: pointer;
   box-shadow: 0 5px 13px rgb(53 104 212 / 16%);
   font-weight: 650;
 }
@@ -676,9 +647,4 @@
   border-color: var(--accent-strong);
   background: var(--accent-strong);
   box-shadow: 0 7px 16px rgb(53 104 212 / 22%);
-}
-
-.small {
-  padding: 6px 10px;
-  font-size: 11px;
 }

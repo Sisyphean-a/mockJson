@@ -34,7 +34,7 @@ const { controller: c } = defineProps<{ controller: MatchPanelController }>();
       <select v-model="c.ruleOperator.value" aria-label="匹配运算符"><option v-for="operator in c.operators" :key="operator.value" :value="operator.value">{{ operator.label }}</option></select>
       <input v-model="c.ruleValue.value" aria-label="匹配值" :placeholder="c.ruleOperator.value === 'exists' || c.ruleOperator.value === 'notExists' ? '此操作不需要填写值' : '输入匹配值'" @keyup.enter="c.addRule" />
       <div class="rule-hint">{{ c.ruleHint.value }}</div>
-      <button class="primary small" @click="c.addRule">{{ c.editingRuleId.value ? "保存修改" : "保存条件" }}</button>
+      <button class="primary" @click="c.addRule">{{ c.editingRuleId.value ? "保存修改" : "保存条件" }}</button>
     </div>
 
     <div v-if="c.api.value.matchRules.length" class="rules">

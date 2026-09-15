@@ -68,10 +68,10 @@ function openApiContextFromKeyboard(event: KeyboardEvent, item: Api) {
         <div v-if="c.search.value.trim() && c.filtered.value.length" class="sort-hint">清除搜索后可拖拽排序</div>
       </div>
       <div v-if="c.pkg.value && c.search.value.trim() && !c.filtered.value.length" class="empty-side">
-        没有找到匹配的接口<br /><button @click="c.search.value = ''">清除搜索</button>
+        没有找到匹配的接口<br /><button class="secondary" @click="c.search.value = ''">清除搜索</button>
       </div>
       <div v-else-if="!c.filtered.value.length" class="empty-side">
-        {{ c.pkg.value ? "还没有接口" : "还没有测试包" }}<br /><button @click="c.openApiCreate">{{ c.pkg.value ? "创建第一个接口" : "创建测试包" }}</button>
+        {{ c.pkg.value ? "还没有接口" : "还没有测试包" }}<br /><button class="secondary" @click="c.openApiCreate">{{ c.pkg.value ? "创建第一个接口" : "创建测试包" }}</button>
       </div>
     </div>
     <div class="side-foot" @contextmenu.stop>
