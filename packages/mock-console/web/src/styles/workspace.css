@@ -278,6 +278,27 @@
   gap: var(--control-gap);
 }
 
+.match-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.match-toggle-chevron {
+  width: 6px;
+  height: 6px;
+  margin-top: -2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 180ms ease;
+}
+
+.match-toggle[aria-expanded="false"] .match-toggle-chevron {
+  margin-top: 0;
+  transform: rotate(-45deg);
+}
+
 .logic-control {
   display: flex;
   align-items: center;

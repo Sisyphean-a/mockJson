@@ -14,10 +14,16 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
   const requestLogs = useRequestLogs(client, model.runAdminRequest);
   const forms = useConsoleForms();
   const toast = ref("");
+  // Rule: 匹配条件展开/折叠是跨逻辑接口共享的全局 UI 状态，切换接口时保持不变。
+  const matchCollapsed = ref(false);
 
   function notice(message: string) {
     toast.value = message;
     setTimeout(() => { toast.value = ""; }, 2200);
+  }
+
+  function toggleMatchCollapsed() {
+    matchCollapsed.value = !matchCollapsed.value;
   }
 
   function leaveCurrentDraft() {
@@ -60,6 +66,8 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
     ...requestLogs,
     ...forms,
     toast,
+    matchCollapsed,
+    toggleMatchCollapsed,
     selectApi,
     selectScene,
     retryLoad,

@@ -139,8 +139,13 @@
   }
 
   .logic-select,
-  .add-rule {
+  .add-rule,
+  .match-toggle {
     width: 100%;
+  }
+
+  .match-toggle {
+    justify-content: center;
   }
 
   .rule {
