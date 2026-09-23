@@ -12,7 +12,7 @@
 }
 
 .log-detail-head h2,
-.log-response-head h3 {
+.log-section-head h3 {
   margin: 0;
   color: var(--ink-strong);
   font-weight: 700;
@@ -141,9 +141,7 @@
   box-shadow: inset 3px 0 var(--accent);
 }
 
-.log-row-head,
-.log-row-meta,
-.log-response-head > div {
+.log-row-head {
   min-width: 0;
   display: flex;
   align-items: center;
@@ -151,14 +149,36 @@
 }
 
 .log-row-head {
-  gap: 8px;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.log-row-result {
+  min-width: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.log-row-result .log-match {
+  color: var(--accent-strong);
+}
+
+.log-row-scenario {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-muted);
+  text-overflow: ellipsis;
 }
 
 .log-row-head time {
-  margin-left: auto;
   color: var(--ink-faint);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
   white-space: nowrap;
 }
 
@@ -231,13 +251,6 @@
   white-space: nowrap;
 }
 
-.log-row-meta {
-  margin-top: 8px;
-  overflow: hidden;
-  color: var(--ink-muted);
-  font-size: 10px;
-}
-
 .log-match {
   min-width: 0;
   overflow: hidden;
@@ -252,14 +265,7 @@
   font-weight: 500;
 }
 
-.log-row-meta > span:not(.log-status) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .log-status {
-  margin-left: auto;
   color: var(--success);
   font: 600 11px/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -268,15 +274,6 @@
 .log-status.failed,
 .failed {
   color: var(--danger);
-}
-
-.log-preview {
-  margin: 7px 0 0;
-  overflow: hidden;
-  color: var(--ink-faint);
-  font: 10px/1.45 var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .log-empty,
@@ -340,22 +337,28 @@
 
 .log-detail-badges {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
 }
 
+.log-duration {
+  color: var(--ink-muted);
+  font: 10px var(--font-mono);
+}
+
 .log-detail-api {
   min-width: 0;
-  margin-top: 14px;
-  padding: 9px 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
   border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius-sm);
   background: var(--surface-subtle);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 }
 
 .log-detail-api > div {
@@ -379,48 +382,20 @@
   white-space: nowrap;
 }
 
+.log-scenario-identity {
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+
 .log-detail-api .text-action {
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
-.log-detail-grid {
-  margin-top: 10px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.log-detail-grid > div {
-  min-width: 0;
-  min-height: 46px;
-  padding: 8px 9px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  background: var(--surface-subtle);
-  display: grid;
-  align-content: center;
-  gap: var(--label-gap);
-}
-
-.log-detail-grid span {
+.log-pass-reason {
+  margin: 10px 0 0;
   color: var(--ink-muted);
-  font-size: 10px;
-}
-
-.log-detail-grid b,
-.log-detail-grid code {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
   font-size: 11px;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.log-detail-grid code {
-  font-family: var(--font-mono);
-  font-weight: 500;
 }
 
 .log-failure {
@@ -444,21 +419,155 @@
   font: 11px/1.5 var(--font-mono);
 }
 
-.log-response-head {
-  margin-top: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+.log-request {
+  margin-top: 22px;
 }
 
-.log-response-head h3 {
+.log-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.log-section-head h3 {
   font-size: 14px;
 }
 
-.log-response-head span {
-  color: var(--ink-muted);
+.log-section-head span,
+.log-request-group h4 span,
+.log-response-size {
+  color: var(--ink-faint);
   font-size: 10px;
+  font-weight: 400;
+}
+
+.log-request-group {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.log-request-group h4 {
+  margin: 0 0 8px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.log-fields {
+  display: grid;
+  gap: 4px;
+}
+
+.log-field {
+  min-width: 0;
+  padding: 6px 10px;
+  display: grid;
+  grid-template-columns: minmax(100px, 32%) minmax(0, 1fr);
+  gap: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.log-field code {
+  color: var(--accent-strong);
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
+
+.log-field span {
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+}
+
+.log-no-data {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+.log-request-body {
+  max-height: 220px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 11px/1.6 var(--font-mono);
+}
+
+.log-response {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+}
+
+.log-response-head {
+  min-height: 44px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.log-response-head::-webkit-details-marker {
+  display: none;
+}
+
+.log-response-head:hover {
+  background: var(--surface-active);
+}
+
+.log-response-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.log-expand-icon {
+  color: var(--accent-strong);
+  font-size: 20px;
+  line-height: 1;
+  transition: transform 0.18s ease;
+}
+
+.log-response[open] .log-expand-icon {
+  transform: rotate(90deg);
+}
+
+.log-response-title {
+  color: var(--ink-strong);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.log-truncated {
+  margin-left: auto;
+}
+
+.log-response-content {
+  padding: 0 12px 12px;
+}
+
+.log-response-type {
+  margin: 0 0 8px;
+  color: var(--ink-muted);
+  font: 10px var(--font-mono);
+  overflow-wrap: anywhere;
 }
 
 .log-truncated {
@@ -469,9 +578,8 @@
 }
 
 .log-response-body {
-  min-height: 200px;
   max-height: min(52vh, 520px);
-  margin: 10px 0 0;
+  margin: 0;
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);

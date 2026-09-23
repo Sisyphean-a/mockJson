@@ -8,6 +8,10 @@ export type ExtensionRuntimeRequest = {
   url: string;
   method: string;
   headers: Record<string, string>;
+  /** 页面脚本提交的文本请求体，仅用于本机请求日志，不参与匹配。 */
+  body?: string;
+  /** 超过本地 resolver 容量或读取失败时，不改变 Mock 判定。 */
+  bodyUnavailable?: "too-large" | "unavailable";
 };
 
 export type ExtensionRuntimeResponse =

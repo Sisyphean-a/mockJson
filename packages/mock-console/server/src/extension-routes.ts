@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ExtensionRuntimeRequest } from "@mock-json/extension-contract";
 import type { RequestLogOutcome } from "../../shared/types.js";
 import { MockConfigService } from "./config-service.js";
-import { emptyLogResponse, RequestLogStore, textLogResponse } from "./request-logs.js";
+import { emptyLogResponse, logRequestHeaders, RequestLogStore, textLogResponse } from "./request-logs.js";
 import { resolveExtension, type ExtensionResolution } from "./runtime-resolver.js";
 
 const MAX_URL_LENGTH = 8 * 1024;
@@ -48,6 +48,13 @@ function recordExtensionDecision(
   const responseBody = response.action === "mock"
     ? textLogResponse(response.headers["content-type"] || null, response.body)
     : emptyLogResponse(null);
+  const contentType = Object.entries(request.headers).find(([name]) => name.toLowerCase() === "content-type")?.[1] || null;
+  const requestBody = {
+    contentType,
+    body: request.bodyUnavailable ? null : request.body ?? "",
+    byteLength: request.body === undefined ? 0 : Buffer.byteLength(request.body),
+    truncated: request.bodyUnavailable === "too-large",
+  };
 
   logs.record({
     source: "extension",
@@ -65,6 +72,7 @@ function recordExtensionDecision(
     scenarioId: resolution.scenario?.id || null,
     scenarioName: resolution.scenario?.name || null,
     status: response.action === "mock" ? response.status : 0,
+    request: { headers: logRequestHeaders(request.headers), body: requestBody },
     response: responseBody,
   });
 }
@@ -94,7 +102,15 @@ function parseRequest(req: FastifyRequest): ExtensionRuntimeRequest {
     headers[name] = headerValue;
   }
 
-  return { url, method, headers };
+  if (value.body !== undefined && typeof value.body !== "string") throw new Error("请求体必须是文本");
+  if (value.bodyUnavailable !== undefined && value.bodyUnavailable !== "too-large" && value.bodyUnavailable !== "unavailable")
+    throw new Error("请求体状态无效");
+  if (value.body !== undefined && value.bodyUnavailable !== undefined) throw new Error("请求体状态冲突");
+
+  return { url, method, headers,
+    ...(value.body !== undefined ? { body: value.body } : {}),
+    ...(value.bodyUnavailable !== undefined ? { bodyUnavailable: value.bodyUnavailable } : {}),
+  };
 }
 
 function parseBody(body: unknown): unknown {

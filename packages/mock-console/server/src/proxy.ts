@@ -4,7 +4,7 @@ import { Transform } from "node:stream";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { PackageConfig, RequestLogOutcome, RequestLogResponse, State } from "../../shared/types.js";
 import { selectMatchingApi } from "./runtime-resolver.js";
-import { emptyLogResponse, MAX_LOG_BODY_BYTES, RequestLogStore, textLogResponse } from "./request-logs.js";
+import { emptyLogResponse, logRequestHeaders, MAX_LOG_BODY_BYTES, RequestLogStore, textLogResponse } from "./request-logs.js";
 
 const hop = new Set([
   "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
@@ -121,6 +121,12 @@ export async function createProxy(
   const selected = selectMatchingApi(p?.apis, { method: req.method, url, headers: req.headers });
   const api = selected?.api;
   const scene = selected?.scenario;
+  const requestContentType = headerText(req.headers["content-type"]);
+  const requestCollector = logs ? createResponseCollector(isTextualContentType(requestContentType)) : undefined;
+  if (!streamRequestBody && req.body !== undefined) {
+    const body = Buffer.isBuffer(req.body) || typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+    if (body !== undefined) requestCollector?.collect(body);
+  }
   const record = (
     outcome: RequestLogOutcome,
     status: number,
@@ -142,13 +148,20 @@ export async function createProxy(
       scenarioId: scene?.id || null,
       scenarioName: scene?.name || null,
       status,
+      request: {
+        headers: logRequestHeaders(req.headers),
+        body: requestCollector?.preview(requestContentType, null) || emptyLogResponse(requestContentType),
+      },
       response,
       ...(error ? { error } : {}),
     });
   };
 
   if (scene) {
-    if (streamRequestBody) await consumeRequestBody(req);
+    if (streamRequestBody) {
+      if (requestCollector) req.raw.on("data", (chunk: Buffer) => requestCollector.collect(chunk));
+      await consumeRequestBody(req);
+    }
     await sleep(scene.delayMs);
     const body = JSON.stringify(scene.responseBody);
     record("mocked", scene.status, textLogResponse("application/json; charset=utf-8", body || ""));
@@ -158,7 +171,10 @@ export async function createProxy(
   }
   const realServiceUrl = activeRealServiceUrl(p);
   if (!realServiceUrl) {
-    if (streamRequestBody) await consumeRequestBody(req);
+    if (streamRequestBody) {
+      if (requestCollector) req.raw.on("data", (chunk: Buffer) => requestCollector.collect(chunk));
+      await consumeRequestBody(req);
+    }
     const body = { error: "未命中 Mock，且当前 Package 未配置真实服务" };
     const serialized = JSON.stringify(body);
     record("unmatched", 502, textLogResponse("application/json; charset=utf-8", serialized));
@@ -280,6 +296,12 @@ export async function createProxy(
       finish();
     });
     if (payload !== undefined) upstream.end(payload);
+    else if (requestCollector) req.raw.pipe(new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        requestCollector.collect(chunk);
+        callback(null, chunk);
+      },
+    })).pipe(upstream);
     else req.raw.pipe(upstream);
   });
 }

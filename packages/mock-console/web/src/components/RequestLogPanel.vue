@@ -39,7 +39,10 @@ const selectedApi = computed(() => {
   return apiId ? c.pkg.value?.apis.find((api) => api.id === apiId) || null : null;
 });
 
-const responseSummaryCache = new WeakMap<RequestLog, { body: string; summary: string }>();
+const queryParams = computed(() => selectedLog.value
+  ? [...new URL(selectedLog.value.url, "http://mock.local").searchParams.entries()]
+  : []);
+const requestHeaders = computed(() => Object.entries(selectedLog.value?.request.headers || {}));
 
 watch(filteredLogs, (items) => {
   if (!items.some((log) => log.id === selectedId.value)) selectedId.value = items[0]?.id || null;
@@ -69,14 +72,18 @@ function outcomeLabel(outcome: RequestLog["outcome"]) {
   return outcomeLabels[outcome];
 }
 
+function bodyText(body: string | null) {
+  if (!body) return "（空请求体）";
+  try {
+    return JSON.stringify(JSON.parse(body), null, 4);
+  } catch {
+    return body;
+  }
+}
+
 function responseText(log: RequestLog) {
   if (log.response.body === null) return `非文本响应，无法直接预览（${formatBytes(log.response.byteLength)}）`;
-  if (!log.response.body) return "（空响应体）";
-  try {
-    return JSON.stringify(JSON.parse(log.response.body), null, 4);
-  } catch {
-    return log.response.body;
-  }
+  return log.response.body ? bodyText(log.response.body) : "（空响应体）";
 }
 
 function sourceLabel(source: RequestLog["source"]) {
@@ -87,28 +94,10 @@ function passReasonLabel(reason: RequestLog["passReason"]) {
   return reason ? passReasonLabels[reason] : "已放行";
 }
 
-function responseSummary(log: RequestLog) {
-  if (log.outcome === "passed") return `浏览器原生请求已放行 · ${passReasonLabel(log.passReason)}`;
-  if (log.source === "extension" && log.outcome === "unmatched") return "扩展判定未命中，浏览器将直接请求原始地址";
-  if (log.response.body === null) return `非文本响应 · ${formatBytes(log.response.byteLength)}`;
-  const cached = responseSummaryCache.get(log);
-  if (cached?.body === log.response.body) return cached.summary;
-  const summary = log.response.body.replace(/\s+/g, " ").trim() || "空响应体";
-  const value = summary.length > 120 ? `${summary.slice(0, 120)}…` : summary;
-  responseSummaryCache.set(log, { body: log.response.body, summary: value });
-  return value;
-}
-
 function formatTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", { hour12: false });
 }
 
 function formatBytes(value: number) {
@@ -204,15 +193,15 @@ function clearFilters() {
             <span class="log-method">{{ log.method }}</span>
             <span :class="['log-source', `source-${log.source}`]">{{ sourceLabel(log.source) }}</span>
             <span :class="['log-outcome', `outcome-${log.outcome}`]">{{ outcomeLabel(log.outcome) }}</span>
-            <time>{{ formatTime(log.timestamp) }}</time>
+            <span class="log-row-result" :title="[log.apiName || '未命中逻辑接口', log.scenarioName, formatStatus(log.status)].filter(Boolean).join(' · ')">
+              <span :class="['log-match', { unmatched: !log.apiName }]">{{ log.apiName ? `命中：${log.apiName}` : "未命中" }}</span>
+              <span v-if="log.scenarioName" class="log-row-scenario">· {{ log.scenarioName }}</span>
+              <span class="log-status" :class="{ failed: log.status >= 400 }">{{ formatStatus(log.status) }}</span>
+            </span>
+            <time :datetime="log.timestamp">{{ formatTime(log.timestamp) }}</time>
           </div>
           <code class="log-url">{{ endpoint(log) }}</code>
-          <div class="log-row-meta">
-            <span :class="['log-match', { unmatched: !log.apiName }]">{{ log.apiName ? `命中：${log.apiName}` : "未命中逻辑接口" }}</span>
-            <span v-if="log.scenarioName">· {{ log.scenarioName }}</span>
-            <span class="log-status" :class="{ failed: log.status >= 400 }">{{ formatStatus(log.status) }}</span>
-          </div>
-          <p class="log-preview">{{ responseSummary(log) }}</p>
+
         </button>
       </div>
 
@@ -226,38 +215,72 @@ function clearFilters() {
           <div class="log-detail-badges">
             <span :class="['log-source', `source-${selectedLog.source}`]">{{ sourceLabel(selectedLog.source) }}</span>
             <span :class="['log-outcome', `outcome-${selectedLog.outcome}`]">{{ outcomeLabel(selectedLog.outcome) }}</span>
+            <span :class="['log-status', { failed: selectedLog.status >= 400 }]">{{ formatStatus(selectedLog.status) }}</span>
+            <span class="log-duration">{{ formatDuration(selectedLog.durationMs) }}</span>
           </div>
         </div>
 
         <div class="log-detail-api">
-          <div>
+          <div class="log-api-identity">
             <span>命中逻辑接口</span>
             <b>{{ selectedLog.apiName || "未命中" }}</b>
+          </div>
+          <div class="log-scenario-identity">
+            <span>响应场景</span>
+            <b>{{ selectedLog.scenarioName || "—" }}</b>
           </div>
           <button v-if="selectedApi" class="text-action" type="button" @click="openSelectedApi">查看接口配置</button>
         </div>
 
-        <div class="log-detail-grid">
-          <div><span>请求来源</span><b>{{ sourceLabel(selectedLog.source) }}</b></div>
-          <div><span>请求时间</span><b>{{ formatDateTime(selectedLog.timestamp) }}</b></div>
-          <div><span>HTTP 状态</span><b :class="{ failed: selectedLog.status >= 400 }">{{ formatStatus(selectedLog.status) }}</b></div>
-          <div><span>耗时</span><b>{{ formatDuration(selectedLog.durationMs) }}</b></div>
-          <div v-if="selectedLog.passReason"><span>放行原因</span><b>{{ passReasonLabel(selectedLog.passReason) }}</b></div>
-          <div><span>响应场景</span><b>{{ selectedLog.scenarioName || "—" }}</b></div>
-          <div><span>响应类型</span><b>{{ selectedLog.response.contentType || "未知" }}</b></div>
-        </div>
-
+        <p v-if="selectedLog.passReason" class="log-pass-reason">放行原因：{{ passReasonLabel(selectedLog.passReason) }}</p>
         <div v-if="selectedLog.error" class="log-failure" role="alert">
           <span>错误信息</span>
           <code>{{ selectedLog.error }}</code>
         </div>
 
-        <div class="log-response-head">
-          <div><h3>响应数据</h3><span>{{ formatBytes(selectedLog.response.byteLength) }}</span></div>
-          <span v-if="selectedLog.response.truncated" class="log-truncated">已截断预览</span>
-        </div>
-        <pre class="log-response-body">{{ responseText(selectedLog) }}</pre>
-        <p v-if="selectedLog.response.truncated" class="log-note">响应体较大，仅展示前 32 KB；代理仍按原样继续转发。</p>
+        <section class="log-request" aria-label="请求数据">
+          <div class="log-section-head"><h3>请求数据</h3><span>参数与请求头</span></div>
+          <div class="log-request-group">
+            <h4>URL 参数 <span>{{ queryParams.length }}</span></h4>
+            <div v-if="queryParams.length" class="log-fields">
+              <div v-for="([name, value], index) in queryParams" :key="index" class="log-field">
+                <code>{{ name }}</code><span>{{ value || '（空值）' }}</span>
+              </div>
+            </div>
+            <p v-else class="log-no-data">无 URL 参数</p>
+          </div>
+          <div class="log-request-group">
+            <h4>请求头 <span>{{ requestHeaders.length }}</span></h4>
+            <div v-if="requestHeaders.length" class="log-fields">
+              <div v-for="([name, value]) in requestHeaders" :key="name" class="log-field">
+                <code>{{ name }}</code><span>{{ value }}</span>
+              </div>
+            </div>
+            <p v-else class="log-no-data">无可用请求头</p>
+          </div>
+          <div v-if="selectedLog.request.body.byteLength || selectedLog.request.body.body === null" class="log-request-group">
+            <h4>请求体 <span v-if="selectedLog.request.body.byteLength">{{ formatBytes(selectedLog.request.body.byteLength) }}</span></h4>
+            <pre v-if="selectedLog.request.body.body !== null" class="log-request-body">{{ selectedLog.request.body.body }}</pre>
+            <p v-else class="log-no-data">{{ selectedLog.source === 'extension'
+              ? selectedLog.request.body.truncated ? '请求体超过本地判定接口容量，未记录；Mock 判定不受影响。' : '此请求体无法读取；Mock 判定不受影响。'
+              : '非文本请求体，无法预览' }}</p>
+            <p v-if="selectedLog.source === 'proxy' && selectedLog.request.body.truncated" class="log-note">请求体仅展示前 32 KB；转发内容不受影响。</p>
+          </div>
+        </section>
+
+        <details :key="selectedLog.id" class="log-response">
+          <summary class="log-response-head">
+            <span class="log-expand-icon" aria-hidden="true">›</span>
+            <span class="log-response-title">响应数据</span>
+            <span class="log-response-size">{{ formatBytes(selectedLog.response.byteLength) }}</span>
+            <span v-if="selectedLog.response.truncated" class="log-truncated">已截断预览</span>
+          </summary>
+          <div class="log-response-content">
+            <p v-if="selectedLog.response.contentType" class="log-response-type">{{ selectedLog.response.contentType }}</p>
+            <pre class="log-response-body">{{ responseText(selectedLog) }}</pre>
+            <p v-if="selectedLog.response.truncated" class="log-note">响应体较大，仅展示前 32 KB；代理仍按原样继续转发。</p>
+          </div>
+        </details>
       </div>
       <div v-else class="log-detail-empty">选择一条日志查看完整响应数据</div>
     </div>

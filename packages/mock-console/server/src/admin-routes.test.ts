@@ -30,6 +30,7 @@ function logEntry(): Omit<RequestLog, "id"> {
     scenarioId: null,
     scenarioName: null,
     status: 502,
+    request: { headers: {}, body: { contentType: null, body: "", byteLength: 0, truncated: false } },
     response: { contentType: "application/json", body: "{}", byteLength: 2, truncated: false },
   };
 }

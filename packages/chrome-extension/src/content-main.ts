@@ -88,11 +88,13 @@ function installFetchInterceptor() {
 
     let decision: ExtensionRuntimeResponse;
     try {
-      decision = await askResolver({
+      const description: ExtensionRuntimeRequest = {
         url: request.url,
         method: request.method,
         headers: headersToRecord(request.headers),
-      }, request.signal);
+      };
+      Object.assign(description, await readRequestBodyForLog(request));
+      decision = await askResolver(withLogBody(description), request.signal);
     } catch {
       return nativeFetch(request);
     }
@@ -358,7 +360,10 @@ function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | nul
     method: state.method.toUpperCase(),
     headers: { ...state.requestHeaders },
   };
-  void askResolver(request, state.mockAbortController.signal).then((decision) => {
+  if (typeof body === "string") request.body = body;
+  else if (body instanceof URLSearchParams) request.body = body.toString();
+  else if (body != null) request.bodyUnavailable = "unavailable";
+  void askResolver(withLogBody(request), state.mockAbortController.signal).then((decision) => {
     if (state.generation !== generation || state.aborted || state.finished) return;
     if (decision.action === "pass") return useDirectXhr(state, body);
     void useMockXhr(state, decision, generation);
@@ -532,6 +537,53 @@ function getRequestUrl(input: RequestInfo | URL) {
   } catch {
     return null;
   }
+}
+
+// Rule: Fastify 的 resolver 请求体默认上限为 1 MiB；日志快照不能让原本可命中的请求变成 413。
+const RESOLVER_WIRE_BODY_LIMIT = 1024 * 1024;
+
+function withLogBody(request: ExtensionRuntimeRequest): ExtensionRuntimeRequest {
+  if (request.body === undefined || new TextEncoder().encode(JSON.stringify(request)).byteLength <= RESOLVER_WIRE_BODY_LIMIT)
+    return request;
+  const { body: _body, ...metadata } = request;
+  return { ...metadata, bodyUnavailable: "too-large" };
+}
+
+async function readRequestBodyForLog(request: Request): Promise<Pick<ExtensionRuntimeRequest, "body" | "bodyUnavailable">> {
+  if (!request.body) return {};
+  const reader = request.clone().body!.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  let timer = 0;
+  const read = (async (): Promise<Pick<ExtensionRuntimeRequest, "body" | "bodyUnavailable">> => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        byteLength += value.byteLength;
+        if (byteLength > RESOLVER_WIRE_BODY_LIMIT) {
+          void reader.cancel().catch(() => {});
+          return { bodyUnavailable: "too-large" };
+        }
+        chunks.push(value);
+      }
+      const bytes = new Uint8Array(byteLength);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      return { body: new TextDecoder().decode(bytes) };
+    } catch {
+      return { bodyUnavailable: "unavailable" };
+    }
+  })();
+  // Failure: 未结束的流不能延迟现有 resolver 判定；取消快照，不消费原始 Request。
+  const timeout = new Promise<Pick<ExtensionRuntimeRequest, "body" | "bodyUnavailable">>((resolve) => {
+    timer = window.setTimeout(() => {
+      void reader.cancel().catch(() => {});
+      resolve({ bodyUnavailable: "unavailable" });
+    }, 1000);
+  });
+  try { return await Promise.race([read, timeout]); }
+  finally { window.clearTimeout(timer); }
 }
 
 function isUploadRequest(request: Request) {

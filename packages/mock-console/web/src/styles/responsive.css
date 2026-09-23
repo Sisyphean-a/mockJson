@@ -387,13 +387,23 @@
     flex-basis: 100%;
   }
 
-  .log-detail-api {
-    align-items: flex-start;
-    flex-direction: column;
+  .log-detail-head {
+    flex-wrap: wrap;
   }
 
-  .log-detail-grid {
-    grid-template-columns: 1fr;
+  .log-detail-api {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .log-detail-api .text-action {
+    margin-left: 0;
+    width: 100%;
+    text-align: left;
+  }
+
+  .log-field {
+    grid-template-columns: minmax(75px, 35%) minmax(0, 1fr);
   }
 
   .toast {

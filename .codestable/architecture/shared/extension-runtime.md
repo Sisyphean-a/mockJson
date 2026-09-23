@@ -17,10 +17,10 @@
 
 ## 请求与响应
 
-- 扩展发送 `{ url, method, headers }`，只包含页面脚本可观察的请求元数据。
+- 扩展发送 `{ url, method, headers, body?, bodyUnavailable? }`；`body` 是页面可读取的文本请求体原文，只写入已有判定日志、不参与匹配；超出本地 resolver 的 1 MiB 请求容量或读取失败时用 `bodyUnavailable` 标记，仍按原元数据判定。
 - Mock 响应包含状态码、0–30000ms 延迟、JSON 字符串 body 和响应 Header。
 - `pass` 表示扩展不接管真实请求；浏览器随后以原始 URL、Cookie、凭据、CORS 和请求体语义发出真实请求。
-- 未命中白名单、resolver 未命中、服务不可用、超时或取消都必须保持真实请求放行。
+- 未命中白名单、resolver 未命中、服务不可用、超时或取消都必须保持真实请求放行；采集日志用的请求体副本不得消耗原始 Request，也不得为未进入 resolver 的请求增加日志。
 
 ## 所有者
 

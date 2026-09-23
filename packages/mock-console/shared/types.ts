@@ -99,6 +99,7 @@ export type RequestLog = {
   scenarioId: string | null;
   scenarioName: string | null;
   status: number;
+  request: { headers: Record<string, string>; body: RequestLogResponse };
   response: RequestLogResponse;
   error?: string;
 };

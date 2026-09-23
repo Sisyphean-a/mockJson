@@ -4,14 +4,16 @@ import { readFileSync } from "node:fs";
 import { Script } from "node:vm";
 import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import { RESOLVE_TIMEOUT_MS } from "./protocol.js";
+import type { ExtensionRuntimeRequest } from "@mock-json/extension-contract";
 
 const source = readFileSync(new URL("./content-main.ts", import.meta.url), "utf8");
 const compiledSource = transpileModule(source, {
   compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 },
 }).outputText.replace(/\nexport \{\};?\s*$/, "\n");
 
-function createContentScriptHarness(mode: "pass" | "throw" | "timeout") {
+function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock") {
   const forwarded: Request[] = [];
+  const posted: ExtensionRuntimeRequest[] = [];
   const messageListeners: Array<(event: { source: unknown; data: unknown }) => void> = [];
   const nativeXhrInstances: NativeXMLHttpRequest[] = [];
   class NativeXMLHttpRequest {
@@ -50,9 +52,10 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout") {
     addEventListener(type: string, listener: (event: { source: unknown; data: unknown }) => void) {
       if (type === "message") messageListeners.push(listener);
     },
-    postMessage(message: { type?: string; id?: string }) {
+    postMessage(message: { type?: string; id?: string; request?: ExtensionRuntimeRequest }) {
       if (message.type === "monitoring-state-request") return;
       if (message.type !== "resolve") return;
+      if (message.request) posted.push(message.request);
       if (mode === "throw") throw new Error("bridge unavailable");
       if (mode === "timeout") return;
       queueMicrotask(() => {
@@ -63,7 +66,9 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout") {
               channel: "__mock_console_extension_v1",
               type: "resolve-result",
               id: message.id,
-              result: { action: "pass" },
+              result: mode === "mock"
+                ? { action: "mock", status: 200, delayMs: 0, body: "{}", headers: { "content-type": "application/json" } }
+                : { action: "pass" },
             },
           });
         }
@@ -92,6 +97,8 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout") {
     FormData,
     ReadableStream,
     TextEncoder,
+    TextDecoder,
+    URLSearchParams,
     URL,
     XMLHttpRequest: NativeXMLHttpRequest,
     setTimeout,
@@ -101,7 +108,7 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout") {
   new Script(compiledSource).runInNewContext(sandbox);
   const messageListener = messageListeners[0];
   assert.ok(messageListener);
-  return { fakeWindow, forwarded, messageListener, originalFetch, originalXMLHttpRequest, nativeXhrInstances };
+  return { fakeWindow, forwarded, posted, messageListener, originalFetch, originalXMLHttpRequest, nativeXhrInstances };
 }
 
 async function runForwardedFetch(
@@ -141,7 +148,7 @@ test("MAIN world avoids resolver work when monitoring is inactive and propagates
   const requestConstruction = source.indexOf("const request = new Request");
   assert.ok(fastPath >= 0 && fastPath < requestConstruction);
   assert.match(source, /type: "cancel"/);
-  assert.match(source, /askResolver\(request, state\.mockAbortController\.signal\)/);
+  assert.match(source, /askResolver\(withLogBody\(request\), state\.mockAbortController\.signal\)/);
   assert.match(source, /waitForDelay\(decision\.delayMs, state\.mockAbortController\.signal\)/);
 });
 
@@ -215,6 +222,58 @@ test("non-whitelisted fetch keeps the original Request untouched", async () => {
   const forwarded = await runForwardedFetch("pass", original);
   assert.equal(forwarded, original);
   assert.equal(await forwarded.text(), "ignored-payload");
+});
+
+test("已有 Request 的 JSON 请求体可记录且原生放行仍保留原文", async () => {
+  const payload = '{"access_token":"secret","message":"中文"}';
+  const forwarded = await runForwardedFetch("pass", new Request("https://upload.test/api", {
+    method: "POST", headers: { "content-type": "application/json" }, body: payload,
+  }));
+  assert.equal(await forwarded.text(), payload);
+});
+
+test("Mock fetch 将完整原文请求体随现有判定发送，未额外发出目标请求", async () => {
+  const harness = createContentScriptHarness("mock");
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, whitelist: ["upload.test"],
+  } });
+  const payload = JSON.stringify({ password: "secret", amount: 120, remark: "中文 😀" });
+  const result = await harness.fakeWindow.fetch("https://upload.test/api?token=secret", {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer secret" }, body: payload,
+  });
+  assert.equal(result.status, 200);
+  assert.equal(harness.forwarded.length, 0);
+  assert.equal(harness.posted.length, 1);
+  assert.equal(harness.posted[0].url, "https://upload.test/api?token=secret");
+  assert.equal(harness.posted[0].headers.authorization, "Bearer secret");
+  assert.equal(harness.posted[0].body, payload);
+});
+
+test("XHR 文本请求体随原有 resolver 判定发送", async () => {
+  const harness = createContentScriptHarness("mock");
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, whitelist: ["upload.test"],
+  } });
+  const xhr = new harness.fakeWindow.XMLHttpRequest();
+  xhr.open("POST", "https://upload.test/api");
+  xhr.setRequestHeader("Authorization", "Bearer secret");
+  xhr.send("password=secret&amount=120");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(harness.posted.length, 1);
+  assert.equal(harness.posted[0].headers.Authorization, "Bearer secret");
+  assert.equal(harness.posted[0].body, "password=secret&amount=120");
+});
+
+test("超过现有本地 resolver 容量仍按原规则判定并显式标记请求体未记录", async () => {
+  const harness = createContentScriptHarness("mock");
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, whitelist: ["upload.test"],
+  } });
+  const result = await harness.fakeWindow.fetch("https://upload.test/api", { method: "POST", body: "\\".repeat(600_000) });
+  assert.equal(result.status, 200);
+  assert.equal(harness.posted.length, 1);
+  assert.equal(harness.posted[0].body, undefined);
+  assert.equal(harness.posted[0].bodyUnavailable, "too-large");
 });
 
 test("fetch pass-through keeps FormData files and ReadableStream bodies", async () => {

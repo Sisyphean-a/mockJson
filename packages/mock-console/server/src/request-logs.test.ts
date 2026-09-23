@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { RequestLogStore } from "./request-logs.js";
+import { logRequestHeaders, RequestLogStore } from "./request-logs.js";
 import type { RequestLog } from "../../shared/types.js";
 
 function entry(name: string): Omit<RequestLog, "id"> {
@@ -19,6 +19,7 @@ function entry(name: string): Omit<RequestLog, "id"> {
     scenarioId: "scene",
     scenarioName: "成功",
     status: 200,
+    request: { headers: {}, body: { contentType: null, body: "", byteLength: 0, truncated: false } },
     response: { contentType: "application/json", body: "{}", byteLength: 2, truncated: false },
   };
 }
@@ -62,6 +63,12 @@ test("清空日志会让旧游标重置本地列表", () => {
   logs.clear();
 
   assert.deepEqual(logs.listSince(etag), { logs: [], reset: true });
+});
+
+test("日志保留原始请求头值，包括多值和凭据", () => {
+  assert.deepEqual(logRequestHeaders({ authorization: "Bearer secret", cookie: ["a=1", "b=2"], missing: undefined }), {
+    authorization: "Bearer secret", cookie: "a=1, b=2",
+  });
 });
 
 test("请求日志数量上限必须是正整数", () => {

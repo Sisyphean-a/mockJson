@@ -79,9 +79,10 @@ test("扩展判定日志标记来源和命中结果", async () => {
     method: "POST",
     url: "/__mock_extension/resolve",
     payload: {
-      url: "https://api.example.com/mocked?x=1",
-      method: "GET",
-      headers: {},
+      url: "https://api.example.com/mocked?token=secret",
+      method: "POST",
+      headers: { "X-Trace": "123", Authorization: "Bearer secret", "Content-Type": "application/json" },
+      body: '{"password":"secret","amount":120,"remark":"中文"}',
     },
   });
   await app.inject({
@@ -105,6 +106,24 @@ test("扩展判定日志标记来源和命中结果", async () => {
   assert.equal(mocked.apiName, "测试接口");
   assert.equal(mocked.scenarioName, "成功");
   assert.equal(mocked.status, 200);
+  assert.equal(mocked.request.headers["X-Trace"], "123");
+  assert.equal(mocked.request.headers.Authorization, "Bearer secret");
+  assert.equal(mocked.url, "https://api.example.com/mocked?token=secret");
+  assert.equal(mocked.request.body.body, '{"password":"secret","amount":120,"remark":"中文"}');
+  assert.equal(mocked.request.body.contentType, "application/json");
+  assert.equal(mocked.request.body.byteLength, Buffer.byteLength(mocked.request.body.body));
+  await app.close();
+});
+
+test("请求体采集失败不改变判定，不再增加其他请求日志", async () => {
+  const { app, logs } = await createApp();
+  const response = await app.inject({ method: "POST", url: "/__mock_extension/resolve", payload: {
+    url: "https://api.example.com/mocked", method: "POST", headers: {}, bodyUnavailable: "too-large",
+  } });
+  assert.equal(response.json().action, "mock");
+  assert.equal(logs.list().length, 1);
+  assert.equal(logs.list()[0].request.body.body, null);
+  assert.equal(logs.list()[0].request.body.truncated, true);
   await app.close();
 });
 
@@ -140,5 +159,9 @@ test("扩展判定接口拒绝相对 URL 和无效 Headers", async () => {
 
   assert.equal(relative.statusCode, 400);
   assert.equal(invalidHeaders.statusCode, 400);
+  const invalidBody = await app.inject({ method: "POST", url: "/__mock_extension/resolve", payload: {
+    url: "https://api.example.com/mocked", method: "POST", headers: {}, body: { password: "secret" },
+  } });
+  assert.equal(invalidBody.statusCode, 400);
   await app.close();
 });

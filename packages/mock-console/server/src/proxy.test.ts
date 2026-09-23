@@ -77,15 +77,22 @@ test("Fastify 收到请求头后可按 Header 规则命中场景", async () => {
   assert.deepEqual(response.json(), { matched: true });
 });
 
-test("命中 Mock 会记录逻辑接口、场景和响应数据", async () => {
+test("命中 Mock 会记录逻辑接口、场景和完整请求头原值", async () => {
   const logs = new RequestLogStore();
-  await request(createState(matchingRules()), {}, logs);
+  await request(createState(matchingRules()), { headers: {
+    apiName: "loan-home", Authorization: "Bearer secret", Cookie: "session=secret", "X-Api-Key": "secret",
+  } }, logs);
 
   const [log] = logs.list();
   assert.ok(log);
   assert.equal(log.outcome, "mocked");
   assert.equal(log.apiName, "测试接口");
   assert.equal(log.scenarioName, "命中");
+  assert.equal(log.request.headers.apiname, "loan-home");
+  assert.equal(log.request.headers.authorization, "Bearer secret");
+  assert.equal(log.request.headers.cookie, "session=secret");
+  assert.equal(log.request.headers["x-api-key"], "secret");
+  assert.equal(log.request.body.body, "");
   assert.deepEqual(JSON.parse(log.response.body || ""), { matched: true });
 });
 
@@ -233,6 +240,36 @@ test("活动场景失效时不回退到其他场景", async () => {
   const response = await request(state);
   assert.equal(response.statusCode, 502);
   assert.deepEqual(response.json(), { error: "未命中 Mock，且当前 Package 未配置真实服务" });
+});
+
+test("流式请求保留转发字节，同时只记录有上限的文本请求体", async () => {
+  let received = "";
+  const upstream = http.createServer((req, res) => {
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => { received = body; res.end("ok"); });
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()));
+  const address = upstream.address();
+  assert.ok(address && typeof address !== "string");
+  const state = createState([]);
+  state.packages[0].apis[0].enabled = false;
+  setRealServiceUrl(state, `http://127.0.0.1:${address.port}`);
+  const logs = new RequestLogStore();
+  const app = Fastify();
+  app.addHook("onRequest", async (req, reply) => {
+    if (hasRequestBody(req)) await createProxy(req, reply, state, logs, { streamRequestBody: true });
+  });
+  const payload = JSON.stringify({ amount: 120, password: "secret" });
+  const response = await app.inject({ method: "POST", url: "/submit?mode=fast&token=secret", headers: { "content-type": "application/json" }, payload });
+  await app.close();
+  await new Promise<void>((resolve) => upstream.close(() => resolve()));
+  assert.equal(response.statusCode, 200);
+  assert.equal(received, payload);
+  assert.equal(logs.list()[0].request.body.body, payload);
+  assert.equal(new URL(logs.list()[0].url, "http://mock.local").searchParams.get("token"), "secret");
+  assert.equal(logs.list()[0].request.body.contentType, "application/json");
 });
 
 test("未命中代理会保留 multipart 原始字节", async () => {

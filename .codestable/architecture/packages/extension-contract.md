@@ -6,7 +6,7 @@
 
 ## 拥有的契约
 
-- `ExtensionRuntimeRequest`：绝对 URL、HTTP Method 和页面脚本可观察的请求 Header。
+- `ExtensionRuntimeRequest`：绝对 URL、HTTP Method、页面脚本可观察的请求 Header，以及可选的日志用文本请求体或不可采集状态；语义见 [`shared:extension-runtime`](../shared/extension-runtime.md)。
 - `ExtensionRuntimeResponse`：`mock` 判定（状态码、延迟、JSON body、响应 Header）或 `pass` 判定。
 - `ExtensionPassReason`：未命中、停用、无效请求和不支持状态等放行原因。
 

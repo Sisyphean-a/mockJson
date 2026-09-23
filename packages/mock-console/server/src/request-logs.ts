@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { MAX_REQUEST_LOGS } from "../../shared/types.js";
-import type { RequestLog, RequestLogsDeltaResponse } from "../../shared/types.js";
+import type { RequestLog, RequestLogResponse, RequestLogsDeltaResponse } from "../../shared/types.js";
 
 export { MAX_REQUEST_LOGS } from "../../shared/types.js";
 
 export const MAX_LOG_BODY_BYTES = 32 * 1024;
+
+export function logRequestHeaders(headers: Record<string, string | string[] | undefined>): Record<string, string> {
+  return Object.fromEntries(Object.entries(headers)
+    .filter((entry): entry is [string, string | string[]] => entry[1] !== undefined)
+    .map(([name, value]) => [name, Array.isArray(value) ? value.join(", ") : value]));
+}
 
 export function textLogResponse(contentType: string | null, body: string): RequestLog["response"] {
   const byteLength = Buffer.byteLength(body);
