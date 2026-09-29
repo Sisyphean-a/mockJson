@@ -102,6 +102,35 @@ test("配置服务拥有 Package、API、Scenario 的完整变更流程", async 
   assert.equal(reorderedApis[1].priority, firstPriority);
 });
 
+test("移动接口保留规则和场景，不改变当前测试包；拒绝无效目标且写入失败可恢复", async () => {
+  const repository = new MemoryRepository();
+  const service = new MockConfigService(repository);
+  await service.initialize();
+  const source = await service.createPackage({ name: "来源" });
+  const destination = await service.createPackage({ name: "目标" });
+  const api = await service.createApi(source.id, { name: "借款首页" });
+  const scenario = await service.createScenario(api.id, { name: "成功", responseBody: { ok: true } });
+  await service.updateApi(api.id, { matchRules: [{ id: "rule", source: "url", field: "path", operator: "equals", value: "/loan" }] });
+
+  await assert.rejects(() => service.moveApi(api.id, { packageId: source.id }), /已经在该测试包/);
+  await assert.rejects(() => service.moveApi(api.id, { packageId: "missing" }), NotFoundError);
+  assert.equal(service.getState().packages[0].apis.length, 1);
+
+  repository.failWrites = true;
+  await assert.rejects(() => service.moveApi(api.id, { packageId: destination.id }), /write failed/);
+  assert.equal(service.getState().packages[0].apis[0].id, api.id);
+  assert.equal(service.getState().packages[1].apis.length, 0);
+
+  repository.failWrites = false;
+  await service.moveApi(api.id, { packageId: destination.id });
+  assert.equal(service.getState().currentPackageId, source.id);
+  assert.equal(service.getState().packages[0].apis.length, 0);
+  assert.deepEqual(service.getState().packages[1].apis[0].matchRules.map((rule) => rule.id), ["rule"]);
+  assert.equal(service.getState().packages[1].apis[0].scenarios[0].id, scenario.id);
+  assert.equal(service.getState().packages[1].apis[0].activeScenarioId, scenario.id);
+  assert.equal(service.getState().packages[1].apis[0].priority, api.priority);
+});
+
 test("删除当前 Package 后选择剩余 Package", async () => {
   const service = new MockConfigService(new MemoryRepository());
   await service.initialize();

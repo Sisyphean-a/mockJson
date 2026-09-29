@@ -129,6 +129,10 @@ export class MockAdminClient {
     return this.request<LogicalApi>(`/__mock_admin/apis/${id}`, json("PATCH", input));
   }
 
+  async moveApi(id: string, packageId: string) {
+    return this.request<LogicalApi>(`/__mock_admin/apis/${id}/move`, json("POST", { packageId }));
+  }
+
   async deleteApi(id: string) {
     return this.request<{ success: true }>(`/__mock_admin/apis/${id}`, { method: "DELETE" });
   }

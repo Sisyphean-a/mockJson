@@ -195,6 +195,17 @@ export class MockConfigService {
     return api;
   }
 
+  async moveApi(id: string, input: { packageId?: unknown }) {
+    const found = this.requireApi(id);
+    if (typeof input.packageId !== "string" || !input.packageId) throw new Error("请选择目标测试包");
+    const destination = this.requirePackage(input.packageId);
+    if (destination.id === found.packageConfig.id) throw new Error("接口已经在该测试包中");
+    found.packageConfig.apis = found.packageConfig.apis.filter((item) => item.id !== id);
+    destination.apis = [...destination.apis, found.api];
+    await this.save();
+    return found.api;
+  }
+
   async deleteApi(id: string) {
     const found = this.requireApi(id);
     found.packageConfig.apis = found.packageConfig.apis.filter((item) => item.id !== found.api.id);

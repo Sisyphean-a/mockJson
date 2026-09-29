@@ -71,9 +71,22 @@
   outline: 0;
 }
 
-.real-services-modal {
-  width: min(560px, 100%);
+.real-services-modal,
+.modal:has(.manager-heading) {
+  width: min(520px, 100%);
 }
+
+.manager-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 0 10px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.manager-heading .secondary { border-color: var(--accent-line); }
 
 .real-service-list {
   display: grid;
@@ -88,8 +101,8 @@
   gap: 12px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  padding: 9px 10px;
-  background: var(--surface-muted);
+  padding: 11px 12px;
+  background: var(--surface);
 }
 
 .real-service-item.active {
@@ -99,7 +112,11 @@
 
 .real-service-info {
   min-width: 0;
+  overflow: hidden;
 }
+
+.real-service-info > div { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.real-service-info .active-badge { white-space: nowrap; }
 
 .real-service-info strong {
   color: var(--ink-strong);
@@ -138,22 +155,26 @@
   font-size: 11px;
 }
 
-.real-service-form {
+.manager-form {
   border-top: 1px solid var(--line-soft);
-  padding-top: 15px;
+  margin-top: 16px;
+  padding-top: 16px;
 }
 
-.real-service-form h3 {
-  margin: 0 0 12px;
+.manager-form h3 {
+  margin: 0 0 14px;
   color: var(--ink-strong);
-  font-size: 13px;
+  font-size: 14px;
 }
 
-.real-service-form-actions {
+.modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  margin-top: 4px;
 }
+
+.modal-footer .primary:disabled { opacity: .5; cursor: not-allowed; }
 
 .scene-form-row {
   display: flex;

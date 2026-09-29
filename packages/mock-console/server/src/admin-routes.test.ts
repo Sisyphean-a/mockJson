@@ -65,6 +65,24 @@ test("管理 API 可以持久化接口和场景排序", async () => {
   await app.close();
 });
 
+test("管理 API 移动接口到另一测试包并校验目标", async () => {
+  const service = new MockConfigService(new MemoryRepository());
+  await service.initialize();
+  const source = await service.createPackage({ name: "来源" });
+  const destination = await service.createPackage({ name: "目标" });
+  const api = await service.createApi(source.id, { name: "接口" });
+  const app = Fastify();
+  registerAdminRoutes(app, service, new RequestLogStore());
+
+  const invalid = await app.inject({ method: "POST", url: `/__mock_admin/apis/${api.id}/move`, payload: { packageId: source.id } });
+  assert.equal(invalid.statusCode, 400);
+  const moved = await app.inject({ method: "POST", url: `/__mock_admin/apis/${api.id}/move`, payload: { packageId: destination.id } });
+  assert.equal(moved.statusCode, 200);
+  assert.equal(moved.json().id, api.id);
+  assert.equal(service.getState().packages[1].apis[0].id, api.id);
+  await app.close();
+});
+
 test("管理 API 可以新增、切换和删除真实服务", async () => {
   const service = new MockConfigService(new MemoryRepository());
   await service.initialize();

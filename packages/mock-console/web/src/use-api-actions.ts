@@ -8,7 +8,7 @@ type Notify = (message: string) => void;
 
 export function useApiActions(client: MockAdminClient, model: Model, forms: Forms, notify: Notify, canLeave: () => boolean) {
   function openApiCreate() {
-    if (!model.pkg.value) { forms.showPackage.value = true; return; }
+    if (!model.pkg.value) { forms.showPackageForm.value = true; forms.showPackage.value = true; return; }
     forms.apiEditName.value = "";
     forms.showApi.value = true;
   }
@@ -42,6 +42,25 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
       model.replaceApi(saved);
       forms.showApi.value = false;
       notify("接口已更新");
+    } catch (error) { notify(message(error)); }
+  }
+
+  function openMoveApi(api: Api) {
+    forms.movingApiId.value = api.id;
+    forms.destinationPackageId.value = "";
+    forms.showMoveApi.value = true;
+  }
+
+  async function moveApi() {
+    const id = forms.movingApiId.value;
+    const destinationId = forms.destinationPackageId.value;
+    const destination = model.state.value.packages.find((item) => item.id === destinationId);
+    if (!id || !destination || !canLeave()) return;
+    try {
+      await model.runAdminRequest(() => client.moveApi(id, destinationId));
+      forms.showMoveApi.value = false;
+      await model.load();
+      notify(`接口已移至「${destination.name}」，当前测试包未切换`);
     } catch (error) { notify(message(error)); }
   }
 
@@ -161,6 +180,8 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     saveApi,
     deleteApi,
     deleteApiTarget,
+    openMoveApi,
+    moveApi,
     toggle,
     openRuleCreate,
     openRuleEdit,

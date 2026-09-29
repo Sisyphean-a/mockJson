@@ -6,10 +6,7 @@
   }
 
   .brand small,
-  .top-actions > label,
-  .server-status,
-  .target-config > label,
-  .package-select > label {
+  .server-status {
     display: none;
   }
 
@@ -18,13 +15,8 @@
     gap: 6px;
   }
 
-  .target-config {
-    max-width: 270px;
-  }
-
-  .target-config select {
-    max-width: 170px;
-  }
+  .header-control select { width: 120px; }
+  .environment-control { padding-left: 8px; }
 
   main {
     grid-template-columns: 246px minmax(0, 1fr);
@@ -78,7 +70,6 @@
   }
 
   .brand small,
-  .target-config,
   .server-status {
     display: none;
   }
@@ -224,15 +215,10 @@
     gap: 5px;
   }
 
-  .top-actions > select,
-  .package-select select {
-    max-width: 126px;
-    min-width: 92px;
-  }
-
-  .package-actions .save-target:not(.package-add) {
-    display: none;
-  }
+  .header-control select { width: min(24vw, 110px); min-width: 80px; }
+  .environment-control { padding-left: 5px; }
+  .header-control-row { gap: 2px; }
+  .header-manage { padding: 0 3px; }
 
   main {
     padding: 10px;

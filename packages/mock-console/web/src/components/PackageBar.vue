@@ -1,8 +1,20 @@
 <script setup lang="ts">
 import type { ConsoleController } from "../console-controller";
 
-type PackageBarController = Pick<ConsoleController, "state" | "switchPkg" | "pkg" | "selectRealService" | "openRealServices" | "openPackage" | "deletePackage" | "serverReady" | "loading" | "activeView" | "showWorkspace" | "showLogs">;
+type PackageBarController = Pick<ConsoleController, "state" | "switchPkg" | "pkg" | "selectRealService" | "openRealServices" | "openPackageManager" | "serverReady" | "loading" | "activeView" | "showWorkspace" | "showLogs">;
 const { controller: c } = defineProps<{ controller: PackageBarController }>();
+
+async function switchPackage(event: Event) {
+  const select = event.target as HTMLSelectElement;
+  await c.switchPkg(select.value);
+  select.value = c.state.value.currentPackageId || "";
+}
+
+async function switchEnvironment(event: Event) {
+  const select = event.target as HTMLSelectElement;
+  await c.selectRealService(select.value);
+  select.value = c.pkg.value?.activeRealServiceId || "";
+}
 </script>
 
 <template>
@@ -16,24 +28,25 @@ const { controller: c } = defineProps<{ controller: PackageBarController }>();
       <button :class="['view-tab', { active: c.activeView.value === 'logs' }]" :aria-selected="c.activeView.value === 'logs'" role="tab" @click="c.showLogs">请求日志</button>
     </nav>
     <div class="top-actions">
-      <div class="package-select">
-        <label for="package-select">当前测试包</label>
-        <select id="package-select" :value="c.state.value.currentPackageId || ''" @change="c.switchPkg(($event.target as HTMLSelectElement).value)">
-          <option v-for="p in c.state.value.packages" :key="p.id" :value="p.id">{{ p.name }}</option>
-        </select>
+      <div class="header-control">
+        <div class="header-control-row">
+          <label for="package-select">包</label>
+          <select id="package-select" :value="c.state.value.currentPackageId || ''" @change="switchPackage">
+            <option v-if="!c.state.value.packages.length" value="">未创建测试包</option>
+            <option v-for="p in c.state.value.packages" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+          <button class="header-manage" aria-label="管理测试包" title="管理测试包" @click="c.openPackageManager">管理</button>
+        </div>
       </div>
-      <div class="target-config">
-        <label for="real-service-select">真实服务</label>
-        <select id="real-service-select" :value="c.pkg.value?.activeRealServiceId || ''" :disabled="!c.pkg.value?.realServices.length" :title="c.pkg.value?.realServices.find((item) => item.id === c.pkg.value?.activeRealServiceId)?.baseUrl || '未配置真实服务'" @change="c.selectRealService(($event.target as HTMLSelectElement).value)">
-          <option v-if="!c.pkg.value?.realServices.length" value="">未配置真实服务</option>
-          <option v-for="service in c.pkg.value?.realServices || []" :key="service.id" :value="service.id">{{ service.name }}（{{ service.baseUrl || "未配置地址" }}）</option>
-        </select>
-        <button class="save-target" @click="c.openRealServices">{{ c.pkg.value?.realServices.length ? "管理" : "配置" }}</button>
-      </div>
-      <div class="package-actions">
-        <button class="save-target package-add" @click="c.openPackage()">＋ 包</button>
-        <button v-if="c.pkg.value" class="save-target" @click="c.openPackage(c.pkg.value)">编辑包</button>
-        <button v-if="c.pkg.value" class="save-target" @click="c.deletePackage(c.pkg.value)">删除包</button>
+      <div class="header-control environment-control">
+        <div class="header-control-row">
+          <label for="real-service-select" title="未命中 Mock 时的转发环境">环境</label>
+          <select id="real-service-select" :value="c.pkg.value?.activeRealServiceId || ''" :disabled="!c.pkg.value?.realServices.length" :title="c.pkg.value?.realServices.find((item) => item.id === c.pkg.value?.activeRealServiceId)?.baseUrl || '未配置真实服务'" @change="switchEnvironment">
+            <option v-if="!c.pkg.value?.realServices.length" value="">未配置</option>
+            <option v-for="service in c.pkg.value?.realServices || []" :key="service.id" :value="service.id">{{ service.name }}{{ service.baseUrl ? '' : ' · 未配置地址' }}</option>
+          </select>
+          <button class="header-manage" :disabled="!c.pkg.value" aria-label="管理转发环境" title="管理转发环境" @click="c.openRealServices">管理</button>
+        </div>
       </div>
       <div class="server-status-group">
         <span :class="['server-dot', { off: !c.serverReady.value && !c.loading.value, pending: c.loading.value }]" aria-hidden="true"></span>

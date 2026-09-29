@@ -122,6 +122,14 @@ export function registerAdminRoutes(
     }
   });
 
+  app.post("/__mock_admin/apis/:id/move", async (req, reply) => {
+    try {
+      return await service.moveApi(routeId(req, "id"), body(req));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
   app.delete("/__mock_admin/apis/:id", async (req, reply) => {
     try {
       return await service.deleteApi(routeId(req, "id"));

@@ -21,7 +21,7 @@
 - **Logical API（逻辑接口）**：用户按业务理解的接口，不以 `apiName` 作为名称或主键；按 `priority` 从高到低匹配并在首个命中后停止。
 - **Match Rule（匹配规则）**：支持任意 Header、URL（fullUrl / host / path）与 HTTP Method，接口内按 AND 或 OR 组合；新建 Logical API 默认使用 OR（满足任一条件），可切换为 AND；Header 名称比较不区分大小写；零条规则表示不匹配任何请求，不作为全量兜底。
 - **Scenario（响应场景）**：保存完整且合法的 JSON、HTTP 状态码和 0–30000ms 延迟；接口此前没有场景时，新建的首个场景默认启用，已有场景时新增场景默认不启用；选择场景只切换编辑对象，独立开关负责启用、停用或切换当前响应，一个逻辑接口最多启用一个场景。
-- Package、Logical API 和 Scenario 都可在控制台完成创建、修改和删除；Logical API 的 Match Rule 也支持新增、编辑和删除，编辑保留原规则 ID；新建 Logical API 默认启用，未完成接口或没有启用场景的接口不得遮挡其他可用 Mock。
+- Package、Logical API 和 Scenario 都可在控制台完成创建、修改和删除；Logical API 可在测试包之间整体移动（保留接口 ID、优先级、规则及响应场景），不自动切换全局当前测试包，目标测试包必须存在且与来源不同；实现见 `packages/mock-console/server/src/config-service.ts` 的 `moveApi`。Logical API 的 Match Rule 也支持新增、编辑和删除，编辑保留原规则 ID；新建 Logical API 默认启用，未完成接口或没有启用场景的接口不得遮挡其他可用 Mock。
 - 控制台的 Logical API 和 Scenario 列表支持通过拖拽手柄长按排序；排序只持久化各自配置数组的 UI 顺序，Logical API 的 `priority` 仍是独立的运行时匹配优先级；Logical API 搜索时禁用排序并提示清除搜索。
 - 请求日志是独立的全宽运行观测视图，不显示 Logical API 配置侧栏；日志列表点击只切换详情，详情中的“查看接口配置”才负责切回接口配置并选中对应 Logical API。
 - 接口 `enabled=false`、没有启用场景或没有规则命中时，Reqable / 本地 Proxy 路径转发当前 Package 选中的 RealService 基础地址；转发保留 JSON 和原始流请求体，保留真实服务的基础路径，按目标地址协议选择 HTTP / HTTPS 上游连接，并对无响应上游设置超时。没有选中的真实服务时明确返回未配置错误。

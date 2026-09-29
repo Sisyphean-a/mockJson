@@ -2,17 +2,19 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { ConsoleController } from "../console-controller";
 
-type ConsoleModalsController = Pick<ConsoleController, "showApi" | "showScene" | "showPackage" | "showRealServices" | "sceneEditMode" | "editingPackageId" | "apiEditName" | "apiName" | "apiPriority" | "packageName" | "realServiceName" | "realServiceEditId" | "targetUrl" | "sceneName" | "editSceneName" | "editSceneStatus" | "editSceneDelay" | "editSceneColor" | "pkg" | "savePackage" | "saveApi" | "createApi" | "openNewRealService" | "openRealServiceEdit" | "selectRealService" | "saveRealService" | "deleteRealService" | "saveScene" | "createScene">;
+type ConsoleModalsController = Pick<ConsoleController, "showApi" | "showScene" | "showPackage" | "showPackageForm" | "showRealServices" | "showRealServiceForm" | "showMoveApi" | "movingApiId" | "destinationPackageId" | "state" | "sceneEditMode" | "editingPackageId" | "apiEditName" | "apiName" | "apiPriority" | "packageName" | "realServiceName" | "realServiceEditId" | "targetUrl" | "sceneName" | "editSceneName" | "editSceneStatus" | "editSceneDelay" | "editSceneColor" | "pkg" | "openPackage" | "deletePackage" | "savePackage" | "saveApi" | "createApi" | "openNewRealService" | "openRealServiceEdit" | "selectRealService" | "saveRealService" | "deleteRealService" | "moveApi" | "saveScene" | "createScene">;
 const { controller: c } = defineProps<{ controller: ConsoleModalsController }>();
 const modalRef = ref<HTMLElement | null>(null);
 const modalTrigger = ref<HTMLElement | null>(null);
-const modalOpen = computed(() => c.showApi.value || c.showScene.value || c.showPackage.value || c.showRealServices.value);
+const modalOpen = computed(() => c.showApi.value || c.showScene.value || c.showPackage.value || c.showRealServices.value || c.showMoveApi.value);
+const movingApi = computed(() => c.pkg.value?.apis.find((item) => item.id === c.movingApiId.value));
 
 function closeModal() {
   c.showApi.value = false;
   c.showScene.value = false;
   c.showPackage.value = false;
   c.showRealServices.value = false;
+  c.showMoveApi.value = false;
   c.sceneEditMode.value = false;
 }
 
@@ -63,6 +65,12 @@ watch(modalOpen, async (open) => {
   }
 });
 
+watch([() => c.showPackageForm.value, () => c.showRealServiceForm.value], async ([packageForm, serviceForm]) => {
+  if (!modalOpen.value || (!packageForm && !serviceForm)) return;
+  await nextTick();
+  modalRef.value?.querySelector<HTMLInputElement>(".manager-form input")?.focus();
+});
+
 onMounted(() => document.addEventListener("keydown", handleKeydown));
 onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </script>
@@ -71,9 +79,18 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
   <div v-if="modalOpen" class="modal-backdrop" @click.self="closeModal">
     <div ref="modalRef" :class="['modal', { 'real-services-modal': c.showRealServices.value }]" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-description" tabindex="-1">
       <button class="close" aria-label="关闭" @click="closeModal">×</button>
-      <h2 id="modal-title">{{ c.showRealServices.value ? "管理真实服务" : c.showPackage.value ? (c.editingPackageId.value ? "编辑测试包" : "新建测试包") : c.showApi.value ? (c.apiEditName.value ? "编辑逻辑接口" : "新建逻辑接口") : c.sceneEditMode.value ? "编辑响应场景" : "新建响应场景" }}</h2>
-      <p id="modal-description">{{ c.showRealServices.value ? "为当前测试包配置多个环境地址，切换后只影响未命中 Mock 时的真实转发。" : c.showPackage.value ? "按测试产品或版本管理独立的 Mock 配置。" : c.showApi.value ? "用业务名称和优先级标识一个可切换的接口。" : "每个场景保存一份完整的 JSON 响应。" }}</p>
-      <template v-if="c.showRealServices.value">
+      <h2 id="modal-title">{{ c.showMoveApi.value ? "切换包" : c.showRealServices.value ? "管理转发环境" : c.showPackage.value ? "管理测试包" : c.showApi.value ? (c.apiEditName.value ? "编辑逻辑接口" : "新建逻辑接口") : c.sceneEditMode.value ? "编辑响应场景" : "新建响应场景" }}</h2>
+      <p id="modal-description">{{ c.showMoveApi.value ? `将「${movingApi?.name || '接口'}」及其规则、响应场景移至其他测试包。当前运行测试包不会切换。` : c.showRealServices.value ? `仅管理「${c.pkg.value?.name || '当前测试包'}」的未命中 Mock 转发地址。` : c.showPackage.value ? "测试包各自拥有独立的接口与转发环境。" : c.showApi.value ? "用业务名称和优先级标识一个可切换的接口。" : "每个场景保存一份完整的 JSON 响应。" }}</p>
+      <template v-if="c.showMoveApi.value">
+        <label class="form-label" for="move-api-package">目标测试包</label>
+        <select id="move-api-package" v-model="c.destinationPackageId.value" autofocus>
+          <option value="" disabled>请选择目标测试包</option>
+          <option v-for="p in c.state.value.packages.filter((item) => item.id !== c.pkg.value?.id)" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+        <div class="modal-footer"><button class="secondary" @click="closeModal">取消</button><button class="primary" :disabled="!c.destinationPackageId.value" @click="c.moveApi">移动接口</button></div>
+      </template>
+      <template v-else-if="c.showRealServices.value">
+        <div class="manager-heading"><span>环境列表</span><button class="secondary" @click="c.openNewRealService">＋ 新增环境</button></div>
         <div v-if="c.pkg.value?.realServices.length" class="real-service-list">
           <div v-for="service in c.pkg.value.realServices" :key="service.id" :class="['real-service-item', { active: service.id === c.pkg.value.activeRealServiceId }]">
             <div class="real-service-info">
@@ -87,22 +104,34 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             </div>
           </div>
         </div>
-        <div v-else class="empty-real-services">还没有真实服务，新增后即可在顶部下拉框切换。</div>
-        <div class="real-service-form">
-          <h3>{{ c.realServiceEditId.value ? "编辑真实服务" : "新增真实服务" }}</h3>
+        <div v-else class="empty-real-services">尚未配置转发环境。接口未命中 Mock 时将无法转发。</div>
+        <div v-if="c.showRealServiceForm.value" class="manager-form">
+          <h3>{{ c.realServiceEditId.value ? "编辑环境" : "新增环境" }}</h3>
           <label class="form-label" for="real-service-name">服务名称</label>
           <input id="real-service-name" v-model="c.realServiceName.value" autofocus placeholder="例如：测试环境" @keyup.enter="c.saveRealService" />
           <label class="form-label" for="real-service-url">基础地址</label>
           <input id="real-service-url" v-model="c.targetUrl.value" placeholder="https://api.example.com" @keyup.enter="c.saveRealService" />
-          <div class="real-service-form-actions">
-            <button v-if="c.realServiceEditId.value" class="secondary" @click="c.openNewRealService">新增服务</button>
-            <button class="primary" @click="c.saveRealService">{{ c.realServiceEditId.value ? "保存修改" : "添加服务" }}</button>
+          <div class="modal-footer">
+            <button class="secondary" @click="c.showRealServiceForm.value = false">取消</button>
+            <button class="primary" @click="c.saveRealService">{{ c.realServiceEditId.value ? "保存修改" : "添加环境" }}</button>
           </div>
         </div>
       </template>
       <template v-else-if="c.showPackage.value">
-        <label class="form-label" for="package-name">Package 名称</label>
-        <input id="package-name" v-model="c.packageName.value" autofocus placeholder="例如：Android 测试包" @keyup.enter="c.savePackage" /><button class="primary full" @click="c.savePackage">保存</button>
+        <div class="manager-heading"><span>测试包列表</span><button class="secondary" @click="c.openPackage()">＋ 新建测试包</button></div>
+        <div v-if="c.state.value.packages.length" class="real-service-list">
+          <div v-for="p in c.state.value.packages" :key="p.id" :class="['real-service-item', { active: p.id === c.pkg.value?.id }]">
+            <div class="real-service-info"><strong>{{ p.name }}</strong><span v-if="p.id === c.pkg.value?.id" class="active-badge">当前使用</span><code>{{ p.apis.length }} 个接口 · {{ p.realServices.length }} 个环境</code></div>
+            <div class="real-service-actions"><button class="icon-action" @click="c.openPackage(p)">编辑</button><button class="icon-action danger" @click="c.deletePackage(p)">删除</button></div>
+          </div>
+        </div>
+        <div v-else class="empty-real-services">还没有测试包。创建后即可添加接口。</div>
+        <div v-if="c.showPackageForm.value" class="manager-form">
+          <h3>{{ c.editingPackageId.value ? "编辑测试包" : "新建测试包" }}</h3>
+          <label class="form-label" for="package-name">测试包名称</label>
+          <input id="package-name" v-model="c.packageName.value" autofocus placeholder="例如：Android 测试包" @keyup.enter="c.savePackage" />
+          <div class="modal-footer"><button class="secondary" @click="c.showPackageForm.value = false">取消</button><button class="primary" @click="c.savePackage">{{ c.editingPackageId.value ? "保存修改" : "创建测试包" }}</button></div>
+        </div>
       </template>
       <template v-else-if="c.showApi.value">
         <label class="form-label" for="api-name">接口名称</label>

@@ -13,10 +13,16 @@ export function usePackageActions(client: MockAdminClient, model: Model, forms: 
     catch (error) { notify(message(error)); }
   }
 
+  function openPackageManager() {
+    forms.showPackageForm.value = false;
+    forms.showPackage.value = true;
+  }
+
   function openPackage(packageConfig?: Pkg) {
     forms.editingPackageId.value = packageConfig?.id || null;
     forms.packageName.value = packageConfig?.name || "";
     forms.showPackage.value = true;
+    forms.showPackageForm.value = true;
   }
 
   async function savePackage() {
@@ -27,15 +33,20 @@ export function usePackageActions(client: MockAdminClient, model: Model, forms: 
         const created = await model.runAdminRequest(() => client.createPackage({ name: forms.packageName.value }));
         await model.runAdminRequest(() => client.switchPackage(created.id));
       }
-      forms.showPackage.value = false;
       await model.load();
+      forms.showPackageForm.value = false;
       notify(forms.editingPackageId.value ? "Package 已更新" : "Package 已创建");
     } catch (error) { notify(message(error)); }
   }
 
   async function deletePackage(packageConfig: Pkg) {
     if (!window.confirm(`确定删除 Package“${packageConfig.name}”及其全部配置吗？删除后不可恢复。`)) return;
-    try { await model.runAdminRequest(() => client.deletePackage(packageConfig.id)); await model.load(); notify("Package 已删除"); }
+    try {
+      await model.runAdminRequest(() => client.deletePackage(packageConfig.id));
+      await model.load();
+      if (forms.editingPackageId.value === packageConfig.id) forms.showPackageForm.value = false;
+      notify("Package 已删除");
+    }
     catch (error) { notify(message(error)); }
   }
 
@@ -43,11 +54,12 @@ export function usePackageActions(client: MockAdminClient, model: Model, forms: 
     forms.realServiceEditId.value = null;
     forms.realServiceName.value = "";
     forms.targetUrl.value = "";
+    forms.showRealServiceForm.value = true;
   }
 
   function openRealServices() {
     if (!model.pkg.value) return;
-    openNewRealService();
+    forms.showRealServiceForm.value = false;
     forms.showRealServices.value = true;
   }
 
@@ -56,6 +68,7 @@ export function usePackageActions(client: MockAdminClient, model: Model, forms: 
     forms.realServiceName.value = service.name;
     forms.targetUrl.value = service.baseUrl;
     forms.showRealServices.value = true;
+    forms.showRealServiceForm.value = true;
   }
 
   async function selectRealService(id: string) {
@@ -79,12 +92,13 @@ export function usePackageActions(client: MockAdminClient, model: Model, forms: 
         const service = current.realServices.find((item) => item.id === saved.id);
         if (service) Object.assign(service, saved);
         notify("真实服务已更新");
+        forms.showRealServiceForm.value = false;
       } else {
         const created = await model.runAdminRequest(() => client.createRealService(current.id, { name, baseUrl }));
         current.realServices.push(created);
         if (!current.activeRealServiceId) current.activeRealServiceId = created.id;
         notify("真实服务已添加");
-        openNewRealService();
+        forms.showRealServiceForm.value = false;
       }
     } catch (error) { notify(message(error)); }
   }
@@ -103,7 +117,7 @@ export function usePackageActions(client: MockAdminClient, model: Model, forms: 
   }
 
   return {
-    switchPackage, openPackage, savePackage, deletePackage,
+    switchPackage, openPackageManager, openPackage, savePackage, deletePackage,
     openNewRealService, openRealServices, openRealServiceEdit, selectRealService,
     saveRealService, deleteRealService,
   };

@@ -101,9 +101,17 @@ header {
   font-size: 11px;
 }
 
-.package-select,
-.target-config,
-.package-actions,
+.header-control {
+  min-width: 0;
+}
+
+.header-control-row > label {
+  color: var(--ink-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.header-control-row,
 .server-status-group {
   display: flex;
   min-width: 0;
@@ -111,39 +119,39 @@ header {
   gap: var(--space-2);
 }
 
-.package-select > label,
-.target-config > label,
-.top-actions > label {
-  color: var(--ink-muted);
-  white-space: nowrap;
-}
-
-.top-actions select,
-.target-config input {
+.header-control select {
+  min-width: 105px;
+  width: clamp(112px, 11vw, 175px);
   min-height: var(--control-height);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
-  box-shadow: inset 0 1px 1px rgb(29 47 75 / 2%);
-}
-
-.top-actions select {
-  min-width: 110px;
-  max-width: 190px;
-  padding: 6px 28px 6px 9px;
-}
-
-.target-config {
-  max-width: min(420px, 34vw);
-}
-
-.target-config select {
-  min-width: 160px;
-  max-width: min(280px, 28vw);
-  overflow: hidden;
+  padding: 6px 25px 6px 9px;
   text-overflow: ellipsis;
 }
+
+.environment-control {
+  border-left: 1px solid var(--line-soft);
+  padding-left: var(--space-6);
+}
+
+.environment-control select { width: clamp(112px, 13vw, 190px); }
+
+.header-manage {
+  min-height: var(--control-height);
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0 6px;
+  background: transparent;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.header-manage:hover { background: var(--accent-soft); }
+.header-manage:disabled { color: var(--ink-faint); cursor: default; background: transparent; }
 
 .save-target,
 .secondary,
@@ -179,8 +187,7 @@ header {
 .text-action:hover,
 .icon-action:hover,
 .edit-rule:hover,
-.remove-rule:hover,
-.primary:hover {
+.remove-rule:hover {
   border-color: #9eb8eb;
   background: #f3f7ff;
   color: var(--accent-strong);
@@ -293,8 +300,7 @@ aside {
 }
 
 .search:focus-within,
-.log-search:focus-within,
-.target-config:focus-within {
+.log-search:focus-within {
   border-color: var(--accent-line);
 }
 
