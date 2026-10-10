@@ -90,21 +90,23 @@ function render(state: PopupState) {
     : "请先运行 npm start，或检查本机 22333 端口";
 
   globalToggle.checked = state.globalEnabled;
-  tabToggle.checked = state.tabEnabled;
-  tabToggle.disabled = !state.supportedPage || state.tabId === null;
+  tabToggle.checked = state.pageWhitelisted && state.tabEnabled;
+  tabToggle.disabled = !state.pageWhitelisted || state.tabId === null;
   domainWhitelist.value = state.whitelist.join("\n");
   whitelistStatus.className = "field-status";
   whitelistStatus.textContent = state.whitelist.length === 0
-    ? "尚未配置请求域名白名单"
-    : `已配置 ${state.whitelist.length} 个请求域名`;
+    ? "尚未配置页面域名白名单"
+    : `已配置 ${state.whitelist.length} 个页面域名`;
   tabDetail.textContent = !state.supportedPage
     ? "此页面不支持请求拦截"
-    : `${state.host || "当前页面"} · ${state.effectiveEnabled ? "已启用" : "已暂停"}`;
+    : `${state.host || "当前页面"} · ${!state.pageWhitelisted ? "不在页面白名单" : state.effectiveEnabled ? "已启用" : "已暂停"}`;
 
   hint.textContent = state.whitelist.length === 0
-    ? "请先配置请求域名白名单；留空时所有页面请求都直接使用浏览器原生请求。"
-    : state.effectiveEnabled
-      ? "白名单请求会询问 Mock Console；规则和场景仍由 Mock Console 管理。"
+    ? "请先配置页面域名白名单；留空时所有页面都保持原生请求 API。"
+    : !state.pageWhitelisted
+      ? "当前页面不在白名单，不包装 fetch 或 XHR，也不发送 Mock 判定请求。"
+      : state.effectiveEnabled
+      ? "当前页面的请求会询问 Mock Console，不按请求目标域名过滤；规则和场景仍由 Mock Console 管理。"
       : state.globalEnabled
         ? "当前标签页已暂停 Mock，页面请求会直接使用浏览器原生请求。"
         : "全局 Mock 已暂停，所有标签页都会直接使用浏览器原生请求。";
@@ -137,6 +139,7 @@ function isPopupState(value: unknown): value is PopupState {
     typeof value.serverOnline === "boolean" &&
     typeof value.hasPackage === "boolean" &&
     typeof value.supportedPage === "boolean" &&
+    typeof value.pageWhitelisted === "boolean" &&
     (value.tabId === null || typeof value.tabId === "number") &&
     (value.host === null || typeof value.host === "string") &&
     Array.isArray(value.whitelist) &&

@@ -1,9 +1,134 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { Script } from "node:vm";
+import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
+import * as protocol from "./protocol.js";
+import * as domains from "./domain-whitelist.js";
+import * as health from "./resolver-health.js";
 
 const bridge = readFileSync(new URL("./content-bridge.ts", import.meta.url), "utf8");
 const worker = readFileSync(new URL("./service-worker.ts", import.meta.url), "utf8");
+const compiledWorker = transpileModule(worker, {
+  compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
+}).outputText;
+
+function createWorkerHarness(pageUrl: string, whitelist = ["app.test"], session: Record<string, unknown> = {}) {
+  let listener: (message: unknown, sender: unknown, respond: (response: any) => void) => unknown;
+  const resolverRequests: unknown[] = [];
+  const local: Record<string, unknown> = { [domains.WHITELIST_STORAGE_KEY]: whitelist };
+  const storage = (values: Record<string, unknown>) => ({
+    async get() { return values; },
+    async set(changes: Record<string, unknown>) { Object.assign(values, changes); },
+  });
+  const dependencies: Record<string, unknown> = { "./protocol.js": protocol, "./domain-whitelist.js": domains, "./resolver-health.js": health };
+  new Script(compiledWorker).runInNewContext({
+    exports: {},
+    require(name: string) {
+      assert.ok(name in dependencies, `未知测试依赖：${name}`);
+      return dependencies[name];
+    },
+    chrome: {
+      runtime: { onMessage: { addListener(handler: typeof listener) { listener = handler; } } },
+      storage: { local: storage(local), session: storage(session) },
+      tabs: { async query() { return [{ id: 1, url: pageUrl }]; }, async sendMessage() {} },
+    },
+    async fetch(url: string, init?: RequestInit) {
+      if (url.endsWith(protocol.RESOLVER_PATH)) {
+        resolverRequests.push(JSON.parse(String(init?.body)));
+        return Response.json({ action: "pass", reason: "unmatched" });
+      }
+      assert.ok(url.endsWith(protocol.STATUS_PATH));
+      return Response.json({ online: true, hasPackage: true });
+    },
+    URL, AbortController, setTimeout, clearTimeout,
+  });
+  const sender = { url: pageUrl, tab: { id: 1, url: pageUrl } };
+  return {
+    resolverRequests,
+    send(message: unknown, from: unknown = sender): Promise<any> {
+      return new Promise((resolve) => assert.equal(listener(message, from, resolve), true));
+    },
+  };
+}
+
+const monitoringQuery = { channel: protocol.CHANNEL, type: "get-monitoring" };
+const resolution = (url: string) => ({
+  channel: protocol.CHANNEL, type: "resolve", id: "request-1", request: { url, method: "GET", headers: {} },
+});
+
+test("后台以页面而非请求目标域名授权，非白名单页面和 frame 不调用 resolver", async () => {
+  const harness = createWorkerHarness("https://github.com/octocat/Hello-World");
+  for (const sender of [
+    { url: "https://github.com/", tab: { id: 1, url: "https://github.com/" } },
+    { url: "https://third-party.test/", tab: { id: 1, url: "https://app.test/" } },
+    { tab: { id: 1, url: "https://app.test/" } },
+  ]) {
+    assert.equal((await harness.send(monitoringQuery, sender)).enabled, false);
+    assert.equal((await harness.send(resolution("https://app.test/api"), sender)).reason, "disabled");
+  }
+  assert.equal(harness.resolverRequests.length, 0);
+  const popup = await harness.send({ channel: protocol.POPUP_CHANNEL, type: "get-state" });
+  assert.equal(popup.ok, true);
+  assert.equal(popup.state.pageWhitelisted, false);
+  assert.equal(popup.state.effectiveEnabled, false);
+});
+
+test("白名单子域名页面可判定跨域 API，Popup 状态与后台一致", async () => {
+  const harness = createWorkerHarness("https://child.app.test:8443/page");
+  assert.equal((await harness.send(monitoringQuery)).enabled, true);
+  assert.equal((await harness.send(resolution("https://api.other.test/api"))).reason, "unmatched");
+  assert.equal(harness.resolverRequests.length, 1);
+  const popup = await harness.send({ channel: protocol.POPUP_CHANNEL, type: "get-state" });
+  assert.equal(popup.state.pageWhitelisted, true);
+  assert.equal(popup.state.effectiveEnabled, true);
+});
+
+test("空白名单、全局暂停或标签页暂停均禁止后台判定", async () => {
+  for (const harness of [
+    createWorkerHarness("https://app.test/", []),
+    createWorkerHarness("https://app.test/", ["app.test"], { globalEnabled: false }),
+    createWorkerHarness("https://app.test/", ["app.test"], { disabledTabIds: [1] }),
+  ]) {
+    assert.equal((await harness.send(monitoringQuery)).enabled, false);
+    assert.equal((await harness.send(resolution("https://api.other.test/api"))).reason, "disabled");
+    assert.equal(harness.resolverRequests.length, 0);
+    const popup = await harness.send({ channel: protocol.POPUP_CHANNEL, type: "get-state" });
+    assert.equal(popup.state.effectiveEnabled, false);
+  }
+});
+
+test("修改页面白名单后后台与 Popup 立即更新，不清空已有配置", async () => {
+  const harness = createWorkerHarness("https://app.test/");
+  const response = await harness.send({ channel: protocol.POPUP_CHANNEL, type: "set-whitelist", domains: ["other.test"] });
+  assert.equal(response.state.pageWhitelisted, false);
+  assert.equal((await harness.send(monitoringQuery)).enabled, false);
+  assert.equal((await harness.send(resolution("https://other.test/api"))).reason, "disabled");
+  assert.deepEqual(Array.from(response.state.whitelist), ["other.test"]);
+});
+
+test("Popup 非白名单页面显示明确状态且标签页开关不可用", async () => {
+  const harness = createWorkerHarness("https://github.com/");
+  const popupSource = readFileSync(new URL("./popup.ts", import.meta.url), "utf8");
+  const compiledPopup = transpileModule(popupSource, {
+    compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
+  }).outputText;
+  const elements = new Map<string, { checked: boolean; disabled: boolean; textContent: string; addEventListener(): void }>();
+  new Script(compiledPopup).runInNewContext({
+    exports: {},
+    require(name: string) { return name === "./protocol.js" ? protocol : domains; },
+    document: { getElementById(id: string) {
+      if (!elements.has(id)) elements.set(id, { checked: false, disabled: false, textContent: "", addEventListener() {} });
+      return elements.get(id);
+    } },
+    chrome: { runtime: { sendMessage: (message: unknown) => harness.send(message) } },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(elements.get("tab-toggle")?.checked, false);
+  assert.equal(elements.get("tab-toggle")?.disabled, true);
+  assert.equal(elements.get("tab-detail")?.textContent, "github.com · 不在页面白名单");
+  assert.match(elements.get("hint")!.textContent, /不包装 fetch 或 XHR/);
+});
 
 test("bridge forwards cancellation and coalesces monitoring state refreshes", () => {
   assert.match(bridge, /type: "cancel"/);

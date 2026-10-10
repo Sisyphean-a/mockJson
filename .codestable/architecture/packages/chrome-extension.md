@@ -6,9 +6,9 @@
 
 ## 边界
 
-- `content-main.ts` 运行在 MAIN world，包装页面请求；白名单未命中时保持原始请求放行，上传、流式和二进制请求不进入 JSON resolver。
+- `content-main.ts` 运行在 MAIN world，包装页面请求；页面白名单未命中时不安装任何请求 API 包装，上传、流式和二进制请求不进入 JSON resolver。
 - `content-bridge.ts` 运行在隔离世界，只负责页面与 Service Worker 的消息桥接和取消传播。
-- `service-worker.ts` 负责白名单、启用状态、本机 resolver 请求、超时、并发和健康短路。
+- `service-worker.ts` 负责页面白名单、启用状态、本机 resolver 请求、超时、并发和健康短路；从 Chrome 提供的消息来源 URL 复核 frame 授权。
 - `popup.ts` 只负责扩展开关、白名单和本机服务状态，不读取 Mock Package、Logical API 或 Scenario。
 - 不直接导入 `package:mock-console` 的源码；跨包 resolver DTO 只通过 [`package:extension-contract`](./extension-contract.md) 引用。
 
@@ -30,6 +30,6 @@
 
 ## 外部契约
 
-- 请求目标域名必须命中 Popup 白名单才会进入 resolver 判定。
+- 页面授权及 Popup 开关语义以 [Chrome Extension 领域规则](../../requirements/CONTEXT.md#chrome-extension-领域规则) 为唯一依据；MAIN world 和后台都按页面 URL 判定，不按请求目标域名过滤。
 - resolver 返回 `pass`、服务不可用、超时或取消时，页面继续使用浏览器原生请求。
 - 命中场景时只支持 JSON、200–599 状态码和异步请求；导航、资源、WebSocket、Worker / Service Worker、同步 XHR、流式和二进制 Mock 不由扩展接管。

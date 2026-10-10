@@ -32,16 +32,16 @@
 
 ## Chrome Extension 领域规则
 
-- 扩展只保存瞬时的请求判定结果、请求域名白名单和 Popup 的启用状态，不保存 Package、Logical API、Match Rule 或 Scenario；所有 Mock 配置和匹配规则仍以 Mock Console 为唯一来源。请求域名白名单保存在 `chrome.storage.local`，新安装且未配置时默认包含 `localhost` 和 `127.0.0.1`；全局开关和当前标签页开关保存在 `chrome.storage.session`。
-- 页面 MAIN world 在请求目标域名命中白名单且开关启用时包装 `fetch` 和异步 `XMLHttpRequest`，通过隔离世界 Content Script 和 Service Worker 请求本机 `POST /__mock_extension/resolve`；监控状态通过启动握手同步，非白名单或未启用请求不发送 resolver 请求，页面不直接访问管理 API。
+- 扩展只保存瞬时的请求判定结果、页面域名白名单和 Popup 的启用状态，不保存 Package、Logical API、Match Rule 或 Scenario；所有 Mock 配置和匹配规则仍以 Mock Console 为唯一来源。页面域名白名单保存在 `chrome.storage.local` 的既有 `allowedPageDomains` 键，新安装且未配置时默认包含 `localhost` 和 `127.0.0.1`；已有名单值保留并按页面域名解释，不清空用户配置。域名同时匹配子域名、不区分端口；全局开关和当前标签页开关保存在 `chrome.storage.session`。
+- 页面 MAIN world 仅在自身页面域名命中白名单且开关启用时包装 `fetch` 和异步 `XMLHttpRequest`；非白名单页面不替换任何请求 API，也不发送 resolver 请求，以免无关页面因函数身份或调用语义变化发生冲突。iframe 按自身页面 URL 独立判断，不继承顶层页面授权；Service Worker 以 Chrome 提供的 `sender.url` 复核页面域名，无来源 URL 时不启用。白名单页面的请求目标域名不参与过滤，可判定跨域 API 请求；通过隔离世界 Content Script 和 Service Worker 请求本机 `POST /__mock_extension/resolve`，监控状态通过启动握手同步，页面不直接访问管理 API。
 - 对已进入 fetch 判定的请求，MAIN world 先构造唯一的 `Request`；未命中、超时或异常放行时必须复用这个对象调用原生 fetch，不能再用原始 `input/init` 重发，以保持一次性上传体（包括 `ReadableStream`）可用。`multipart`、图片/音视频和 `application/octet-stream` 请求直接由原生 fetch 放行。
-- 白名单非空不等于所有页面都可安装 XHR Proxy：只有页面自身 origin 命中白名单时才安装 XHR 拦截器；FormData、Blob、ArrayBuffer、TypedArray 和 ReadableStream 的 XHR 上传直接调用原生 XHR，不进入 resolver。
+- FormData、Blob、ArrayBuffer、TypedArray 和 ReadableStream 的 XHR 上传直接调用原生 XHR，不进入 resolver。
 - MAIN world Content Script 必须构建为自包含的普通脚本，不得保留运行时 `import` 或依赖 Vite 共享 chunk；Chrome Manifest 的 `content_scripts` 直接注入该脚本，模块解析失败会使整个拦截器失效。
 - resolver 接收绝对 `http` / `https` URL、Method 和页面脚本可观察的 Header。命中当前 Package 中启用且有 active scenario 的接口时返回状态码、延迟、JSON body 和 `content-type`；Service Worker 的判定等待上限为 1 秒，页面桥接层再保留 200ms 消息往返余量；连续两次 resolver 失败后短路 3 秒，并在当前扩展会话保存健康状态，单个 Service Worker 同时最多处理 32 个 resolver，取消会传播到本机请求并立即放行，未命中、服务不可用或超时扩展调用原生浏览器 API继续真实请求，异常或缺失的桥接结果也必须按放行处理而不能读取未定义的 `action`。
-- Popup 提供请求域名白名单、全局 Mock、当前标签页 Mock 和 Mock Console 连接状态；白名单为空或请求目标域名未命中时不发送 resolver 请求，全局/当前标签页暂停时请求直接放行。
+- Popup 提供页面域名白名单、全局 Mock、当前标签页 Mock 和 Mock Console 连接状态；当前页面不命中时显示“不在页面白名单”并禁用标签页开关，该开关不能绕过页面授权。白名单为空或全局/当前标签页暂停时恢复原生请求 API，已保存的包装也不再发起判定。
 - 扩展模式不使用 Package 的 RealService 配置，因为未命中请求必须由浏览器以原始 URL、Cookie、凭据和 CORS 语义直接发出；当前 Package 仍是全局选择。
 - 扩展 resolver 只允许 loopback 访问，不承担真实请求代理，也不记录真实放行请求的最终响应；现有 Reqable / Proxy 路径和其日志语义保持不变。
-- 扩展 MVP 支持白名单请求中的 JSON、200–599 状态码和异步请求；非白名单请求、1xx 场景、同步 XHR、导航/资源加载、Worker / Service Worker 请求、WebSocket、流式或二进制 Mock 不由扩展接管。浏览器自动补充且页面不可观察的 Header 不保证可用于扩展匹配。
+- 扩展 MVP 支持白名单页面请求中的 JSON、200–599 状态码和异步请求；非白名单页面、1xx 场景、同步 XHR、导航/资源加载、Worker / Service Worker 请求、WebSocket、流式或二进制 Mock 不由扩展接管。浏览器自动补充且页面不可观察的 Header 不保证可用于扩展匹配。
 
 ## 运行规则
 

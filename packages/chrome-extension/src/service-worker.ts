@@ -19,7 +19,7 @@ import {
   STATUS_PATH,
   isRuntimeResponse,
 } from "./protocol.js";
-import { DEFAULT_WHITELIST, WHITELIST_STORAGE_KEY, hostMatchesWhitelist, normalizeWhitelist } from "./domain-whitelist.js";
+import { DEFAULT_WHITELIST, WHITELIST_STORAGE_KEY, urlMatchesWhitelist, normalizeWhitelist } from "./domain-whitelist.js";
 import {
   createResolverHealth,
   isResolverCircuitOpen,
@@ -99,7 +99,7 @@ async function resolveForTab(id: string, request: ExtensionRuntimeRequest, sende
   pendingResolvers.set(id, controller);
   try {
     const [state] = await Promise.all([getMonitoringState(sender), loadResolverHealth()]);
-    if (controller.signal.aborted || !state.enabled || !hostMatchesWhitelist(requestHostname(request.url), state.whitelist))
+    if (controller.signal.aborted || !state.enabled)
       return { action: "pass", reason: "disabled" } as const;
     return resolve(request, controller);
   } finally {
@@ -112,7 +112,9 @@ async function getMonitoringState(sender: unknown): Promise<MonitoringResponse> 
   const tabId = senderTabId(sender);
   const whitelist = await getWhitelist();
   return {
-    enabled: activation.globalEnabled && (tabId === undefined || !activation.disabledTabIds.includes(tabId)),
+    // Rule: sender.url 来自 Chrome，按发消息的 frame 自身页面判断，不能信任页面提交的请求 URL 或顶层标签页 URL。
+    enabled: isRecord(sender) && typeof sender.url === "string" && urlMatchesWhitelist(sender.url, whitelist) &&
+      activation.globalEnabled && (tabId === undefined || !activation.disabledTabIds.includes(tabId)),
     whitelist,
   };
 }
@@ -246,16 +248,18 @@ async function popupState(): Promise<PopupResponse> {
   const supportedPage = /^https?:\/\//i.test(url);
   const tabEnabled = tabId === null || !activation.disabledTabIds.includes(tabId);
   const host = supportedPage ? new URL(url).host : null;
+  const pageWhitelisted = urlMatchesWhitelist(url, whitelist);
   const state: PopupState = {
     serverOnline: server.online,
     hasPackage: server.hasPackage,
     supportedPage,
+    pageWhitelisted,
     tabId,
     host,
     whitelist,
     globalEnabled: activation.globalEnabled,
     tabEnabled,
-    effectiveEnabled: supportedPage && whitelist.length > 0 && activation.globalEnabled && tabEnabled,
+    effectiveEnabled: pageWhitelisted && activation.globalEnabled && tabEnabled,
   };
   return { ok: true, state };
 }
@@ -366,15 +370,6 @@ function isRuntimeRequest(value: unknown): value is ExtensionRuntimeRequest {
 function senderTabId(value: unknown) {
   if (!isRecord(value) || !isRecord(value.tab) || typeof value.tab.id !== "number") return undefined;
   return value.tab.id;
-}
-
-function requestHostname(value: string) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.hostname : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

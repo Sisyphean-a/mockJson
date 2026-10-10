@@ -25,7 +25,7 @@
         <label class="switch-row">
           <span>
             <strong>全局 Mock</strong>
-            <small>控制所有支持的网页</small>
+            <small>控制白名单内的网页</small>
           </span>
           <input id="global-toggle" type="checkbox" />
           <span class="switch" aria-hidden="true"></span>
@@ -41,10 +41,10 @@
         </label>
       </section>
 
-      <section class="whitelist-card" aria-label="请求域名白名单">
-        <label for="domain-whitelist"><strong>请求域名白名单</strong></label>
-        <textarea id="domain-whitelist" rows="3" placeholder="api.example.com\nlocalhost"></textarea>
-        <small>默认监控 localhost 和 127.0.0.1；每行一个请求域名，example.com 同时匹配其子域名。留空则不监控任何请求。</small>
+      <section class="whitelist-card" aria-label="页面域名白名单">
+        <label for="domain-whitelist"><strong>页面域名白名单</strong></label>
+        <textarea id="domain-whitelist" rows="3" placeholder="app.example.com\nlocalhost"></textarea>
+        <small>默认包含 localhost 和 127.0.0.1；每行一个页面域名，example.com 同时匹配其子域名。仅白名单页面启用请求包装，不限制请求目标域名；留空则所有页面保持原生请求 API。</small>
         <span id="whitelist-status" class="field-status"></span>
         <button id="save-whitelist" class="save" type="button">保存白名单</button>
       </section>

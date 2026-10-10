@@ -62,13 +62,12 @@ if (!isMockConsolePage()) {
 
 function updateInterceptors() {
   if (isMockConsolePage()) return;
-  const shouldIntercept = monitoringEnabled && monitoringWhitelist.length > 0;
-  const shouldInterceptXhr = shouldIntercept && isWhitelistedUrl(window.location.href);
+  const shouldIntercept = isMonitoringActive();
   if (shouldIntercept) installFetchInterceptor();
   else if (interceptedFetch && window.fetch === interceptedFetch) window.fetch = originalFetch;
 
-  // Guarantee: XHR 的 Proxy 会改变第三方页面可观察的构造器/实例语义；页面自身不在白名单时保持原生 XHR，避免无关页面的上传被扩展触碰。
-  if (shouldInterceptXhr) installXhrInterceptor();
+  // Guarantee: 非白名单页面不替换任何请求 API，避免改变第三方页面可观察的函数和实例语义。
+  if (shouldIntercept) installXhrInterceptor();
   else if (interceptedXMLHttpRequest && window.XMLHttpRequest === interceptedXMLHttpRequest)
     window.XMLHttpRequest = NativeXMLHttpRequest;
 }
@@ -79,10 +78,10 @@ function installFetchInterceptor() {
     return;
   }
   const fetchInterceptor = (async function interceptedFetch(input: RequestInfo | URL, init?: RequestInit) {
-    if (!monitoringEnabled || monitoringWhitelist.length === 0) return nativeFetch(input, init);
-    // Guarantee: 未命中白名单时连 Request 都不构造，直接保留页面原始参数；只有进入 resolver 判定后才复用唯一的 Request。
+    if (!isMonitoringActive()) return nativeFetch(input, init);
+    // Guarantee: 只在白名单页面处理 HTTP 请求；进入判定后复用唯一 Request，保留一次性请求体。
     const url = getRequestUrl(input);
-    if (!url || !isWhitelistedUrl(url)) return nativeFetch(input, init);
+    if (!url || !isHttpUrl(url)) return nativeFetch(input, init);
     const request = new Request(input, init);
     if (isUploadRequest(request)) return nativeFetch(request);
 
@@ -98,7 +97,7 @@ function installFetchInterceptor() {
     } catch {
       return nativeFetch(request);
     }
-    if (!monitoringEnabled || !isWhitelistedUrl(request.url) || decision.action === "pass") return nativeFetch(request);
+    if (!isMonitoringActive() || decision.action === "pass") return nativeFetch(request);
 
     try {
       await waitForDelay(decision.delayMs, request.signal);
@@ -326,7 +325,7 @@ function openXhr(state: XhrState, args: unknown[]) {
     installNativeListeners(state);
     return;
   }
-  if (!monitoringEnabled || !urlMatchesWhitelist(url.href, monitoringWhitelist) || !async || !isHttpUrl(url.href)) {
+  if (!isMonitoringActive() || !async || !isHttpUrl(url.href)) {
     state.mode = "direct";
     state.target.open(...args as [string, string, boolean, string?, string?]);
     installNativeListeners(state);
@@ -349,7 +348,7 @@ function setRequestHeader(state: XhrState, name: string, value: string) {
 function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | null) {
   if (state.mode === "direct") return state.target.send(body);
   if (!state.opened || state.sent) throw new DOMException("Invalid XMLHttpRequest state", "InvalidStateError");
-  if (isUploadBody(body) || !monitoringEnabled || !urlMatchesWhitelist(state.url, monitoringWhitelist))
+  if (isUploadBody(body) || !isMonitoringActive())
     return useDirectXhr(state, body);
   state.sent = true;
   const generation = state.generation;
@@ -365,7 +364,7 @@ function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | nul
   else if (body != null) request.bodyUnavailable = "unavailable";
   void askResolver(withLogBody(request), state.mockAbortController.signal).then((decision) => {
     if (state.generation !== generation || state.aborted || state.finished) return;
-    if (decision.action === "pass") return useDirectXhr(state, body);
+    if (!isMonitoringActive() || decision.action === "pass") return useDirectXhr(state, body);
     void useMockXhr(state, decision, generation);
   }).catch(() => {
     if (state.generation !== generation || state.aborted || state.finished) return;
@@ -650,13 +649,8 @@ function urlMatchesWhitelist(value: string, whitelist: readonly string[]) {
   }
 }
 
-function isWhitelistedUrl(value: string) {
-  if (!isHttpUrl(value)) return false;
-  try {
-    return urlMatchesWhitelist(new URL(value, window.location.href).href, monitoringWhitelist);
-  } catch {
-    return false;
-  }
+function isMonitoringActive() {
+  return monitoringEnabled && urlMatchesWhitelist(window.location.href, monitoringWhitelist);
 }
 
 function isHttpUrl(value: string) {

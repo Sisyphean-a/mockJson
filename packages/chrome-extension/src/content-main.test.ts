@@ -144,7 +144,7 @@ test("resolver timeout and invalid responses fail open without an unhandled acti
 });
 
 test("MAIN world avoids resolver work when monitoring is inactive and propagates cancellation", () => {
-  const fastPath = source.indexOf("monitoringWhitelist.length === 0");
+  const fastPath = source.indexOf("if (!isMonitoringActive()) return nativeFetch(input, init)");
   const requestConstruction = source.indexOf("const request = new Request");
   assert.ok(fastPath >= 0 && fastPath < requestConstruction);
   assert.match(source, /type: "cancel"/);
@@ -167,7 +167,7 @@ test("native fetch and XMLHttpRequest stay untouched before monitoring is enable
   assert.equal(harness.fakeWindow.XMLHttpRequest, harness.originalXMLHttpRequest);
 });
 
-test("XHR stays native on a page whose own origin is outside the whitelist", () => {
+test("非白名单页面保持 fetch 和 XHR 原样，即使请求目标命中白名单", async () => {
   const harness = createContentScriptHarness("pass");
   harness.messageListener({
     source: harness.fakeWindow,
@@ -178,7 +178,43 @@ test("XHR stays native on a page whose own origin is outside the whitelist", () 
       whitelist: ["api.other.test"],
     },
   });
+  assert.equal(harness.fakeWindow.fetch, harness.originalFetch);
   assert.equal(harness.fakeWindow.XMLHttpRequest, harness.originalXMLHttpRequest);
+  await harness.fakeWindow.fetch("https://api.other.test/api");
+  assert.equal(harness.posted.length, 0);
+});
+
+test("白名单页面的跨域 fetch 和 XHR 请求均进入判定", async () => {
+  const harness = createContentScriptHarness("mock");
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, whitelist: ["upload.test"],
+  } });
+  const response = await harness.fakeWindow.fetch("https://api.other.test/api");
+  assert.equal(response.status, 200);
+  const xhr = new harness.fakeWindow.XMLHttpRequest();
+  xhr.open("GET", "https://api.other.test/api");
+  xhr.send();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(harness.posted.map((request) => request.url), ["https://api.other.test/api", "https://api.other.test/api"]);
+  assert.equal(harness.forwarded.length, 0);
+});
+
+test("清空白名单或暂停后恢复原生 API，已保存的包装也不再判定", async () => {
+  for (const state of [{ enabled: true, whitelist: [] }, { enabled: false, whitelist: ["upload.test"] }, { enabled: true, whitelist: ["other.test"] }]) {
+    const harness = createContentScriptHarness("mock");
+    const update = (enabled: boolean, whitelist: string[]) => harness.messageListener({ source: harness.fakeWindow, data: {
+      channel: "__mock_console_extension_v1", type: "monitoring-state", enabled, whitelist,
+    } });
+    update(true, ["upload.test"]);
+    const savedFetch = harness.fakeWindow.fetch;
+    update(state.enabled, state.whitelist);
+    assert.equal(harness.fakeWindow.fetch, harness.originalFetch);
+    assert.equal(harness.fakeWindow.XMLHttpRequest, harness.originalXMLHttpRequest);
+    const request = new Request("https://upload.test/api");
+    await savedFetch(request);
+    assert.equal(harness.forwarded[0], request);
+    assert.equal(harness.posted.length, 0);
+  }
 });
 
 test("XHR removeEventListener detaches before a direct fallback reinstalls listeners", async () => {
@@ -207,7 +243,7 @@ test("XHR removeEventListener detaches before a direct fallback reinstalls liste
   assert.equal(native.listeners.filter((item) => item.listener === listener).length, 0);
 });
 
-test("non-whitelisted fetch keeps the original Request untouched", async () => {
+test("非白名单页面的 fetch 保留原始 Request 和一次性请求体", async () => {
   const stream = new ReadableStream({
     start(controller) {
       controller.enqueue(new TextEncoder().encode("ignored-payload"));
@@ -219,7 +255,7 @@ test("non-whitelisted fetch keeps the original Request untouched", async () => {
     body: stream,
     duplex: "half",
   } as RequestInit & { duplex: "half" });
-  const forwarded = await runForwardedFetch("pass", original);
+  const forwarded = await runForwardedFetch("pass", original, ["other.test"]);
   assert.equal(forwarded, original);
   assert.equal(await forwarded.text(), "ignored-payload");
 });

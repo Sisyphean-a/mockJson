@@ -50,6 +50,7 @@ export type PopupState = {
   serverOnline: boolean;
   hasPackage: boolean;
   supportedPage: boolean;
+  pageWhitelisted: boolean;
   tabId: number | null;
   host: string | null;
   whitelist: string[];
