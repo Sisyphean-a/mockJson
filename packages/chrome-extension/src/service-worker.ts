@@ -363,7 +363,7 @@ function isRuntimeRequest(value: unknown): value is ExtensionRuntimeRequest {
   if (!isRecord(value) || typeof value.url !== "string" || typeof value.method !== "string" || !isRecord(value.headers)) return false;
   return Object.values(value.headers).every((header) => typeof header === "string") &&
     (value.body === undefined || typeof value.body === "string") &&
-    (value.bodyUnavailable === undefined || value.bodyUnavailable === "too-large" || value.bodyUnavailable === "unavailable") &&
+    (value.bodyUnavailable === undefined || value.bodyUnavailable === "too-large" || value.bodyUnavailable === "unavailable" || value.bodyUnavailable === "upload") &&
     !(value.body !== undefined && value.bodyUnavailable !== undefined);
 }
 

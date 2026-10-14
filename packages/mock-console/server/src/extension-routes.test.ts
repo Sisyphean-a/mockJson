@@ -127,6 +127,31 @@ test("请求体采集失败不改变判定，不再增加其他请求日志", as
   await app.close();
 });
 
+test("上传元数据可 Mock 或放行，日志明确记录上传体未采集", async () => {
+  const { app, logs } = await createApp();
+  try {
+    for (const path of ["/mocked", "/real"]) {
+      const response = await app.inject({ method: "POST", url: "/__mock_extension/resolve", payload: {
+        url: `https://api.example.com${path}`, method: "POST", headers: { "Content-Type": "multipart/form-data; boundary=test" }, bodyUnavailable: "upload",
+      } });
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.json().action, path === "/mocked" ? "mock" : "pass");
+      const log = logs.list()[0];
+      assert.equal(log.outcome, path === "/mocked" ? "mocked" : "unmatched");
+      assert.equal(log.request.body.unavailableReason, "upload");
+      assert.equal(log.request.body.body, null);
+      assert.equal(log.request.body.truncated, false);
+    }
+    for (const fields of [{ bodyUnavailable: "unknown" }, { bodyUnavailable: "upload", body: "file-content" }]) {
+      const response = await app.inject({ method: "POST", url: "/__mock_extension/resolve", payload: {
+        url: "https://api.example.com/mocked", method: "POST", headers: {}, ...fields,
+      } });
+      assert.equal(response.statusCode, 400);
+    }
+    assert.equal(logs.list().length, 2);
+  } finally { await app.close(); }
+});
+
 test("扩展判定接口未命中时返回放行决定", async () => {
   const { app } = await createApp();
   const response = await app.inject({

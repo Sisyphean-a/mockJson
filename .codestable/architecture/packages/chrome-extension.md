@@ -6,7 +6,7 @@
 
 ## 边界
 
-- `content-main.ts` 运行在 MAIN world，包装页面请求；页面白名单未命中时不安装任何请求 API 包装，上传、流式和二进制请求不进入 JSON resolver。
+- `content-main.ts` 运行在 MAIN world，包装页面请求；页面白名单未命中时不安装任何请求 API 包装。multipart / FormData 只发送元数据参与判定，具体支持边界见 [上传判定规则](../../requirements/CONTEXT.md#chrome-extension-领域规则)；不接管流式或二进制 Mock。
 - `content-bridge.ts` 运行在隔离世界，只负责页面与 Service Worker 的消息桥接和取消传播。
 - `service-worker.ts` 负责页面白名单、启用状态、本机 resolver 请求、超时、并发和健康短路；从 Chrome 提供的消息来源 URL 复核 frame 授权。
 - `popup.ts` 只负责扩展开关、白名单和本机服务状态，不读取 Mock Package、Logical API 或 Scenario。

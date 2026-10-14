@@ -1,7 +1,4 @@
-/**
- * Wire contract shared by the browser extension and the local resolver.
- * This package has no runtime dependency on the Mock Console or browser APIs.
- */
+/** 扩展与本机 resolver 的共享线协议，不依赖浏览器或 Mock Console 运行时。 */
 export type ExtensionPassReason = "unmatched" | "disabled" | "invalid-request" | "unsupported-status";
 
 export type ExtensionRuntimeRequest = {
@@ -10,8 +7,8 @@ export type ExtensionRuntimeRequest = {
   headers: Record<string, string>;
   /** 页面脚本提交的文本请求体，仅用于本机请求日志，不参与匹配。 */
   body?: string;
-  /** 超过本地 resolver 容量或读取失败时，不改变 Mock 判定。 */
-  bodyUnavailable?: "too-large" | "unavailable";
+  /** 上传体不采集、超出 resolver 容量或读取失败时，不改变 Mock 判定。 */
+  bodyUnavailable?: "too-large" | "unavailable" | "upload";
 };
 
 export type ExtensionRuntimeResponse =

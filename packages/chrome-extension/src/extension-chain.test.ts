@@ -46,6 +46,7 @@ function createWorkerHarness(pageUrl: string, whitelist = ["app.test"], session:
   const sender = { url: pageUrl, tab: { id: 1, url: pageUrl } };
   return {
     resolverRequests,
+    dispatch(message: unknown) { return listener(message, sender, () => {}); },
     send(message: unknown, from: unknown = sender): Promise<any> {
       return new Promise((resolve) => assert.equal(listener(message, from, resolve), true));
     },
@@ -135,6 +136,34 @@ test("bridge forwards cancellation and coalesces monitoring state refreshes", ()
   assert.match(bridge, /cancelledResolutions/);
   assert.match(bridge, /monitoringSync/);
   assert.match(bridge, /monitoring-state-request/);
+});
+
+test("multipart 元数据及未采集标记通过 bridge 和后台到达 resolver", async () => {
+  const harness = createWorkerHarness("https://app.test/");
+  let pageListener: (event: { source: unknown; data: unknown }) => void;
+  const posted: Array<{ type: string; result?: { action: string } }> = [];
+  const fakeWindow = {
+    addEventListener(_type: string, listener: typeof pageListener) { pageListener = listener; },
+    postMessage(message: typeof posted[number]) { posted.push(message); },
+  };
+  const compiledBridge = transpileModule(bridge, {
+    compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 },
+  }).outputText.replace(/\nexport \{\};?\s*$/, "\n");
+  new Script(compiledBridge).runInNewContext({ window: fakeWindow, chrome: { runtime: {
+    onMessage: { addListener() {} }, sendMessage: (message: unknown) => harness.send(message),
+  } } });
+  const request = { url: "https://api.other.test/upload", method: "POST", headers: {}, bodyUnavailable: "upload" };
+  pageListener!({ source: fakeWindow, data: { channel: protocol.CHANNEL, type: "resolve", id: "upload", request } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(harness.resolverRequests.length, 1);
+  assert.deepEqual(harness.resolverRequests[0], request);
+  assert.equal(posted.find((message) => message.type === "resolve-result")?.result?.action, "pass");
+  // Rule: 未采集状态不能和文件体或文本体并存。
+  pageListener!({ source: fakeWindow, data: { channel: protocol.CHANNEL, type: "resolve", id: "invalid", request: { ...request, body: "file-content" } } });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(harness.resolverRequests.length, 1);
+  assert.equal(harness.dispatch({ channel: protocol.CHANNEL, type: "resolve", id: "invalid-worker", request: { ...request, bodyUnavailable: "unknown" } }), undefined);
+  assert.equal(harness.resolverRequests.length, 1);
 });
 
 test("service worker aborts cancelled resolver requests and protects concurrency", () => {

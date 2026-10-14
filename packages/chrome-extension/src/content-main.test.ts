@@ -14,6 +14,7 @@ const compiledSource = transpileModule(source, {
 function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock") {
   const forwarded: Request[] = [];
   const posted: ExtensionRuntimeRequest[] = [];
+  const bodyClones: Request[] = [];
   const messageListeners: Array<(event: { source: unknown; data: unknown }) => void> = [];
   const nativeXhrInstances: NativeXMLHttpRequest[] = [];
   class NativeXMLHttpRequest {
@@ -25,7 +26,8 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock")
       nativeXhrInstances.push(this);
     }
     open(..._args: unknown[]) {}
-    send(_body?: unknown) {}
+    sentBodies: unknown[] = [];
+    send(body?: unknown) { this.sentBodies.push(body); }
     setRequestHeader(_name: string, _value: string) {}
     abort() {}
     addEventListener(type: string, listener: EventListener, options?: boolean | AddEventListenerOptions) {
@@ -87,7 +89,9 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock")
   const originalXMLHttpRequest = fakeWindow.XMLHttpRequest;
   const sandbox = {
     window: fakeWindow,
-    Request,
+    Request: class extends Request {
+      clone() { bodyClones.push(this); return super.clone(); }
+    },
     Response,
     Headers,
     AbortController,
@@ -108,7 +112,7 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock")
   new Script(compiledSource).runInNewContext(sandbox);
   const messageListener = messageListeners[0];
   assert.ok(messageListener);
-  return { fakeWindow, forwarded, posted, messageListener, originalFetch, originalXMLHttpRequest, nativeXhrInstances };
+  return { fakeWindow, forwarded, posted, bodyClones, messageListener, originalFetch, originalXMLHttpRequest, nativeXhrInstances };
 }
 
 async function runForwardedFetch(
@@ -310,6 +314,128 @@ test("超过现有本地 resolver 容量仍按原规则判定并显式标记请�
   assert.equal(harness.posted.length, 1);
   assert.equal(harness.posted[0].body, undefined);
   assert.equal(harness.posted[0].bodyUnavailable, "too-large");
+});
+
+for (const mode of ["mock", "pass", "throw", "timeout"] as const) {
+  test(`multipart fetch ${mode}：只判定元数据，命中不上传，放行保留文件`, async () => {
+    const harness = createContentScriptHarness(mode);
+    harness.messageListener({ source: harness.fakeWindow, data: {
+      channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, whitelist: ["upload.test"],
+    } });
+    const form = new FormData();
+    form.append("file", new Blob(["file-payload"], { type: "image/png" }), "upload.png");
+    form.append("name", "中文");
+    const response = await harness.fakeWindow.fetch("https://upload.test/upload", {
+      method: "POST", headers: { "X-Trace": "upload" }, body: form,
+    });
+    assert.equal(harness.posted.length, 1);
+    assert.equal(harness.posted[0].url, "https://upload.test/upload");
+    assert.equal(harness.posted[0].method, "POST");
+    assert.equal(harness.posted[0].headers["x-trace"], "upload");
+    assert.match(harness.posted[0].headers["content-type"], /^multipart\/form-data; boundary=/);
+    assert.equal(harness.posted[0].body, undefined);
+    assert.equal(harness.posted[0].bodyUnavailable, "upload");
+    assert.equal(harness.bodyClones.length, 0);
+    if (mode === "mock") {
+      assert.equal(await response.text(), "{}");
+      assert.equal(harness.forwarded.length, 0);
+    } else {
+      assert.equal(harness.forwarded.length, 1);
+      const forwarded = await harness.forwarded[0].formData();
+      assert.equal(forwarded.get("name"), "中文");
+      const file = forwarded.get("file") as File;
+      assert.equal(file.name, "upload.png");
+      assert.equal(await file.text(), "file-payload");
+    }
+  });
+
+  test(`FormData XHR ${mode}：不传文件体，放行保留 send 时的字段和文件`, async () => {
+    const harness = createContentScriptHarness(mode);
+    harness.messageListener({ source: harness.fakeWindow, data: {
+      channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, whitelist: ["upload.test"],
+    } });
+    const form = new FormData();
+    form.append("file", new Blob(["file-payload"], { type: "text/plain" }), "upload.txt");
+    form.append("name", "原始值");
+    form.append("name", "重复字段");
+    form.append("remove", "保留此字段");
+    form.append("empty", "");
+    const originalFile = form.get("file") as File;
+    const xhr = new harness.fakeWindow.XMLHttpRequest();
+    xhr.open("POST", "https://upload.test/upload");
+    xhr.setRequestHeader("X-Trace", "upload");
+    xhr.send(form);
+    form.set("name", "发送后修改");
+    form.delete("file");
+    form.delete("remove");
+    form.append("added", "发送后新增");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(harness.posted.length, 1);
+    assert.equal(harness.posted[0].method, "POST");
+    assert.equal(harness.posted[0].headers["X-Trace"], "upload");
+    assert.equal(harness.posted[0].body, undefined);
+    assert.equal(harness.posted[0].bodyUnavailable, "upload");
+    const sent = harness.nativeXhrInstances.flatMap((instance) => instance.sentBodies);
+    if (mode === "mock") {
+      assert.equal(xhr.status, 200);
+      assert.equal(xhr.responseText, "{}");
+      assert.equal(sent.length, 0);
+    } else {
+      assert.equal(sent.length, 1);
+      const forwarded = sent[0] as FormData;
+      assert.deepEqual(forwarded.getAll("name"), ["原始值", "重复字段"]);
+      assert.equal(forwarded.get("remove"), "保留此字段");
+      assert.equal(forwarded.get("empty"), "");
+      assert.equal(forwarded.has("added"), false);
+      const fieldOrder: string[] = [];
+      forwarded.forEach((_value, name) => fieldOrder.push(name));
+      assert.deepEqual(fieldOrder, ["file", "name", "name", "remove", "empty"]);
+      const file = forwarded.get("file") as File;
+      assert.equal(file, originalFile);
+      assert.equal(file.name, "upload.txt");
+      assert.equal(file.type, "text/plain");
+      assert.equal(await file.text(), "file-payload");
+    }
+  });
+}
+
+test("显式 multipart Header 的 fetch 和 XHR 也不采集文本体", async () => {
+  const harness = createContentScriptHarness("mock");
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, whitelist: ["upload.test"],
+  } });
+  await harness.fakeWindow.fetch("https://upload.test/upload", {
+    method: "POST", headers: { "Content-Type": "Multipart/Form-Data; boundary=test" }, body: "file-content",
+  });
+  const xhr = new harness.fakeWindow.XMLHttpRequest();
+  xhr.open("POST", "https://upload.test/upload");
+  xhr.setRequestHeader("cOnTeNt-TyPe", "Multipart/Form-Data; boundary=test");
+  xhr.send("file-content");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(harness.posted.length, 2);
+  for (const request of harness.posted) {
+    assert.equal(request.bodyUnavailable, "upload");
+    assert.equal(request.body, undefined);
+  }
+  assert.equal(harness.bodyClones.length, 0);
+  assert.equal(harness.forwarded.length, 0);
+});
+
+test("二进制 fetch 和 XHR 仍直接放行，不进入 resolver", async () => {
+  const harness = createContentScriptHarness("mock");
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, whitelist: ["upload.test"],
+  } });
+  await harness.fakeWindow.fetch("https://upload.test/upload", {
+    method: "POST", body: new Blob(["binary-payload"], { type: "image/png" }),
+  });
+  assert.equal(await harness.forwarded[0].text(), "binary-payload");
+  const body = new Blob(["binary-payload"]);
+  const xhr = new harness.fakeWindow.XMLHttpRequest();
+  xhr.open("POST", "https://upload.test/upload");
+  xhr.send(body);
+  assert.equal(harness.nativeXhrInstances.at(-1)?.sentBodies[0], body);
+  assert.equal(harness.posted.length, 0);
 });
 
 test("fetch pass-through keeps FormData files and ReadableStream bodies", async () => {

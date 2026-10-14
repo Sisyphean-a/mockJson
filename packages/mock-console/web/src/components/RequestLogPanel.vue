@@ -262,7 +262,8 @@ function clearFilters() {
             <h4>请求体 <span v-if="selectedLog.request.body.byteLength">{{ formatBytes(selectedLog.request.body.byteLength) }}</span></h4>
             <pre v-if="selectedLog.request.body.body !== null" class="log-request-body">{{ selectedLog.request.body.body }}</pre>
             <p v-else class="log-no-data">{{ selectedLog.source === 'extension'
-              ? selectedLog.request.body.truncated ? '请求体超过本地判定接口容量，未记录；Mock 判定不受影响。' : '此请求体无法读取；Mock 判定不受影响。'
+              ? selectedLog.request.body.unavailableReason === 'upload' ? '上传请求体未采集；仅按 URL、Method 和页面可见 Header 判定。'
+                : selectedLog.request.body.truncated ? '请求体超过本地判定接口容量，未记录；Mock 判定不受影响。' : '此请求体无法读取；Mock 判定不受影响。'
               : '非文本请求体，无法预览' }}</p>
             <p v-if="selectedLog.source === 'proxy' && selectedLog.request.body.truncated" class="log-note">请求体仅展示前 32 KB；转发内容不受影响。</p>
           </div>

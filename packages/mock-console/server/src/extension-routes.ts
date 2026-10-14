@@ -54,6 +54,7 @@ function recordExtensionDecision(
     body: request.bodyUnavailable ? null : request.body ?? "",
     byteLength: request.body === undefined ? 0 : Buffer.byteLength(request.body),
     truncated: request.bodyUnavailable === "too-large",
+    ...(request.bodyUnavailable ? { unavailableReason: request.bodyUnavailable } : {}),
   };
 
   logs.record({
@@ -103,7 +104,7 @@ function parseRequest(req: FastifyRequest): ExtensionRuntimeRequest {
   }
 
   if (value.body !== undefined && typeof value.body !== "string") throw new Error("请求体必须是文本");
-  if (value.bodyUnavailable !== undefined && value.bodyUnavailable !== "too-large" && value.bodyUnavailable !== "unavailable")
+  if (value.bodyUnavailable !== undefined && value.bodyUnavailable !== "too-large" && value.bodyUnavailable !== "unavailable" && value.bodyUnavailable !== "upload")
     throw new Error("请求体状态无效");
   if (value.body !== undefined && value.bodyUnavailable !== undefined) throw new Error("请求体状态冲突");
 

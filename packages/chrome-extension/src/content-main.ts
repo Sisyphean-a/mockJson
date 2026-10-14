@@ -83,7 +83,7 @@ function installFetchInterceptor() {
     const url = getRequestUrl(input);
     if (!url || !isHttpUrl(url)) return nativeFetch(input, init);
     const request = new Request(input, init);
-    if (isUploadRequest(request)) return nativeFetch(request);
+    if (isBinaryRequest(request)) return nativeFetch(request);
 
     let decision: ExtensionRuntimeResponse;
     try {
@@ -348,8 +348,14 @@ function setRequestHeader(state: XhrState, name: string, value: string) {
 function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | null) {
   if (state.mode === "direct") return state.target.send(body);
   if (!state.opened || state.sent) throw new DOMException("Invalid XMLHttpRequest state", "InvalidStateError");
-  if (isUploadBody(body) || !isMonitoringActive())
+  if (isBinaryOrStreamBody(body) || !isMonitoringActive())
     return useDirectXhr(state, body);
+  if (typeof FormData !== "undefined" && body instanceof FormData) {
+    // Guarantee: 固定 send 时的字段顺序和 File 引用，不读取文件内容，避免等待期间被页面修改。
+    const snapshot = new FormData();
+    body.forEach((value, name) => snapshot.append(name, value));
+    body = snapshot;
+  }
   state.sent = true;
   const generation = state.generation;
   if (state.timeout > 0) state.timeoutTimer = window.setTimeout(() => timeoutXhr(state, generation), state.timeout);
@@ -359,7 +365,10 @@ function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | nul
     method: state.method.toUpperCase(),
     headers: { ...state.requestHeaders },
   };
-  if (typeof body === "string") request.body = body;
+  if ((typeof FormData !== "undefined" && body instanceof FormData) ||
+    Object.entries(state.requestHeaders).some(([name, value]) => name.toLowerCase() === "content-type" && value.toLowerCase().startsWith("multipart/")))
+    request.bodyUnavailable = "upload";
+  else if (typeof body === "string") request.body = body;
   else if (body instanceof URLSearchParams) request.body = body.toString();
   else if (body != null) request.bodyUnavailable = "unavailable";
   void askResolver(withLogBody(request), state.mockAbortController.signal).then((decision) => {
@@ -549,6 +558,8 @@ function withLogBody(request: ExtensionRuntimeRequest): ExtensionRuntimeRequest 
 }
 
 async function readRequestBodyForLog(request: Request): Promise<Pick<ExtensionRuntimeRequest, "body" | "bodyUnavailable">> {
+  // Rule: multipart 只判定元数据，不读取或复制上传文件。
+  if (request.headers.get("content-type")?.toLowerCase().startsWith("multipart/")) return { bodyUnavailable: "upload" };
   if (!request.body) return {};
   const reader = request.clone().body!.getReader();
   const chunks: Uint8Array[] = [];
@@ -585,20 +596,18 @@ async function readRequestBodyForLog(request: Request): Promise<Pick<ExtensionRu
   finally { window.clearTimeout(timer); }
 }
 
-function isUploadRequest(request: Request) {
+function isBinaryRequest(request: Request) {
   const contentType = request.headers.get("content-type")?.toLowerCase() || "";
-  return contentType.startsWith("multipart/") ||
-    contentType.startsWith("image/") ||
+  return contentType.startsWith("image/") ||
     contentType.startsWith("audio/") ||
     contentType.startsWith("video/") ||
     contentType === "application/octet-stream";
 }
 
-function isUploadBody(value: unknown) {
+function isBinaryOrStreamBody(value: unknown) {
   if (value == null || typeof value === "string") return false;
   if (typeof URLSearchParams !== "undefined" && value instanceof URLSearchParams) return false;
   return (
-    (typeof FormData !== "undefined" && value instanceof FormData) ||
     (typeof Blob !== "undefined" && value instanceof Blob) ||
     value instanceof ArrayBuffer ||
     ArrayBuffer.isView(value) ||

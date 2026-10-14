@@ -1,4 +1,4 @@
-import type { ExtensionPassReason } from "@mock-json/extension-contract";
+import type { ExtensionPassReason, ExtensionRuntimeRequest } from "@mock-json/extension-contract";
 
 export type MatchSource = "header" | "url" | "method";
 export type MatchOperator =
@@ -99,7 +99,10 @@ export type RequestLog = {
   scenarioId: string | null;
   scenarioName: string | null;
   status: number;
-  request: { headers: Record<string, string>; body: RequestLogResponse };
+  request: {
+    headers: Record<string, string>;
+    body: RequestLogResponse & { unavailableReason?: ExtensionRuntimeRequest["bodyUnavailable"] };
+  };
   response: RequestLogResponse;
   error?: string;
 };
