@@ -77,7 +77,11 @@ export function useMockState(client: MockAdminClient) {
   function replaceApi(updated: Api) {
     const current = pkg.value;
     const index = current?.apis.findIndex((item) => item.id === updated.id) ?? -1;
-    if (current && index >= 0) current.apis[index] = updated;
+    if (current && index >= 0) {
+      // Rule: 接口编辑只发布元数据，不能用迟到的完整快照覆盖独立保存的场景和响应选择。
+      const { name, enabled, priority, matchMode, matchRules } = updated;
+      Object.assign(current.apis[index], { name, enabled, priority, matchMode, matchRules });
+    }
   }
 
   watch(pkg, () => { synchronizeSelection(); });

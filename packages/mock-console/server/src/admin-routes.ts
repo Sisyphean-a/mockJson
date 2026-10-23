@@ -122,6 +122,14 @@ export function registerAdminRoutes(
     }
   });
 
+  app.put("/__mock_admin/apis/:id/response-selection", async (req, reply) => {
+    try {
+      return await service.saveResponseSelection(routeId(req, "id"), body(req));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
   app.post("/__mock_admin/apis/:id/move", async (req, reply) => {
     try {
       return await service.moveApi(routeId(req, "id"), body(req));

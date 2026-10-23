@@ -1,4 +1,5 @@
 import type { PersistedPackageConfig, PersistedState } from "../../shared/types.js";
+import { validateSelection } from "../../shared/response-selection.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -57,8 +58,17 @@ function isValidApi(value: unknown) {
     Array.isArray(value.scenarios) &&
     (value.activeScenarioId === null || isUuidLike(value.activeScenarioId)) &&
     value.matchRules.every(isValidRule) &&
-    value.scenarios.every(isValidScenario)
+    value.scenarios.every(isValidScenario) &&
+    validResponseSelection(value.responseSelection, value.scenarios)
   );
+}
+
+function validResponseSelection(value: unknown, scenarios: unknown[]) {
+  if (value === undefined) return true;
+  try {
+    validateSelection(value, scenarios.map((s) => (s as { id: string }).id));
+    return true;
+  } catch { return false; }
 }
 
 function isValidRule(value: unknown) {

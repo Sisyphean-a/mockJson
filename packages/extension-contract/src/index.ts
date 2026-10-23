@@ -5,9 +5,9 @@ export type ExtensionRuntimeRequest = {
   url: string;
   method: string;
   headers: Record<string, string>;
-  /** 页面脚本提交的文本请求体，仅用于本机请求日志，不参与匹配。 */
+  /** 页面可读取的文本原文，用于日志及已匹配接口内部的响应条件，不扩大接口匹配范围。 */
   body?: string;
-  /** 上传体不采集、超出 resolver 容量或读取失败时，不改变 Mock 判定。 */
+  /** 请求体不可用时，响应分支的请求体条件不命中，请求头条件仍正常判定。 */
   bodyUnavailable?: "too-large" | "unavailable" | "upload";
 };
 

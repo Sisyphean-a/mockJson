@@ -150,7 +150,9 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     current.apis.splice(0, current.apis.length, ...(next as Api[]));
     try {
       const saved = await model.runAdminRequest(() => client.reorderApis(current.id, orderedIds));
-      current.apis.splice(0, current.apis.length, ...saved);
+      // Rule: 排序只应用 ID 顺序，保留期间独立保存的接口、场景和响应选择对象。
+      const latest = new Map(current.apis.map((api) => [api.id, api]));
+      current.apis.splice(0, current.apis.length, ...saved.map((api) => latest.get(api.id)!));
       model.synchronizeSelection();
       notify("接口顺序已保存");
     } catch (error) {

@@ -118,15 +118,30 @@ export async function createProxy(
   const streamRequestBody = options.streamRequestBody === true;
   const p = state.packages.find((x) => x.id === state.currentPackageId);
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-  const selected = selectMatchingApi(p?.apis, { method: req.method, url, headers: req.headers });
+  const context = { method: req.method, url, headers: req.headers };
+  const requestContentType = headerText(req.headers["content-type"]);
+  const readableBody = isTextualContentType(requestContentType) && !/multipart/i.test(requestContentType || "") && !req.headers["content-encoding"];
+  let selected = selectMatchingApi(p?.apis, context);
+  let bufferedBody: Buffer | undefined;
+  // Rule: 仅已匹配接口需要请求体条件时读取文本原文；放行复用同一份字节，上传流保持直通。
+  if (streamRequestBody && readableBody && selected?.api.responseSelection?.mode === "conditional" &&
+      selected.api.responseSelection.branches.some((b) => b.conditions.some((c) => c.source === "body"))) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req.raw) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    bufferedBody = Buffer.concat(chunks);
+  }
+  const payloadBody = bufferedBody ?? req.body;
+  const bodyText = payloadBody === undefined ? undefined : Buffer.isBuffer(payloadBody) ? payloadBody.toString("utf8") :
+    typeof payloadBody === "string" ? payloadBody : JSON.stringify(payloadBody);
+  selected = selectMatchingApi(p?.apis, context, {
+    headers: req.headers,
+    ...(readableBody ? { body: bodyText } : { bodyUnavailable: "上传、二进制或编码请求体未采集" }),
+  });
   const api = selected?.api;
   const scene = selected?.scenario;
-  const requestContentType = headerText(req.headers["content-type"]);
   const requestCollector = logs ? createResponseCollector(isTextualContentType(requestContentType)) : undefined;
-  if (!streamRequestBody && req.body !== undefined) {
-    const body = Buffer.isBuffer(req.body) || typeof req.body === "string" ? req.body : JSON.stringify(req.body);
-    if (body !== undefined) requestCollector?.collect(body);
-  }
+  if (bufferedBody) requestCollector?.collect(bufferedBody);
+  else if (!streamRequestBody && bodyText !== undefined) requestCollector?.collect(bodyText);
   const record = (
     outcome: RequestLogOutcome,
     status: number,
@@ -190,10 +205,10 @@ export async function createProxy(
     ),
   );
   let payload: string | Buffer | undefined;
-  if (req.body !== undefined) {
-    if (Buffer.isBuffer(req.body)) payload = req.body;
-    else if (typeof req.body === "string") payload = req.body;
-    else payload = JSON.stringify(req.body);
+  if (payloadBody !== undefined) {
+    if (Buffer.isBuffer(payloadBody)) payload = payloadBody;
+    else if (typeof payloadBody === "string") payload = payloadBody;
+    else payload = JSON.stringify(payloadBody);
     if (payload !== undefined) headers["content-length"] = String(Buffer.byteLength(payload));
   }
 

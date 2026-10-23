@@ -7,12 +7,14 @@ import { usePackageActions } from "./use-package-actions";
 import { useScenarioActions } from "./use-scenario-actions";
 import { createRuntimeEndpoints, type RuntimeEndpoints } from "./runtime-endpoints";
 import { useRequestLogs } from "./use-request-logs";
+import { useResponseSelection } from "./use-response-selection";
 
 export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoints()) {
   const client = new MockAdminClient(endpoints);
   const model = useMockState(client);
   const requestLogs = useRequestLogs(client, model.runAdminRequest);
   const forms = useConsoleForms();
+  const responseActions = useResponseSelection(client, model);
   const toast = ref("");
   // Rule: 匹配条件展开/折叠是跨逻辑接口共享的全局 UI 状态，切换接口时保持不变。
   const matchCollapsed = ref(false);
@@ -34,12 +36,40 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
   const apiActions = useApiActions(client, model, forms, notice, leaveCurrentDraft);
   const scenarioActions = useScenarioActions(client, model, forms, notice, leaveCurrentDraft);
 
-  function selectApi(item: Parameters<typeof model.selectApi>[0]) {
-    return model.selectApi(item, leaveCurrentDraft);
+  function selectApi(item: Parameters<typeof model.selectApi>[0], after?: () => void) {
+    if (model.api.value?.id === item.id) { after?.(); return true; }
+    return responseActions.guardResponseLeave(() => { if (model.selectApi(item, leaveCurrentDraft)) after?.(); });
   }
 
   function selectScene(item: Parameters<typeof model.selectScene>[0]) {
-    return model.selectScene(item, leaveCurrentDraft);
+    if (!leaveCurrentDraft()) return;
+    model.selectScene(item);
+    responseActions.rulesOpen.value = false;
+  }
+
+  function viewBranchScene(id: string) {
+    const scene = model.api.value?.scenarios.find((s) => s.id === id);
+    if (scene) selectScene(scene);
+  }
+
+  function showBranchRules() {
+    if (leaveCurrentDraft()) responseActions.rulesOpen.value = true;
+  }
+
+  async function toggleScene(scene: Parameters<typeof scenarioActions.toggleScene>[0]) {
+    const api = model.api.value;
+    if (!api || responseActions.responseSaving.value) return;
+    if (responseActions.responseEditorMode.value !== "fixed") return;
+    if (responseActions.responseDirty.value || api.responseSelection?.mode === "conditional") {
+      const draft = responseActions.responseDraft.value;
+      draft.activeScenarioId = draft.activeScenarioId === scene.id ? null : scene.id;
+    } else await scenarioActions.toggleScene(scene);
+  }
+
+  function deleteScene(scene: Parameters<typeof scenarioActions.deleteScene>[0]) {
+    const refs = responseActions.responseReferences(scene);
+    if (refs.length) { window.alert(`场景「${scene.name}」被 ${refs.join("、")} 引用，请先解除或替换引用并保存。`); return; }
+    return scenarioActions.deleteScene(scene);
   }
 
   async function retryLoad() {
@@ -50,7 +80,7 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
   }
 
   function handleBeforeUnload(event: BeforeUnloadEvent) {
-    if (!forms.draftDirty.value) return;
+    if (!forms.draftDirty.value && !responseActions.responseDirty.value) return;
     event.preventDefault();
     event.returnValue = "";
   }
@@ -68,12 +98,30 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
     toast,
     matchCollapsed,
     toggleMatchCollapsed,
-    selectApi,
-    selectScene,
     retryLoad,
     ...packageActions,
-    switchPkg: packageActions.switchPackage,
     ...apiActions,
     ...scenarioActions,
+    ...responseActions,
+    selectApi,
+    selectScene,
+    viewBranchScene,
+    showBranchRules,
+    toggleScene,
+    deleteScene,
+    openSceneEdit: (scene: Parameters<typeof scenarioActions.openSceneEdit>[0]) => {
+      if (model.sceneId.value !== scene.id && !leaveCurrentDraft()) return;
+      model.selectScene(scene);
+      responseActions.rulesOpen.value = false;
+      scenarioActions.openSceneEdit(scene);
+    },
+    showLogs: () => responseActions.guardResponseLeave(requestLogs.showLogs),
+    switchPkg: (id: string) => responseActions.guardResponseLeave(() => packageActions.switchPackage(id)),
+    createApi: () => responseActions.guardResponseLeave(apiActions.createApi),
+    moveApi: () => responseActions.guardResponseLeave(apiActions.moveApi),
+    deleteApi: () => responseActions.guardResponseLeave(apiActions.deleteApi),
+    deleteApiTarget: (api: Parameters<typeof apiActions.deleteApiTarget>[0]) => { responseActions.guardResponseLeave(() => apiActions.deleteApiTarget(api)); },
+    savePackage: () => responseActions.guardResponseLeave(packageActions.savePackage),
+    deletePackage: (pkg: Parameters<typeof packageActions.deletePackage>[0]) => responseActions.guardResponseLeave(() => packageActions.deletePackage(pkg)),
   };
 }

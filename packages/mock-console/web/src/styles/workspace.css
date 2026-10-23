@@ -463,15 +463,6 @@
   flex-direction: column;
 }
 
-.scene-list-head {
-  flex: 0 0 auto;
-  padding: 7px 10px;
-}
-
-.scene-list-head h2 {
-  font-size: 15px;
-}
-
 .scene-list-items {
   flex: 1 1 auto;
   min-height: 0;

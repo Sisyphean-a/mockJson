@@ -1,6 +1,7 @@
 import type { ExtensionRuntimeRequest, ExtensionRuntimeResponse } from "@mock-json/extension-contract";
 import type { LogicalApi, PackageConfig, Scenario, State } from "../../shared/types.js";
 import { matchApi, type MatchContext } from "./matcher.js";
+import { evaluateSelection, selectionFor, type SelectionRequest } from "../../shared/response-selection.js";
 
 type ActiveApi = State["packages"][number]["apis"][number];
 
@@ -32,12 +33,15 @@ export function activeScenario(api: ActiveApi) {
   return api.scenarios.find((scenario) => scenario.id === api.activeScenarioId);
 }
 
-export function selectMatchingApi(apis: LogicalApi[] | undefined, context: MatchContext) {
+export function selectMatchingApi(apis: LogicalApi[] | undefined, context: MatchContext, request: SelectionRequest = { headers: context.headers }) {
   if (!apis) return undefined;
   for (const api of rankedApis(apis)) {
     if (api.enabled === false) continue;
-    const scenario = activeScenario(api);
-    if (scenario && matchApi(api, context)) return { api, scenario };
+    const selection = selectionFor(api);
+    if (selection.mode === "fixed" && !activeScenario(api)) continue;
+    if (!matchApi(api, context)) continue;
+    const result = evaluateSelection(selection, api.activeScenarioId, request);
+    return { api, scenario: api.scenarios.find((s) => s.id === result.scenarioId) };
   }
   return undefined;
 }
@@ -59,11 +63,17 @@ export function resolveExtension(
     method: request.method.toUpperCase(),
     url,
     headers: request.headers,
-  });
+  }, request);
 
   if (!selected) return {
     packageConfig,
     api: undefined,
+    scenario: undefined,
+    response: { action: "pass", reason: "unmatched" },
+  };
+  if (!selected.scenario) return {
+    packageConfig,
+    api: selected.api,
     scenario: undefined,
     response: { action: "pass", reason: "unmatched" },
   };

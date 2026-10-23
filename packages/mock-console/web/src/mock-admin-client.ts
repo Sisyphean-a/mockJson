@@ -4,6 +4,7 @@ import {
   type MatchRule,
   type PackageConfig,
   type RealService,
+  type ResponseSelection,
   type RequestLog,
   type RequestLogsDeltaResponse,
   type RequestLogsResponse,
@@ -127,6 +128,10 @@ export class MockAdminClient {
 
   async updateApi(id: string, input: Partial<Pick<LogicalApi, "name" | "enabled" | "priority" | "matchMode" | "matchRules">>) {
     return this.request<LogicalApi>(`/__mock_admin/apis/${id}`, json("PATCH", input));
+  }
+
+  async saveResponseSelection(id: string, selection: ResponseSelection, activeScenarioId: string | null) {
+    return this.request<LogicalApi>(`/__mock_admin/apis/${id}/response-selection`, json("PUT", { selection, activeScenarioId }));
   }
 
   async moveApi(id: string, packageId: string) {

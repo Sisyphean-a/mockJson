@@ -26,6 +26,28 @@ export type Scenario = {
   color?: string;
 };
 
+export type ResponseCondition = {
+  id: string;
+  source: "header" | "body";
+  field: string;
+  operator: "equals" | "notEquals" | "contains" | "exists" | "notExists" | "gt" | "gte" | "lt" | "lte";
+  value: string | number | boolean | null;
+};
+
+export type ResponseBranch = {
+  id: string;
+  name: string;
+  matchMode: "AND" | "OR";
+  conditions: ResponseCondition[];
+  scenarioId: string;
+};
+
+export type ResponseSelection = {
+  mode: "fixed" | "conditional";
+  branches: ResponseBranch[];
+  fallback: { enabled: boolean; scenarioId: string | null };
+};
+
 export type LogicalApi = {
   id: string;
   name: string;
@@ -34,6 +56,7 @@ export type LogicalApi = {
   matchMode: "AND" | "OR";
   matchRules: MatchRule[];
   activeScenarioId: string | null;
+  responseSelection?: ResponseSelection;
   scenarios: Scenario[];
 };
 

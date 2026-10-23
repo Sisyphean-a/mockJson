@@ -21,7 +21,6 @@
 | main | `packages/chrome-extension/src/content-main.ts` | MAIN world 请求拦截、原生放行、Mock 响应和 traffic 采集 |
 | bridge | `packages/chrome-extension/src/content-bridge.ts` | 隔离世界消息转发、traffic 转发和取消 |
 | worker | `packages/chrome-extension/src/service-worker.ts` | 白名单、resolver、开关、traffic 缓冲和面板推送 |
-| worker | `packages/chrome-extension/src/service-worker.ts` | 白名单、resolver、开关、traffic 缓冲和面板推送 |
 | devtools | `packages/chrome-extension/src/devtools.ts`、`public/devtools.html` | 注册 DevTools「接口面板」标签并传入被检查标签页 |
 | panel | `packages/chrome-extension/src/panel.ts`、`public/panel.html` | DevTools 面板与独立页共用的请求列表、详情和复制 cURL |
 | popup | `packages/chrome-extension/src/popup.ts` | Popup 交互、只记录开关和面板入口 |
@@ -40,4 +39,5 @@
 - 页面授权及 Popup 开关语义以 [Chrome Extension 领域规则](../../requirements/CONTEXT.md#chrome-extension-领域规则) 为唯一依据；MAIN world 和后台都按页面 URL 判定，不按请求目标域名过滤。“只记录”必须由用户按标签页显式开启，开启后只观测、不进入 resolver 判定。
 - resolver 返回 `pass`、服务不可用、超时或取消时，页面继续使用浏览器原生请求。
 - 命中场景时只支持 JSON、200–599 状态码和异步请求；导航、资源、WebSocket、Worker / Service Worker、同步 XHR、流式和二进制 Mock 不由扩展接管。
-- traffic 面板与 DevTools Network 不同：静态资源、导航、Worker / Service Worker、WebSocket、重定向中间跳和扩展未观测的请求不会出现；列表顺序是发起时间，不是调用因果。- traffic 记录只保存在 `chrome.storage.session` 和 Service Worker 内存中，不写入 Mock Console 服务端日志；上传体、二进制、流式和不透明响应不采集内容。
+- traffic 面板与 DevTools Network 不同：静态资源、导航、Worker / Service Worker、WebSocket、重定向中间跳和扩展未观测的请求不会出现；列表顺序是发起时间，不是调用因果。
+- traffic 记录只保存在 `chrome.storage.session` 和 Service Worker 内存中，不写入 Mock Console 服务端日志；上传体、二进制、流式和不透明响应不采集内容。

@@ -17,10 +17,10 @@
 
 ## 请求与响应
 
-- 扩展发送 `{ url, method, headers, body?, bodyUnavailable? }`；`body` 是页面可读取的文本请求体原文，只写入已有判定日志、不参与匹配；`bodyUnavailable` 的 `upload` 表示上传体不采集，`too-large` 表示超出本地 resolver 的 1 MiB 请求容量，`unavailable` 表示读取失败；这些状态均不携带 `body`，仍按原元数据判定。bridge、Service Worker 和 resolver 都校验此状态，日志请求体的 `unavailableReason` 保留该标记供 UI 展示；支持范围见 [上传判定规则](../../requirements/CONTEXT.md#chrome-extension-领域规则)。
+- 扩展发送 `{ url, method, headers, body?, bodyUnavailable? }`；`body` 是页面可读取的文本请求体原文，供判定日志及 [已匹配接口内部的响应分支](../../requirements/CONTEXT.md#mock-console-领域规则) 使用；`bodyUnavailable` 的 `upload` 表示上传体不采集，`too-large` 表示超出本地 resolver 的 1 MiB 请求容量，`unavailable` 表示读取失败；这些状态均不携带 `body`，仍可使用请求元数据，具体条件语义见上述规则。bridge、Service Worker 和 resolver 都校验此状态，日志请求体的 `unavailableReason` 保留该标记供 UI 展示；支持范围见 [上传判定规则](../../requirements/CONTEXT.md#chrome-extension-领域规则)。
 - Mock 响应包含状态码、0–30000ms 延迟、JSON 字符串 body 和响应 Header。
 - `pass` 表示扩展不接管真实请求；浏览器随后以原始 URL、Cookie、凭据、CORS 和请求体语义发出真实请求。
-- 页面授权未通过（见 [Chrome Extension 领域规则](../../requirements/CONTEXT.md#chrome-extension-领域规则)）、resolver 未命中、服务不可用、超时或取消都必须保持真实请求放行；采集日志用的请求体副本不得消耗原始 Request，也不得为未进入 resolver 的请求增加日志。
+- 页面授权未通过（见 [Chrome Extension 领域规则](../../requirements/CONTEXT.md#chrome-extension-领域规则)）、resolver 未命中、服务不可用、超时或取消都必须保持真实请求放行；用于条件判定和日志的请求体副本不得消耗原始 Request，也不得为未进入 resolver 的请求增加日志。
 - 请求观测面板（traffic）是扩展内部能力，使用 `packages/chrome-extension/src/protocol.ts` 的内部消息和本地缓冲，不经过 resolver，也不改变本页描述的线协议；面板可在 resolver 离线时记录放行的真实响应。
 
 ## 所有者

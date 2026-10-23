@@ -22,11 +22,11 @@ function closeContextMenu() {
 }
 
 function editApi(api: Api) {
-  if (c.selectApi(api)) c.openApiEdit();
+  c.selectApi(api, c.openApiEdit);
 }
 
 function createSceneForApi(api: Api) {
-  if (c.selectApi(api)) c.openSceneCreate();
+  c.selectApi(api, c.openSceneCreate);
 }
 
 function menuFor(target: ContextTarget): { title: string; items: ContextMenuItem[] } {
@@ -54,13 +54,13 @@ function menuFor(target: ContextTarget): { title: string; items: ContextMenuItem
   }
 
   if (target.type === "scene") {
-    const active = c.activeSceneId.value === target.item.id;
+    const active = c.responseDraft.value.activeScenarioId === target.item.id;
     return {
       title: target.item.name,
       items: [
         { label: "打开场景", action: () => c.selectScene(target.item) },
         { label: "编辑场景", action: () => c.openSceneEdit(target.item) },
-        { label: active ? "停用场景" : "启用场景", action: () => c.toggleScene(target.item) },
+        ...(c.responseEditorMode.value === "fixed" ? [{ label: active ? "停用场景" : "启用场景", action: () => c.toggleScene(target.item) }] : []),
         { label: "复制场景", action: () => c.duplicateScene(target.item) },
         { label: "删除场景", separator: true, danger: true, action: () => c.deleteScene(target.item) },
       ],
