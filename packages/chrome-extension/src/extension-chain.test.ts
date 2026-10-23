@@ -6,6 +6,7 @@ import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import * as protocol from "./protocol.js";
 import * as domains from "./domain-whitelist.js";
 import * as health from "./resolver-health.js";
+import * as traffic from "./traffic-store.js";
 
 const bridge = readFileSync(new URL("./content-bridge.ts", import.meta.url), "utf8");
 const worker = readFileSync(new URL("./service-worker.ts", import.meta.url), "utf8");
@@ -22,7 +23,7 @@ function createWorkerHarness(pageUrl: string, whitelist = ["app.test"], session:
     async get() { return values; },
     async set(changes: Record<string, unknown>) { Object.assign(values, changes); },
   });
-  const dependencies: Record<string, unknown> = { "./protocol.js": protocol, "./domain-whitelist.js": domains, "./resolver-health.js": health };
+  const dependencies: Record<string, unknown> = { "./protocol.js": protocol, "./domain-whitelist.js": domains, "./resolver-health.js": health, "./traffic-store.js": traffic };
   new Script(compiledWorker).runInNewContext({
     exports: {},
     require(name: string) {

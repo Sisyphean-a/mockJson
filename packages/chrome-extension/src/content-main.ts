@@ -8,7 +8,6 @@ import type {
   TrafficFinishMessage,
   TrafficRequestBodyMessage,
   TrafficRequestSnapshot,
-  TrafficStartEntry,
   TrafficStartMessage,
   TrafficWindowMessage,
 } from "./protocol.js";
@@ -103,49 +102,18 @@ function installFetchInterceptor() {
     const url = getRequestUrl(input);
     if (!url || !isHttpUrl(url)) return nativeFetch(input, init);
     const request = new Request(input, init);
+    const baseRequest = { url: request.url, method: request.method, headers: headersToRecord(request.headers) };
     if (isBinaryRequest(request)) {
-      // Flow: 二进制请求不进入判定也不读取内容，但保留元数据和真实响应状态。
-      const trafficId = createTrafficId("fetch");
-      reportTrafficStart({
-        id: trafficId, source: "fetch", decision: "capture", startedAt: currentTime(),
-        request: {
-          url: request.url,
-          method: request.method,
-          headers: headersToRecord(request.headers),
-          bodyUnavailable: "binary",
-        },
-      });
-      try {
-        const response = await nativeFetch(request);
-        void finishFetchTraffic(trafficId, response, "capture");
-        return response;
-      } catch (error) {
-        reportTrafficFinish({ id: trafficId, decision: "capture", endedAt: currentTime(), error: describeError(error) });
-        throw error;
-      }
+      const traffic = new RequestTraffic("fetch", { ...baseRequest, bodyUnavailable: "binary" }, "capture");
+      return forwardFetchWithTraffic(request, traffic);
     }
 
-    const trafficId = createTrafficId("fetch");
     const startedAt = currentTime();
-    const baseRequest = { url: request.url, method: request.method, headers: headersToRecord(request.headers) };
-
     if (!mockActive) {
-      reportTrafficStart({
-        id: trafficId, source: "fetch", decision: "capture", startedAt,
-        request: baseRequest,
-      });
-      // Flow: 只记录模式不等待请求体快照，原生请求立即发出；快照就绪后再补报请求体。
-      void readRequestBodyForLog(request)
-        .then((body) => reportTrafficRequestBody(trafficId, body))
-        .catch(() => undefined);
-      try {
-        const response = await nativeFetch(request);
-        void finishFetchTraffic(trafficId, response, "capture");
-        return response;
-      } catch (error) {
-        reportTrafficFinish({ id: trafficId, decision: "capture", endedAt: currentTime(), error: describeError(error) });
-        throw error;
-      }
+      const traffic = new RequestTraffic("fetch", baseRequest, "capture", startedAt);
+      // Flow: 只记录不等待快照，原生请求立即发出，读取完成后补报请求体。
+      void readRequestBodyForLog(request).then((body) => traffic.requestBody(body)).catch(() => undefined);
+      return forwardFetchWithTraffic(request, traffic);
     }
 
     const description: ExtensionRuntimeRequest = { ...baseRequest };
@@ -154,73 +122,57 @@ function installFetchInterceptor() {
     } catch {
       // Failure: 请求体快照失败不影响判定与放行。
     }
-    reportTrafficStart({
-      id: trafficId, source: "fetch", decision: "pending", startedAt,
-      request: requestSnapshot(description),
-    });
-
+    const traffic = new RequestTraffic("fetch", description, "pending", startedAt);
     let decision: ExtensionRuntimeResponse;
     try {
       decision = await askResolver(withLogBody(description), request.signal);
     } catch {
       decision = { action: "pass", reason: "invalid-request" };
     }
-    if (!isMonitoringActive() || decision.action === "pass")
-      return forwardFetchWithTraffic(request, trafficId, "pass", decision.action === "pass" ? decision.reason : undefined);
+    if (!isMonitoringActive() || decision.action === "pass") {
+      traffic.pass(decision.action === "pass" ? decision.reason : undefined);
+      return forwardFetchWithTraffic(request, traffic);
+    }
 
     try {
       await waitForDelay(decision.delayMs, request.signal);
       if (request.signal.aborted) throw abortError();
       const body = [204, 205, 304].includes(decision.status) ? null : decision.body;
       const response = new Response(body, { status: decision.status, headers: decision.headers });
-      reportTrafficFinish({
-        id: trafficId,
-        decision: "mock",
-        endedAt: currentTime(),
-        response: {
-          status: decision.status,
-          statusText: response.statusText,
-          headers: decision.headers,
-          mimeType: decision.headers["content-type"],
-          ...createBodyInfo(body ?? undefined),
-        },
-      });
+      traffic.finish({ decision: "mock", response: {
+        status: decision.status,
+        statusText: response.statusText,
+        headers: decision.headers,
+        mimeType: decision.headers["content-type"],
+        body: body ?? undefined,
+      } });
       return response;
     } catch (error) {
       if (isAbortError(error)) {
-        reportTrafficFinish({ id: trafficId, decision: "mock", endedAt: currentTime(), error: describeError(error) });
+        traffic.finish({ decision: "mock", error: describeError(error) });
         throw error;
       }
       // Failure: 本地判定无效时保持浏览器原生请求，不把扩展错误变成页面请求失败。
-      return forwardFetchWithTraffic(request, trafficId, "pass");
+      traffic.pass();
+      return forwardFetchWithTraffic(request, traffic);
     }
   }) as typeof window.fetch;
   interceptedFetch = fetchInterceptor;
   window.fetch = interceptedFetch;
 }
 
-async function forwardFetchWithTraffic(
-  request: Request,
-  id: string,
-  decision: TrafficFinishMessage["decision"],
-  passReason?: ExtensionPassReason,
-) {
+async function forwardFetchWithTraffic(request: Request, traffic: RequestTraffic) {
   try {
     const response = await nativeFetch(request);
-    void finishFetchTraffic(id, response, decision, passReason);
+    void finishFetchTraffic(traffic, response);
     return response;
   } catch (error) {
-    reportTrafficFinish({ id, decision, passReason, endedAt: currentTime(), error: describeError(error) });
+    traffic.finish({ error: describeError(error) });
     throw error;
   }
 }
 
-async function finishFetchTraffic(
-  id: string,
-  response: Response,
-  decision: TrafficFinishMessage["decision"],
-  passReason?: TrafficFinishMessage["passReason"],
-) {
+async function finishFetchTraffic(traffic: RequestTraffic, response: Response) {
   const contentType = response.headers.get("content-type") || "";
   const contentLength = Number(response.headers.get("content-length"));
   const snapshot: NonNullable<TrafficFinishMessage["response"]> = {
@@ -240,7 +192,7 @@ async function finishFetchTraffic(
       snapshot.bodyUnavailable = "unavailable";
     }
   }
-  reportTrafficFinish({ id, decision, passReason, endedAt: currentTime(), response: snapshot });
+  traffic.finish({ response: snapshot });
 }
 
 async function readResponseBodyInfo(response: Response): Promise<TrafficBodyInfo> {
@@ -300,7 +252,7 @@ function createBodyInfo(value: string | undefined): TrafficBodyInfo {
   return { body: value.slice(0, TRAFFIC_BODY_LIMIT), bodyTruncated: true };
 }
 
-function requestSnapshot(request: ExtensionRuntimeRequest): TrafficRequestSnapshot {
+function requestSnapshot(request: TrafficRequestSnapshot): TrafficRequestSnapshot {
   const snapshot: TrafficRequestSnapshot = {
     method: request.method,
     url: request.url,
@@ -324,19 +276,59 @@ function reportTraffic(message: TrafficWindowMessage) {
   }
 }
 
-function reportTrafficStart(entry: TrafficStartEntry) {
-  const message: TrafficStartMessage = { channel: CHANNEL, type: TRAFFIC_START_TYPE, entry };
-  reportTraffic(message);
-}
+type TrafficCompletion = Omit<TrafficFinishMessage, "channel" | "type" | "id" | "endedAt" | "decision"> & {
+  decision?: Exclude<TrafficFinishMessage["decision"], "pending">;
+};
 
-function reportTrafficRequestBody(id: string, body: TrafficBodyInfo) {
-  const message: TrafficRequestBodyMessage = { channel: CHANNEL, type: TRAFFIC_REQUEST_BODY_TYPE, id, ...body };
-  reportTraffic(message);
-}
+// Rule: 两种浏览器 API 共用记录规则；原生事件、请求体读取与取消时序仍由各自路径掌握。
+class RequestTraffic {
+  private readonly id: string;
+  private closed = false;
+  private passReason?: ExtensionPassReason;
 
-function reportTrafficFinish(payload: Omit<TrafficFinishMessage, "channel" | "type">) {
-  const message: TrafficFinishMessage = { channel: CHANNEL, type: TRAFFIC_FINISH_TYPE, ...payload };
-  reportTraffic(message);
+  constructor(
+    source: "fetch" | "xhr",
+    request: TrafficRequestSnapshot,
+    private decision: "pending" | "capture" | "pass",
+    startedAt = currentTime(),
+  ) {
+    this.id = createTrafficId(source);
+    const message: TrafficStartMessage = {
+      channel: CHANNEL, type: TRAFFIC_START_TYPE,
+      entry: { id: this.id, source, decision, startedAt, request: requestSnapshot(request) },
+    };
+    reportTraffic(message);
+  }
+
+  requestBody(body: TrafficBodyInfo) {
+    // Rule: 请求体快照可晚于响应到达，补报不能被结束状态丢弃。
+    const message: TrafficRequestBodyMessage = {
+      channel: CHANNEL, type: TRAFFIC_REQUEST_BODY_TYPE, id: this.id,
+      ...body, ...createBodyInfo(body.body),
+    };
+    reportTraffic(message);
+  }
+
+  pass(reason?: ExtensionPassReason) {
+    this.decision = "pass";
+    this.passReason = reason;
+  }
+
+  finish(read: TrafficCompletion | (() => TrafficCompletion)) {
+    if (this.closed) return;
+    this.closed = true;
+    // Guarantee: 旧 loadend 不再读取重开后的原生 XHR 响应。
+    const result = typeof read === "function" ? read() : read;
+    const message: TrafficFinishMessage = {
+      channel: CHANNEL, type: TRAFFIC_FINISH_TYPE, id: this.id,
+      ...result,
+      decision: result.decision ?? (this.decision === "pending" ? "pass" : this.decision),
+      passReason: result.passReason ?? this.passReason,
+      endedAt: currentTime(),
+      ...(result.response ? { response: { ...result.response, ...createBodyInfo(result.response.body) } } : {}),
+    };
+    reportTraffic(message);
+  }
 }
 
 function askResolver(request: ExtensionRuntimeRequest, signal?: AbortSignal): Promise<ExtensionRuntimeResponse> {
@@ -474,14 +466,7 @@ type XhrState = {
   listeners: XhrListener[];
   mock?: Extract<ExtensionRuntimeResponse, { action: "mock" }>;
   timeoutTimer?: number;
-  traffic?: {
-    id: string;
-    startedAt: number;
-    decision: "pending" | "capture";
-    request: TrafficRequestSnapshot;
-    passReason?: ExtensionPassReason;
-    closed?: boolean;
-  };
+  traffic?: RequestTraffic;
 };
 
 function createXhrHandler(state: XhrState): ProxyHandler<XMLHttpRequest> {
@@ -584,24 +569,12 @@ function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | nul
   const mockActive = isMonitoringActive();
   if (isBinaryOrStreamBody(body) || (!mockActive && !isCaptureActive())) {
     if (isBinaryOrStreamBody(body) && (mockActive || isCaptureActive())) {
-      state.traffic = {
-        id: createTrafficId("xhr"),
-        startedAt: currentTime(),
-        decision: "capture",
-        request: {
-          url: state.url,
-          method: state.method.toUpperCase(),
-          headers: { ...state.requestHeaders },
-          bodyUnavailable: "binary",
-        },
-      };
-      reportTrafficStart({
-        id: state.traffic.id,
-        source: "xhr",
-        decision: state.traffic.decision,
-        startedAt: state.traffic.startedAt,
-        request: state.traffic.request,
-      });
+      state.traffic = new RequestTraffic("xhr", {
+        url: state.url,
+        method: state.method.toUpperCase(),
+        headers: { ...state.requestHeaders },
+        bodyUnavailable: "binary",
+      }, "capture");
     }
     return useDirectXhr(state, body);
   }
@@ -626,19 +599,7 @@ function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | nul
   else if (typeof body === "string") request.body = body;
   else if (body instanceof URLSearchParams) request.body = body.toString();
   else if (body != null) request.bodyUnavailable = "unavailable";
-  state.traffic = {
-    id: createTrafficId("xhr"),
-    startedAt: currentTime(),
-    decision: mockActive ? "pending" : "capture",
-    request: requestSnapshot(request),
-  };
-  reportTrafficStart({
-    id: state.traffic.id,
-    source: "xhr",
-    decision: state.traffic.decision,
-    startedAt: state.traffic.startedAt,
-    request: state.traffic.request,
-  });
+  state.traffic = new RequestTraffic("xhr", request, mockActive ? "pending" : "capture");
   if (!mockActive) {
     useDirectXhr(state, body);
     return;
@@ -646,7 +607,7 @@ function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | nul
   void askResolver(withLogBody(request), state.mockAbortController.signal).then((decision) => {
     if (state.generation !== generation || state.aborted || state.finished) return;
     if (!isMonitoringActive() || decision.action === "pass") {
-      if (decision.action === "pass" && state.traffic) state.traffic.passReason = decision.reason;
+      state.traffic?.pass(decision.action === "pass" ? decision.reason : undefined);
       return useDirectXhr(state, body);
     }
     void useMockXhr(state, decision, generation);
@@ -667,7 +628,7 @@ function useDirectXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit 
   if (state.responseType) state.target.responseType = state.responseType;
   for (const [name, value] of Object.entries(state.requestHeaders)) state.target.setRequestHeader(name, value);
   const traffic = state.traffic;
-  if (traffic && !traffic.closed)
+  if (traffic)
     state.target.addEventListener("loadend", () => finishXhrTraffic(state, traffic), { once: true });
   state.target.send(body);
 }
@@ -700,66 +661,30 @@ async function useMockXhr(
 }
 
 function reportMockXhrTraffic(state: XhrState, decision: Extract<ExtensionRuntimeResponse, { action: "mock" }>) {
-  const traffic = state.traffic;
-  if (!traffic || traffic.closed) return;
-  traffic.closed = true;
-  reportTrafficFinish({
-    id: traffic.id,
-    decision: "mock",
-    endedAt: currentTime(),
-    response: {
-      status: decision.status,
-      statusText: String(decision.status),
-      headers: decision.headers,
-      mimeType: decision.headers["content-type"],
-      ...createBodyInfo(decision.body),
-    },
-  });
+  state.traffic?.finish({ decision: "mock", response: {
+    status: decision.status,
+    statusText: String(decision.status),
+    headers: decision.headers,
+    mimeType: decision.headers["content-type"],
+    body: decision.body,
+  } });
 }
 
-function finishXhrTraffic(state: XhrState, traffic: NonNullable<XhrState["traffic"]>) {
-  if (traffic.closed) return;
-  traffic.closed = true;
-  const target = state.target;
-  const decision = traffic.decision === "pending" ? "pass" : traffic.decision;
-  const endedAt = currentTime();
-  if (target.status === 0) {
-    reportTrafficFinish({
-      id: traffic.id,
-      decision,
-      endedAt,
-      error: state.aborted
-        ? { name: "AbortError", message: "请求已取消" }
-        : { name: "NetworkError", message: "请求未收到响应" },
-    });
-    return;
-  }
-  const headers = parseResponseHeaders(target.getAllResponseHeaders());
-  reportTrafficFinish({
-    id: traffic.id,
-    decision,
-    endedAt,
-    passReason: traffic.passReason,
-    response: {
+function finishXhrTraffic(state: XhrState, traffic: RequestTraffic) {
+  traffic.finish(() => {
+    const target = state.target;
+    if (target.status === 0) return { error: state.aborted
+      ? { name: "AbortError", message: "请求已取消" }
+      : { name: "NetworkError", message: "请求未收到响应" },
+    };
+    const headers = parseResponseHeaders(target.getAllResponseHeaders());
+    return { response: {
       status: target.status,
       statusText: target.statusText,
       headers,
       ...(headers["content-type"] ? { mimeType: headers["content-type"] } : {}),
       ...readXhrBody(target, state.responseType),
-    },
-  });
-}
-
-function closeXhrTraffic(state: XhrState, error: { name: string; message: string }) {
-  const traffic = state.traffic;
-  if (!traffic || traffic.closed) return;
-  traffic.closed = true;
-  reportTrafficFinish({
-    id: traffic.id,
-    decision: traffic.decision === "pending" ? "pass" : traffic.decision,
-    endedAt: currentTime(),
-    passReason: traffic.passReason,
-    error,
+    } };
   });
 }
 
@@ -802,7 +727,7 @@ function abortXhr(state: XhrState) {
   state.mockAbortController.abort();
   state.aborted = true;
   clearXhrTimeout(state);
-  closeXhrTraffic(state, { name: "AbortError", message: "请求已取消" });
+  state.traffic?.finish({ error: { name: "AbortError", message: "请求已取消" } });
   state.readyState = XMLHttpRequest.DONE;
   state.finished = true;
   emitXhrEvent(state, "abort");
@@ -814,7 +739,7 @@ function timeoutXhr(state: XhrState, generation: number) {
   state.mockAbortController.abort();
   state.finished = true;
   state.mode = "mock";
-  closeXhrTraffic(state, { name: "TimeoutError", message: `请求超过 ${state.timeout}ms` });
+  state.traffic?.finish({ error: { name: "TimeoutError", message: `请求超过 ${state.timeout}ms` } });
   state.readyState = XMLHttpRequest.DONE;
   emitXhrEvent(state, "readystatechange");
   emitXhrEvent(state, "timeout");
@@ -823,15 +748,7 @@ function timeoutXhr(state: XhrState, generation: number) {
 
 function resetXhr(state: XhrState) {
   clearXhrTimeout(state);
-  if (state.traffic && !state.traffic.closed) {
-    state.traffic.closed = true;
-    reportTrafficFinish({
-      id: state.traffic.id,
-      decision: state.traffic.decision === "pending" ? "pass" : state.traffic.decision,
-      endedAt: currentTime(),
-      error: { name: "AbortError", message: "请求被重新打开" },
-    });
-  }
+  state.traffic?.finish({ error: { name: "AbortError", message: "请求被重新打开" } });
   state.traffic = undefined;
   state.mockAbortController.abort();
   state.mockAbortController = new AbortController();

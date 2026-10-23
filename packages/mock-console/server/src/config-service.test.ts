@@ -162,6 +162,38 @@ test("跨层级查找失败统一为 NotFoundError", async () => {
   await assert.rejects(() => service.createApi("missing", { name: "接口" }), NotFoundError);
 });
 
+test("校验拒绝整个变更，且不会污染后续成功写入", async (t) => {
+  for (const kind of ["package", "api", "real-service", "scenario"] as const) {
+    await t.test(kind, async () => {
+      const repository = new MemoryRepository();
+      const service = new MockConfigService(repository);
+      await service.initialize();
+      const pkg = await service.createPackage({ name: "原测试包" });
+      const api = await service.createApi(pkg.id, { name: "原接口" });
+      const real = await service.createRealService(pkg.id, { name: "原环境", baseUrl: "https://example.com" });
+      const scenario = await service.createScenario(api.id, { name: "原场景" });
+      const before = structuredClone(service.getState());
+      const changes = {
+        package: () => service.updatePackage(pkg.id, { name: "不应保存", targetBaseUrl: "invalid-url" }),
+        api: () => service.updateApi(api.id, { name: "不应保存", priority: -1 }),
+        "real-service": () => service.updateRealService(real.id, { name: "不应保存", baseUrl: "invalid-url" }),
+        scenario: () => service.updateScenario(scenario.id, { name: "不应保存", responseBody: "{" }),
+      };
+      await assert.rejects(changes[kind]);
+      assert.deepEqual(service.getState(), before);
+      assert.deepEqual(repository.state, before);
+      await service.updateApi(api.id, { priority: 7 });
+      const restarted = new MockConfigService(repository);
+      await restarted.initialize();
+      assert.equal(restarted.getState().packages[0].apis[0].priority, 7);
+      assert.equal(restarted.getState().packages[0].name, "原测试包");
+      assert.equal(restarted.getState().packages[0].apis[0].name, "原接口");
+      assert.equal(restarted.getState().packages[0].realServices[0].name, "原环境");
+      assert.equal(restarted.getState().packages[0].apis[0].scenarios[0].name, "原场景");
+    });
+  }
+});
+
 test("持久化失败时恢复变更前的配置", async () => {
   const repository = new MemoryRepository();
   const service = new MockConfigService(repository);

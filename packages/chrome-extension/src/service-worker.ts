@@ -9,11 +9,7 @@ import type {
   ResolveCancelMessage,
   PopupResponse,
   PopupState,
-  TrafficEntry,
-  TrafficFinishMessage,
   TrafficPanelMessage,
-  TrafficRequestBodyMessage,
-  TrafficStartMessage,
   TrafficWindowMessage,
 } from "./protocol.js";
 import {
@@ -25,12 +21,9 @@ import {
   STATUS_PATH,
   TRAFFIC_PANEL_PORT,
   isRuntimeResponse,
-  isStoredTrafficEntry,
-  isTrafficFinishMessage,
-  isTrafficRequestBodyMessage,
-  isTrafficStartMessage,
   isTrafficWindowMessage,
 } from "./protocol.js";
+import { TabTrafficStore } from "./traffic-store.js";
 import { DEFAULT_WHITELIST, WHITELIST_STORAGE_KEY, urlMatchesWhitelist, normalizeWhitelist } from "./domain-whitelist.js";
 import {
   createResolverHealth,
@@ -45,10 +38,6 @@ const DISABLED_TAB_IDS_KEY = "disabledTabIds";
 const CAPTURE_TAB_IDS_KEY = "captureTabIds";
 const RESOLVER_HEALTH_KEY = "resolverHealth";
 const TRAFFIC_STORAGE_PREFIX = "traffic:";
-const MAX_TRAFFIC_ENTRIES = 500;
-const MAX_PERSISTED_TRAFFIC = 200;
-const PERSISTED_BODY_LIMIT = 4096;
-const TRAFFIC_PERSIST_DELAY_MS = 600;
 
 type ResolveMessage = {
   channel: typeof CHANNEL;
@@ -89,12 +78,16 @@ let resolverHealthWrite = Promise.resolve();
 const pendingResolvers = new Map<string, AbortController>();
 const MAX_RESOLVER_CONCURRENCY = 32;
 let activeResolverCount = 0;
-const trafficStores = new Map<number, Map<string, TrafficEntry>>();
-const trafficLoads = new Map<number, Promise<void>>();
-const trafficVersions = new Map<number, number>();
-const trafficPersistTimers = new Map<number, number>();
 const trafficPanelPorts = new Map<number, Set<TrafficPort>>();
-let trafficStorageWrite: Promise<void> = Promise.resolve();
+const trafficStore = new TabTrafficStore({
+  async read(tabId) {
+    const key = `${TRAFFIC_STORAGE_PREFIX}${tabId}`;
+    return (await chrome.storage.session.get([key]))[key];
+  },
+  async write(tabId, entries) {
+    await chrome.storage.session.set({ [`${TRAFFIC_STORAGE_PREFIX}${tabId}`]: entries });
+  },
+}, broadcastTrafficUpdate);
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (isResolveMessage(message)) {
@@ -159,143 +152,16 @@ async function getMonitoringState(sender: unknown): Promise<MonitoringResponse> 
 function applyTrafficMessage(message: TrafficWindowMessage, sender: unknown) {
   const tabId = senderTabId(sender);
   if (tabId === undefined || !isRecord(sender)) return;
-  const frameId = typeof sender.frameId === "number" ? sender.frameId : 0;
-  const pageUrl = typeof sender.url === "string" ? sender.url : "";
-  const store = getTrafficStore(tabId);
-
-  if (isTrafficStartMessage(message)) {
-    const entry: TrafficEntry = { ...message.entry, tabId, frameId, pageUrl };
-    store.set(trafficKey(frameId, entry.id), entry);
-    trimTrafficStore(store);
-    broadcastTrafficEntry(tabId, entry);
-  } else if (isTrafficRequestBodyMessage(message)) {
-    const existing = store.get(trafficKey(frameId, message.id));
-    if (!existing) return;
-    if (message.body !== undefined) {
-      existing.request.body = message.body;
-      delete existing.request.bodyUnavailable;
-      if (message.bodyTruncated) existing.request.bodyTruncated = true;
-      else delete existing.request.bodyTruncated;
-    } else if (message.bodyUnavailable) {
-      delete existing.request.body;
-      existing.request.bodyUnavailable = message.bodyUnavailable;
-      delete existing.request.bodyTruncated;
-    }
-    broadcastTrafficEntry(tabId, existing);
-  } else if (isTrafficFinishMessage(message)) {
-    const existing = store.get(trafficKey(frameId, message.id));
-    if (!existing) return;
-    existing.decision = message.decision;
-    existing.endedAt = message.endedAt;
-    if (message.passReason) existing.passReason = message.passReason;
-    if (message.response) existing.response = message.response;
-    if (message.error) existing.error = message.error;
-    broadcastTrafficEntry(tabId, existing);
-  }
-  scheduleTrafficPersist(tabId);
+  trafficStore.record(message, {
+    tabId,
+    frameId: typeof sender.frameId === "number" ? sender.frameId : 0,
+    pageUrl: typeof sender.url === "string" ? sender.url : "",
+  });
 }
 
-function trafficKey(frameId: number, id: string) {
-  return `${frameId}:${id}`;
-}
-
-function getTrafficStore(tabId: number) {
-  let store = trafficStores.get(tabId);
-  if (!store) {
-    store = new Map();
-    trafficStores.set(tabId, store);
-    void ensureTrafficLoaded(tabId).catch(() => undefined);
-  }
-  return store;
-}
-
-function ensureTrafficLoaded(tabId: number) {
-  const existing = trafficLoads.get(tabId);
-  if (existing) return existing;
-  const load = loadPersistedTraffic(tabId).finally(() => trafficLoads.delete(tabId));
-  trafficLoads.set(tabId, load);
-  return load;
-}
-
-async function loadPersistedTraffic(tabId: number) {
-  const version = trafficVersions.get(tabId) ?? 0;
-  const key = `${TRAFFIC_STORAGE_PREFIX}${tabId}`;
-  let raw: unknown;
-  try {
-    const stored = await chrome.storage.session.get([key]);
-    raw = stored[key];
-  } catch {
-    return;
-  }
-  // Guarantee: 读取期间发生的清空或关闭不能被旧快照重新填回。
-  if ((trafficVersions.get(tabId) ?? 0) !== version) return;
-  if (!Array.isArray(raw)) return;
-  const store = getTrafficStore(tabId);
-  let changed = false;
-  for (const item of raw) {
-    if (!isStoredTrafficEntry(item) || item.tabId !== tabId) continue;
-    const key = trafficKey(item.frameId, item.id);
-    if (store.has(key)) continue;
-    store.set(key, item);
-    changed = true;
-  }
-  if (!changed) return;
-  trimTrafficStore(store);
-  for (const entry of store.values()) broadcastTrafficEntry(tabId, entry);
-}
-
-function trimTrafficStore(store: Map<string, TrafficEntry>) {
-  if (store.size <= MAX_TRAFFIC_ENTRIES) return;
-  const ordered = [...store.entries()].sort((left, right) => left[1].startedAt - right[1].startedAt);
-  for (let index = 0; index < ordered.length - MAX_TRAFFIC_ENTRIES; index += 1) store.delete(ordered[index][0]);
-}
-
-function scheduleTrafficPersist(tabId: number) {
-  if (trafficPersistTimers.has(tabId)) return;
-  trafficPersistTimers.set(tabId, globalThis.setTimeout(() => {
-    trafficPersistTimers.delete(tabId);
-    void persistTraffic(tabId);
-  }, TRAFFIC_PERSIST_DELAY_MS) as unknown as number);
-}
-
-async function persistTraffic(tabId: number) {
-  const store = trafficStores.get(tabId);
-  if (!store) return;
-  const entries = [...store.values()]
-    .sort((left, right) => left.startedAt - right.startedAt)
-    .slice(-MAX_PERSISTED_TRAFFIC)
-    .map(toPersistedTraffic);
-  await writeTrafficStorage(tabId, entries);
-}
-
-// Guarantee: 持久化写入串行，避免清空与旧快照的写回竞争。
-function writeTrafficStorage(tabId: number, entries: TrafficEntry[]) {
-  const key = `${TRAFFIC_STORAGE_PREFIX}${tabId}`;
-  trafficStorageWrite = trafficStorageWrite
-    .catch(() => undefined)
-    .then(() => chrome.storage.session.set({ [key]: entries }))
-    .catch(() => undefined);
-  return trafficStorageWrite;
-}
-
-function toPersistedTraffic(entry: TrafficEntry): TrafficEntry {
-  return {
-    ...entry,
-    request: { ...entry.request, ...truncatePersistedBody(entry.request) },
-    ...(entry.response ? { response: { ...entry.response, ...truncatePersistedBody(entry.response) } } : {}),
-  };
-}
-
-function truncatePersistedBody(target: { body?: string; bodyUnavailable?: string; bodyTruncated?: boolean }) {
-  if (target.body === undefined) return {};
-  if (target.body.length <= PERSISTED_BODY_LIMIT) return { body: target.body };
-  return { body: target.body.slice(0, PERSISTED_BODY_LIMIT), bodyTruncated: true };
-}
-
-function broadcastTrafficEntry(tabId: number, entry: TrafficEntry) {
+function broadcastTrafficUpdate(tabId: number, message: Extract<TrafficPanelMessage, { type: "entry" | "cleared" }>) {
   const ports = trafficPanelPorts.get(tabId);
   if (!ports) return;
-  const message: TrafficPanelMessage = { type: "entry", entry };
   for (const port of ports) {
     try {
       port.postMessage(message);
@@ -306,10 +172,8 @@ function broadcastTrafficEntry(tabId: number, entry: TrafficEntry) {
 }
 
 async function sendTrafficSnapshot(tabId: number, port: TrafficPort) {
-  const store = getTrafficStore(tabId);
-  await ensureTrafficLoaded(tabId).catch(() => undefined);
+  const entries = await trafficStore.snapshot(tabId);
   const activation = await getActivationState();
-  const entries = [...store.values()].sort((left, right) => left.startedAt - right.startedAt);
   const message: TrafficPanelMessage = {
     type: "snapshot",
     entries,
@@ -320,34 +184,6 @@ async function sendTrafficSnapshot(tabId: number, port: TrafficPort) {
   } catch {
     // Failure: 面板已关闭时忽略推送失败。
   }
-}
-
-function clearTraffic(tabId: number) {
-  trafficVersions.set(tabId, (trafficVersions.get(tabId) ?? 0) + 1);
-  const timer = trafficPersistTimers.get(tabId);
-  if (timer !== undefined) globalThis.clearTimeout(timer);
-  trafficPersistTimers.delete(tabId);
-  trafficStores.get(tabId)?.clear();
-  void writeTrafficStorage(tabId, []);
-  const message: TrafficPanelMessage = { type: "cleared" };
-  for (const port of trafficPanelPorts.get(tabId) ?? []) {
-    try {
-      port.postMessage(message);
-    } catch {
-      // Failure: 面板已关闭时忽略推送失败。
-    }
-  }
-}
-
-function dropTrafficTab(tabId: number) {
-  trafficVersions.set(tabId, (trafficVersions.get(tabId) ?? 0) + 1);
-  trafficStores.delete(tabId);
-  trafficLoads.delete(tabId);
-  trafficPanelPorts.delete(tabId);
-  const timer = trafficPersistTimers.get(tabId);
-  if (timer !== undefined) globalThis.clearTimeout(timer);
-  trafficPersistTimers.delete(tabId);
-  void writeTrafficStorage(tabId, []);
 }
 
 function broadcastTrafficState(tabId: number, captureTab: boolean) {
@@ -401,7 +237,7 @@ function registerTrafficPanel() {
         return;
       }
       if (message.type === "clear") {
-        clearTraffic(tabId);
+        void trafficStore.clear(tabId);
         return;
       }
       if (message.type === "set-capture" && typeof message.enabled === "boolean") {
@@ -415,7 +251,10 @@ function registerTrafficPanel() {
       if (ports?.size === 0) trafficPanelPorts.delete(tabId);
     });
   });
-  chrome.tabs.onRemoved?.addListener?.((tabId) => dropTrafficTab(tabId));
+  chrome.tabs.onRemoved?.addListener?.((tabId) => {
+    trafficPanelPorts.delete(tabId);
+    void trafficStore.dropTab(tabId);
+  });
 }
 
 registerTrafficPanel();

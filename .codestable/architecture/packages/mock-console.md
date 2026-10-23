@@ -6,7 +6,7 @@
 
 ## 边界
 
-- `server/` 是服务端组合根和运行时边界，负责配置持久化、管理 API、扩展 resolver、Proxy 转发和运行日志。
+- `server/` 是服务端组合根和运行时边界，负责配置持久化、管理 API、扩展 resolver、Proxy 转发和运行日志；`config-service.ts` 的变更队列统一拥有失败恢复，响应选择保留先持久化候选快照再发布的生效边界。
 - `web/` 只负责管理页面、表单、状态和管理 API 客户端，不持有浏览器扩展注入逻辑。
 - `shared/response-selection.ts` 拥有响应选择的纯条件判断、校验和引用定位，运行时与草稿试算共用，不执行 IO；业务语义见 [响应选择规则](../../requirements/CONTEXT.md#mock-console-领域规则)。
 - `shared/types.ts` 只拥有 Mock Console 的领域状态、配置和日志类型；扩展 resolver 的跨包线协议类型由 [`package:extension-contract`](./extension-contract.md) 拥有。
@@ -17,7 +17,7 @@
 | 区域 | 入口 | 责任 |
 | --- | --- | --- |
 | server/bootstrap | `packages/mock-console/server/src/index.ts` | Fastify、CORS、静态页面、端口和组合根 |
-| server/config | `config-service.ts` | 串行配置变更和持久化协调；响应选择先写候选快照，成功后发布 |
+| server/config | `config-service.ts` | 串行配置变更、失败恢复和持久化协调 |
 | server/routes | `admin-routes.ts`、`extension-routes.ts` | 管理 API 与扩展 resolver 的 HTTP 转换 |
 | server/runtime | `runtime-resolver.ts` | 按当前 Package、接口优先级和响应选择生成 Mock / pass 判定 |
 | server/proxy | `proxy.ts` | Reqable / 本地 Proxy 请求匹配、Mock 返回和真实转发 |

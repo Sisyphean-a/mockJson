@@ -7,9 +7,10 @@
 ## 边界
 
 - `content-main.ts` 运行在 MAIN world，包装页面请求；页面域名命中白名单且 Mock 启用时进入判定，或用户对当前标签页显式开启“只记录”时进入纯观测模式。未进入任一模式时不安装任何请求 API 包装。multipart / FormData 只发送元数据参与判定，具体支持边界见 [上传判定规则](../../requirements/CONTEXT.md#chrome-extension-领域规则)；不接管流式或二进制 Mock。
-- `content-main.ts` 在观测模式下上报 `traffic-start`、`traffic-request-body`、`traffic-finish` 三段消息：请求体读取失败或超限不改变页面请求；放行响应只读取 `Response.clone()`，不消费页面拿到的响应。单条请求体/响应体预览上限 64 KiB。
+- `content-main.ts` 内的 `RequestTraffic` 统一组装 `traffic-start`、`traffic-request-body`、`traffic-finish` 消息、裁剪预览并保证一次结束；请求体补报可晚于结束，发起时间在异步快照前固定。fetch 的唯一 Request / Response.clone()、XHR 原生事件与 generation 各自由原路径负责。该单元留在自包含脚本内，不引入 MAIN world 的运行时共享 chunk。
 - `content-bridge.ts` 运行在隔离世界，只负责页面与 Service Worker 的消息桥接、traffic 消息转发和取消传播。
-- `service-worker.ts` 负责页面白名单、Mock 与只记录状态、本机 resolver 请求、超时、并发和健康短路；从 Chrome 提供的消息来源 URL 复核 frame 授权。另维护每标签页最多 500 条的 traffic 环形缓冲，并把最近 200 条、单字段最多 4 KiB 的副本防抖写入 `chrome.storage.session`。
+- `service-worker.ts` 负责页面白名单、Mock 与只记录状态、本机 resolver 请求、超时、并发和健康短路；从 Chrome 提供的消息来源 URL 复核 frame 授权，并装配 Chrome 消息、面板端口与会话存储。
+- `traffic-store.ts` 的 `TabTrafficStore` 拥有按标签页/frame 合并记录、排序裁剪、会话恢复、防抖串行写回及清空/关闭时的旧读失效。存储与更新通知由 worker 注入，面板端口和开关仍归 worker；容量与采集边界见[请求观测面板规则](../../requirements/CONTEXT.md#chrome-extension-领域规则)。
 - `panel.ts` + `public/panel.html` 是同一份面板 UI：既通过 `devtools.ts` 注册为 DevTools 顶部标签，也可作为独立扩展页打开；顶部工具栏只保留筛选、记录、暂停和清空，请求列表按发起时间展示，选中后底部用「请求 / 响应」tab 查看详情。它不依赖 Mock Console 服务，也不修改 Mock 配置。
 - `popup.ts` 只负责扩展开关、白名单、连接状态、“记录本页请求”和打开请求面板，不读取 Mock Package、Logical API 或 Scenario。
 - 不直接导入 `package:mock-console` 的源码；跨包 resolver DTO 只通过 [`package:extension-contract`](./extension-contract.md) 引用。traffic 消息和面板 DTO 属于扩展内部 `protocol.ts`，不进入共享契约。
@@ -20,7 +21,8 @@
 | --- | --- | --- |
 | main | `packages/chrome-extension/src/content-main.ts` | MAIN world 请求拦截、原生放行、Mock 响应和 traffic 采集 |
 | bridge | `packages/chrome-extension/src/content-bridge.ts` | 隔离世界消息转发、traffic 转发和取消 |
-| worker | `packages/chrome-extension/src/service-worker.ts` | 白名单、resolver、开关、traffic 缓冲和面板推送 |
+| worker | `packages/chrome-extension/src/service-worker.ts` | 白名单、resolver、开关、Chrome 接线和面板推送 |
+| traffic | `packages/chrome-extension/src/traffic-store.ts` | 请求记录生命周期与会话副本 |
 | devtools | `packages/chrome-extension/src/devtools.ts`、`public/devtools.html` | 注册 DevTools「接口面板」标签并传入被检查标签页 |
 | panel | `packages/chrome-extension/src/panel.ts`、`public/panel.html` | DevTools 面板与独立页共用的请求列表、详情和复制 cURL |
 | popup | `packages/chrome-extension/src/popup.ts` | Popup 交互、只记录开关和面板入口 |

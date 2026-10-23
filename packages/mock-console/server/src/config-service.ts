@@ -32,7 +32,19 @@ export class MockConfigService {
   private mutationQueue: Promise<unknown> = Promise.resolve();
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const pending = this.mutationQueue.then(operation);
+    const pending = this.mutationQueue.then(async () => {
+      try {
+        return await operation();
+      } catch (error) {
+        // Guarantee: 校验和写入失败都恢复已提交配置，不能把半份变更留给后续请求。
+        if (this.state && this.persistedSnapshot !== null) {
+          const persisted = JSON.parse(this.persistedSnapshot) as State;
+          this.state.packages = persisted.packages;
+          this.state.currentPackageId = persisted.currentPackageId;
+        }
+        throw error;
+      }
+    });
     // Failure: 调用方仍收到 pending 的失败；队列仅解除拒绝状态，让后续修改可以重试。
     this.mutationQueue = pending.catch(() => {});
     return pending;
@@ -384,19 +396,10 @@ export class MockConfigService {
 
   private async save() {
     const state = this.getState();
-    try {
-      const serializedState = JSON.stringify(state, null, 2);
-      await this.repository.write(state, serializedState);
-      // Rule: 常驻序列化快照，只有写入失败时才解析回滚，避免长期保留整份对象副本。
-      this.persistedSnapshot = serializedState;
-    } catch (error) {
-      const persisted = this.persistedSnapshot === null
-        ? { currentPackageId: null, packages: [] }
-        : JSON.parse(this.persistedSnapshot) as State;
-      state.packages = persisted.packages;
-      state.currentPackageId = persisted.currentPackageId;
-      throw error;
-    }
+    const serializedState = JSON.stringify(state, null, 2);
+    await this.repository.write(state, serializedState);
+    // Rule: 常驻已提交快照，失败恢复由变更队列统一负责，避免长期保留整份对象副本。
+    this.persistedSnapshot = serializedState;
   }
 }
 

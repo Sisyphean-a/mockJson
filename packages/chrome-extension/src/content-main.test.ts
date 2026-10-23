@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Script } from "node:vm";
 import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
-import { RESOLVE_TIMEOUT_MS } from "./protocol.js";
 import type { ExtensionRuntimeRequest } from "@mock-json/extension-contract";
 
 const source = readFileSync(new URL("./content-main.ts", import.meta.url), "utf8");
@@ -11,10 +10,11 @@ const compiledSource = transpileModule(source, {
   compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 },
 }).outputText.replace(/\nexport \{\};?\s*$/, "\n");
 
-function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock") {
+function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock" | "invalid", options: { mockBody?: string; nativeResponse?: () => Promise<Response>; now?: () => number } = {}) {
   const forwarded: Request[] = [];
   const posted: ExtensionRuntimeRequest[] = [];
-  const trafficMessages: Array<{ type: string; id?: string; entry?: any; decision?: string; response?: any; body?: string }> = [];
+  const trafficMessages: Array<{ type: string; id?: string; entry?: any; decision?: string; response?: any; body?: string; bodyTruncated?: boolean; error?: { name: string; message: string } }> = [];
+  const cancelled: string[] = [];
   const bodyClones: Request[] = [];
   const messageListeners: Array<(event: { source: unknown; data: unknown }) => void> = [];
   const nativeXhrInstances: NativeXMLHttpRequest[] = [];
@@ -48,7 +48,7 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock")
   const fakeWindow = {
     fetch(input: RequestInfo | URL) {
       forwarded.push(input as Request);
-      return Promise.resolve(new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }));
+      return options.nativeResponse?.() ?? Promise.resolve(new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }));
     },
     XMLHttpRequest: NativeXMLHttpRequest,
     location: { hostname: "upload.test", port: "443", href: "https://upload.test/" },
@@ -57,6 +57,7 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock")
     },
     postMessage(message: { type?: string; id?: string; request?: ExtensionRuntimeRequest; entry?: unknown; decision?: string; response?: unknown; body?: string }) {
       if (message.type === "monitoring-state-request") return;
+      if (message.type === "cancel") { cancelled.push(message.id!); return; }
       if (message.type?.startsWith("traffic-")) {
         trafficMessages.push(message as (typeof trafficMessages)[number]);
         return;
@@ -73,8 +74,8 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock")
               channel: "__mock_console_extension_v1",
               type: "resolve-result",
               id: message.id,
-              result: mode === "mock"
-                ? { action: "mock", status: 200, delayMs: 0, body: "{}", headers: { "content-type": "application/json" } }
+              result: mode === "invalid" ? undefined : mode === "mock"
+                ? { action: "mock", status: 200, delayMs: 0, body: options.mockBody ?? "{}", headers: { "content-type": "application/json" } }
                 : { action: "pass" },
             },
           });
@@ -113,11 +114,12 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock")
     setTimeout,
     clearTimeout,
     queueMicrotask,
+    ...(options.now ? { performance: { timeOrigin: 1000, now: options.now } } : {}),
   };
   new Script(compiledSource).runInNewContext(sandbox);
   const messageListener = messageListeners[0];
   assert.ok(messageListener);
-  return { fakeWindow, forwarded, posted, trafficMessages, bodyClones, messageListener, originalFetch, originalXMLHttpRequest, nativeXhrInstances };
+  return { fakeWindow, forwarded, posted, cancelled, trafficMessages, bodyClones, messageListener, originalFetch, originalXMLHttpRequest, nativeXhrInstances };
 }
 
 async function runForwardedFetch(
@@ -145,29 +147,19 @@ test("MAIN world content script stays self-contained", () => {
   assert.doesNotMatch(source, /^export\b/m);
 });
 
-test("resolver timeout and invalid responses fail open without an unhandled action access", () => {
-  assert.equal(RESOLVE_TIMEOUT_MS, 1000);
-  assert.match(source, /const CONTENT_RESOLVE_TIMEOUT_MS = 1200/);
-  assert.match(source, /resolve\(isRuntimeResponse\(result\)/);
-  assert.match(source, /\.catch\(\(\) =>/);
-});
-
-test("MAIN world avoids resolver work when monitoring is inactive and propagates cancellation", () => {
-  const fastPath = source.indexOf("if (!mockActive && !isCaptureActive()) return nativeFetch(input, init)");
-  const requestConstruction = source.indexOf("const request = new Request");
-  assert.ok(fastPath >= 0 && fastPath < requestConstruction);
-  assert.match(source, /type: "cancel"/);
-  assert.match(source, /askResolver\(withLogBody\(request\), state\.mockAbortController\.signal\)/);
-  assert.match(source, /waitForDelay\(decision\.delayMs, state\.mockAbortController\.signal\)/);
-});
-
-test("fetch native fallbacks reuse the inspected Request to preserve one-shot upload bodies", () => {
-  const requestConstruction = source.indexOf("const request = new Request");
-  const resolver = source.indexOf("function askResolver", requestConstruction);
-  assert.ok(requestConstruction >= 0 && resolver > requestConstruction);
-  const inspectedFetchCode = source.slice(requestConstruction, resolver);
-  assert.doesNotMatch(inspectedFetchCode, /nativeFetch\(input, init\)/);
-  assert.match(inspectedFetchCode, /nativeFetch\(request\)/);
+test("resolver 超时、异常或无效结果均原生放行，且保留一次性请求体", async () => {
+  for (const mode of ["timeout", "throw", "invalid"] as const) {
+    const harness = createContentScriptHarness(mode);
+    harness.messageListener({ source: harness.fakeWindow, data: {
+      channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, whitelist: ["upload.test"],
+    } });
+    const request = new Request("https://upload.test/api", { method: "POST", body: "one-shot" });
+    const response = await harness.fakeWindow.fetch(request);
+    assert.equal(await response.text(), "ok");
+    assert.equal(harness.forwarded.length, 1);
+    assert.equal(await harness.forwarded[0].text(), "one-shot");
+    assert.equal(harness.posted.length, 1);
+  }
 });
 
 test("native fetch and XMLHttpRequest stay untouched before monitoring is enabled", () => {
@@ -583,4 +575,141 @@ test("二进制 fetch 放行时仍记录请求元数据和真实响应", async (
   const finish = harness.trafficMessages.find((message) => message.type === "traffic-finish");
   assert.equal(finish?.decision, "capture");
   assert.equal(finish?.response?.status, 200);
+});
+
+const flushTraffic = () => new Promise((resolve) => setTimeout(resolve, 10));
+function enableCapture(harness: ReturnType<typeof createContentScriptHarness>, mock = true) {
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: mock, capture: true, whitelist: ["upload.test"],
+  } });
+}
+
+test("fetch 和 XHR 的 Mock 响应预览一致截断，不改变页面收到的响应", async () => {
+  const body = "x".repeat(70 * 1024);
+  const harness = createContentScriptHarness("mock", { mockBody: body });
+  enableCapture(harness);
+  const response = await harness.fakeWindow.fetch("https://upload.test/api");
+  assert.equal(await response.text(), body);
+  const xhr = new harness.fakeWindow.XMLHttpRequest();
+  xhr.open("POST", "https://upload.test/api");
+  xhr.send(body);
+  await flushTraffic();
+  assert.equal(xhr.responseText, body);
+  const finishes = harness.trafficMessages.filter((m) => m.type === "traffic-finish");
+  assert.equal(finishes.length, 2);
+  for (const finish of finishes) {
+    assert.equal(finish.response.body.length, 64 * 1024);
+    assert.equal(finish.response.bodyTruncated, true);
+  }
+  const xhrStart = harness.trafficMessages.find((m) => m.entry?.source === "xhr");
+  assert.equal(xhrStart?.entry.request.body.length, 64 * 1024);
+});
+
+test("只记录时请求体可晚于响应补报，并受相同预览上限约束", async () => {
+  const harness = createContentScriptHarness("pass");
+  enableCapture(harness, false);
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+  const request = new Request("https://upload.test/api", { method: "POST", body, duplex: "half" } as RequestInit & { duplex: "half" });
+  const response = await harness.fakeWindow.fetch(request);
+  await flushTraffic();
+  assert.equal(await response.text(), "ok");
+  assert.equal(harness.trafficMessages.filter((m) => m.type === "traffic-finish").length, 1);
+  assert.equal(harness.trafficMessages.some((m) => m.type === "traffic-request-body"), false);
+  controller.enqueue(new TextEncoder().encode("x".repeat(70 * 1024)));
+  controller.close();
+  await flushTraffic();
+  const patch = harness.trafficMessages.find((m) => m.type === "traffic-request-body");
+  assert.equal(patch?.body?.length, 64 * 1024);
+  assert.equal(patch?.bodyTruncated, true);
+  assert.equal(harness.posted.length, 0);
+  assert.equal((await harness.forwarded[0].text()).length, 70 * 1024);
+});
+
+test("fetch 发起时间不受请求体快照完成顺序影响", async () => {
+  let time = 100;
+  const harness = createContentScriptHarness("mock", { now: () => time });
+  enableCapture(harness);
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+  const request = new Request("https://upload.test/first", { method: "POST", body, duplex: "half" } as RequestInit & { duplex: "half" });
+  const first = harness.fakeWindow.fetch(request);
+  time = 200;
+  await harness.fakeWindow.fetch("https://upload.test/second");
+  time = 300;
+  controller.enqueue(new TextEncoder().encode("body"));
+  controller.close();
+  await first;
+  const starts = harness.trafficMessages.filter((m) => m.type === "traffic-start");
+  assert.equal(starts.find((m) => m.entry.request.url.endsWith("/first"))?.entry.startedAt, 1100);
+  assert.equal(starts.find((m) => m.entry.request.url.endsWith("/second"))?.entry.startedAt, 1200);
+});
+
+test("XHR 取消或超时只结束一次记录，不触发真实请求", async () => {
+  for (const kind of ["abort", "timeout"] as const) {
+    const harness = createContentScriptHarness(kind === "timeout" ? "timeout" : "mock");
+    enableCapture(harness);
+    const xhr = new harness.fakeWindow.XMLHttpRequest();
+    xhr.open("POST", "https://upload.test/api");
+    if (kind === "timeout") xhr.timeout = 5;
+    xhr.send("payload");
+    if (kind === "abort") xhr.abort();
+    await flushTraffic();
+    const finishes = harness.trafficMessages.filter((m) => m.type === "traffic-finish");
+    assert.equal(finishes.length, 1);
+    assert.equal(finishes[0].error?.name, kind === "abort" ? "AbortError" : "TimeoutError");
+    assert.equal(harness.cancelled.length, 1);
+    assert.equal(harness.nativeXhrInstances[0].sentBodies.length, 0);
+  }
+});
+
+test("XHR 重新打开结束旧记录，晚到的旧判定不会结束新请求", async () => {
+  const harness = createContentScriptHarness("mock");
+  enableCapture(harness);
+  const xhr = new harness.fakeWindow.XMLHttpRequest();
+  xhr.open("POST", "https://upload.test/old");
+  xhr.send("old");
+  xhr.open("POST", "https://upload.test/new");
+  xhr.send("new");
+  await flushTraffic();
+  const starts = harness.trafficMessages.filter((m) => m.type === "traffic-start");
+  const finishes = harness.trafficMessages.filter((m) => m.type === "traffic-finish");
+  assert.equal(finishes.length, 2);
+  assert.equal(finishes[0].id, starts[0].entry.id);
+  assert.equal(finishes[0].error?.name, "AbortError");
+  assert.equal(finishes[1].id, starts[1].entry.id);
+  assert.equal(finishes[1].decision, "mock");
+});
+
+test("已结束 XHR 的旧 loadend 不再读取原生响应或重复上报", () => {
+  const harness = createContentScriptHarness("pass");
+  enableCapture(harness, false);
+  const xhr = new harness.fakeWindow.XMLHttpRequest();
+  xhr.open("GET", "https://upload.test/api");
+  xhr.send();
+  const target = harness.nativeXhrInstances[0] as any;
+  Object.assign(target, { status: 200, responseText: "native", getAllResponseHeaders: () => "content-type: text/plain" });
+  const finish = target.listeners.find((item: any) => item.type === "loadend").listener;
+  finish(new Event("loadend"));
+  Object.defineProperty(target, "responseText", { get() { throw new Error("旧响应已不可读"); } });
+  assert.doesNotThrow(() => finish(new Event("loadend")));
+  assert.equal(harness.trafficMessages.filter((m) => m.type === "traffic-finish").length, 1);
+});
+
+test("观测上报失败不会改变 fetch 的响应或真实网络失败", async () => {
+  for (const fail of [false, true]) {
+    const harness = createContentScriptHarness("pass", { nativeResponse: async () => {
+      if (fail) throw new Error("network failed");
+      return new Response("native");
+    } });
+    enableCapture(harness, false);
+    const postMessage = harness.fakeWindow.postMessage;
+    harness.fakeWindow.postMessage = (message: { type: string }) => {
+      if (message.type.startsWith("traffic-")) throw new Error("面板不可用");
+      postMessage(message);
+    };
+    const response = harness.fakeWindow.fetch("https://upload.test/api");
+    if (fail) await assert.rejects(response, /network failed/);
+    else assert.equal(await (await response).text(), "native");
+  }
 });
