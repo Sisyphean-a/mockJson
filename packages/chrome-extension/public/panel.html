@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>接口面板 · Mock Console</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <input id="search" class="search" type="search" placeholder="筛选 URL / 方法 / 状态" autocomplete="off" />
+      <select id="filter" class="filter">
+        <option value="all">全部</option>
+        <option value="mock">Mock</option>
+        <option value="pass">放行</option>
+        <option value="capture">只记录</option>
+        <option value="fail">失败</option>
+      </select>
+      <span id="summary" class="summary">0</span>
+      <div class="toolbar-actions">
+        <button id="capture-toggle" class="button" type="button">记录本页</button>
+        <button id="pause" class="button" type="button">暂停</button>
+        <button id="clear" class="button danger" type="button">清空</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="list-pane">
+        <div id="list-scroll" class="list-scroll">
+          <table class="grid">
+            <thead>
+              <tr>
+                <th class="col-time">时间</th>
+                <th class="col-method">方法</th>
+                <th>请求</th>
+                <th class="col-status">状态</th>
+                <th class="col-decision">类型</th>
+                <th class="col-timeline">时间线</th>
+                <th class="col-size">大小</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <p id="empty" class="empty">正在连接扩展后台…</p>
+        </div>
+      </section>
+      <section id="detail" class="detail-pane" hidden></section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>

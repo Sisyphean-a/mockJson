@@ -3,6 +3,9 @@ const CHANNEL = "__mock_console_extension_v1";
 const MONITORING_STATE_TYPE = "monitoring-state";
 const MONITORING_STATE_REQUEST_TYPE = "monitoring-state-request";
 const REFRESH_MONITORING_TYPE = "refresh-monitoring";
+const TRAFFIC_START_TYPE = "traffic-start";
+const TRAFFIC_REQUEST_BODY_TYPE = "traffic-request-body";
+const TRAFFIC_FINISH_TYPE = "traffic-finish";
 
 type ResolveMessage = {
   channel: typeof CHANNEL;
@@ -28,6 +31,7 @@ type MonitoringStateWindowMessage = {
   channel: typeof CHANNEL;
   type: typeof MONITORING_STATE_TYPE;
   enabled: boolean;
+  capture: boolean;
   whitelist: string[];
 };
 
@@ -43,6 +47,7 @@ type MonitoringRefreshMessage = {
 
 type MonitoringStateResponse = {
   enabled: boolean;
+  capture: boolean;
   whitelist: string[];
 };
 
@@ -64,6 +69,11 @@ window.addEventListener("message", (event) => {
   }
   if (isResolveCancelMessage(event.data)) {
     cancelledResolutions.add(event.data.id);
+    void chrome.runtime.sendMessage(event.data).catch(() => undefined);
+    return;
+  }
+  if (isTrafficWindowMessage(event.data)) {
+    // Flow: 请求观测只做转发；字段校验、缓冲和面板推送由 Service Worker 负责。
     void chrome.runtime.sendMessage(event.data).catch(() => undefined);
     return;
   }
@@ -92,7 +102,7 @@ function requestMonitoringState() {
 }
 
 async function syncMonitoringState() {
-  let state: MonitoringStateResponse = { enabled: false, whitelist: [] };
+  let state: MonitoringStateResponse = { enabled: false, capture: false, whitelist: [] };
   try {
     const result: unknown = await chrome.runtime.sendMessage({ channel: CHANNEL, type: "get-monitoring" });
     if (isMonitoringStateResponse(result)) state = result;
@@ -103,6 +113,7 @@ async function syncMonitoringState() {
     channel: CHANNEL,
     type: MONITORING_STATE_TYPE,
     enabled: state.enabled,
+    capture: state.capture,
     whitelist: state.whitelist,
   };
   window.postMessage(message, "*");
@@ -130,9 +141,15 @@ function isMonitoringStateResponse(value: unknown): value is MonitoringStateResp
   return (
     isRecord(value) &&
     typeof value.enabled === "boolean" &&
+    typeof value.capture === "boolean" &&
     Array.isArray(value.whitelist) &&
     value.whitelist.every((domain) => typeof domain === "string")
   );
+}
+
+function isTrafficWindowMessage(value: unknown): boolean {
+  return isRecord(value) && value.channel === CHANNEL &&
+    (value.type === TRAFFIC_START_TYPE || value.type === TRAFFIC_REQUEST_BODY_TYPE || value.type === TRAFFIC_FINISH_TYPE);
 }
 
 function isResolveMessage(value: unknown): value is ResolveMessage {

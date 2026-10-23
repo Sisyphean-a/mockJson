@@ -76,7 +76,8 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 </script>
 
 <template>
-  <div v-if="modalOpen" class="modal-backdrop" @click.self="closeModal">
+  <!-- Rule: 点击遮罩不关闭弹窗，避免选中文本或拖拽时误关；只通过关闭按钮、取消或 Escape 退出。 -->
+  <div v-if="modalOpen" class="modal-backdrop">
     <div ref="modalRef" :class="['modal', { 'real-services-modal': c.showRealServices.value }]" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-description" tabindex="-1">
       <button class="close" aria-label="关闭" @click="closeModal">×</button>
       <h2 id="modal-title">{{ c.showMoveApi.value ? "切换包" : c.showRealServices.value ? "管理转发环境" : c.showPackage.value ? "管理测试包" : c.showApi.value ? (c.apiEditName.value ? "编辑逻辑接口" : "新建逻辑接口") : c.sceneEditMode.value ? "编辑响应场景" : "新建响应场景" }}</h2>

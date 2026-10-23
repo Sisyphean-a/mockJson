@@ -10,7 +10,9 @@
 body {
   width: 336px;
   min-height: 430px;
+  max-height: 600px;
   margin: 0;
+  overflow-y: auto;
 }
 
 .popup {
@@ -168,6 +170,31 @@ h1 {
 
 .save:hover { background: #4358d8; }
 .save:disabled { cursor: wait; opacity: .6; }
+
+.open-panel {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #20243a;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.open-panel:hover { background: #313754; }
+.open-panel:disabled { cursor: default; opacity: .45; }
+
+.devtools-hint {
+  display: block;
+  margin: 7px 2px 0;
+  color: #737b99;
+  font-size: 11px;
+  line-height: 1.45;
+}
 
 .hint {
   min-height: 30px;

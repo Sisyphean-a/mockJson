@@ -1,12 +1,27 @@
 import type {
+  ExtensionPassReason,
   ExtensionRuntimeRequest,
   ExtensionRuntimeResponse,
 } from "@mock-json/extension-contract";
+import type {
+  TrafficBodyInfo,
+  TrafficFinishMessage,
+  TrafficRequestBodyMessage,
+  TrafficRequestSnapshot,
+  TrafficStartEntry,
+  TrafficStartMessage,
+  TrafficWindowMessage,
+} from "./protocol.js";
 
 // MAIN world 内容脚本必须自包含，不能依赖 Vite 生成的共享 chunk；Chrome 会按普通脚本解析它。
 const CHANNEL = "__mock_console_extension_v1";
 const MONITORING_STATE_TYPE = "monitoring-state";
 const MONITORING_STATE_REQUEST_TYPE = "monitoring-state-request";
+const TRAFFIC_START_TYPE = "traffic-start";
+const TRAFFIC_REQUEST_BODY_TYPE = "traffic-request-body";
+const TRAFFIC_FINISH_TYPE = "traffic-finish";
+// Rule: 面板只保留可读预览，超过上限的文本截断显示，不阻塞页面请求。
+const TRAFFIC_BODY_LIMIT = 64 * 1024;
 // Flow: 页面层比 Service Worker 的 1 秒超时多等 200ms，覆盖消息往返延迟。
 const CONTENT_RESOLVE_TIMEOUT_MS = 1200;
 
@@ -14,6 +29,7 @@ type MonitoringStateWindowMessage = {
   channel: typeof CHANNEL;
   type: typeof MONITORING_STATE_TYPE;
   enabled: boolean;
+  capture?: boolean;
   whitelist: string[];
 };
 
@@ -36,7 +52,9 @@ const NativeXMLHttpRequest = window.XMLHttpRequest;
 const pendingResolutions = new Map<string, (result: unknown) => void>();
 const requestIdPrefix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 let nextRequestId = 0;
+let nextTrafficId = 0;
 let monitoringEnabled = false;
+let captureEnabled = false;
 let monitoringWhitelist: string[] = [];
 let interceptedFetch: typeof window.fetch | undefined;
 let interceptedXMLHttpRequest: typeof XMLHttpRequest | undefined;
@@ -45,6 +63,7 @@ window.addEventListener("message", (event) => {
   if (event.source !== window) return;
   if (isMonitoringStateWindowMessage(event.data)) {
     monitoringEnabled = event.data.enabled;
+    captureEnabled = event.data.capture === true;
     monitoringWhitelist = event.data.whitelist;
     updateInterceptors();
     return;
@@ -62,11 +81,11 @@ if (!isMockConsolePage()) {
 
 function updateInterceptors() {
   if (isMockConsolePage()) return;
-  const shouldIntercept = isMonitoringActive();
+  const shouldIntercept = isMonitoringActive() || isCaptureActive();
   if (shouldIntercept) installFetchInterceptor();
   else if (interceptedFetch && window.fetch === interceptedFetch) window.fetch = originalFetch;
 
-  // Guarantee: 非白名单页面不替换任何请求 API，避免改变第三方页面可观察的函数和实例语义。
+  // Guarantee: 未显式开启“只记录”时，非白名单页面不替换任何请求 API，避免改变第三方页面可观察的函数和实例语义。
   if (shouldIntercept) installXhrInterceptor();
   else if (interceptedXMLHttpRequest && window.XMLHttpRequest === interceptedXMLHttpRequest)
     window.XMLHttpRequest = NativeXMLHttpRequest;
@@ -78,40 +97,246 @@ function installFetchInterceptor() {
     return;
   }
   const fetchInterceptor = (async function interceptedFetch(input: RequestInfo | URL, init?: RequestInit) {
-    if (!isMonitoringActive()) return nativeFetch(input, init);
-    // Guarantee: 只在白名单页面处理 HTTP 请求；进入判定后复用唯一 Request，保留一次性请求体。
+    const mockActive = isMonitoringActive();
+    if (!mockActive && !isCaptureActive()) return nativeFetch(input, init);
+    // Guarantee: 进入观测后复用唯一 Request，保留一次性请求体；记录失败只能影响面板，不能改变页面请求结果。
     const url = getRequestUrl(input);
     if (!url || !isHttpUrl(url)) return nativeFetch(input, init);
     const request = new Request(input, init);
-    if (isBinaryRequest(request)) return nativeFetch(request);
+    if (isBinaryRequest(request)) {
+      // Flow: 二进制请求不进入判定也不读取内容，但保留元数据和真实响应状态。
+      const trafficId = createTrafficId("fetch");
+      reportTrafficStart({
+        id: trafficId, source: "fetch", decision: "capture", startedAt: currentTime(),
+        request: {
+          url: request.url,
+          method: request.method,
+          headers: headersToRecord(request.headers),
+          bodyUnavailable: "binary",
+        },
+      });
+      try {
+        const response = await nativeFetch(request);
+        void finishFetchTraffic(trafficId, response, "capture");
+        return response;
+      } catch (error) {
+        reportTrafficFinish({ id: trafficId, decision: "capture", endedAt: currentTime(), error: describeError(error) });
+        throw error;
+      }
+    }
+
+    const trafficId = createTrafficId("fetch");
+    const startedAt = currentTime();
+    const baseRequest = { url: request.url, method: request.method, headers: headersToRecord(request.headers) };
+
+    if (!mockActive) {
+      reportTrafficStart({
+        id: trafficId, source: "fetch", decision: "capture", startedAt,
+        request: baseRequest,
+      });
+      // Flow: 只记录模式不等待请求体快照，原生请求立即发出；快照就绪后再补报请求体。
+      void readRequestBodyForLog(request)
+        .then((body) => reportTrafficRequestBody(trafficId, body))
+        .catch(() => undefined);
+      try {
+        const response = await nativeFetch(request);
+        void finishFetchTraffic(trafficId, response, "capture");
+        return response;
+      } catch (error) {
+        reportTrafficFinish({ id: trafficId, decision: "capture", endedAt: currentTime(), error: describeError(error) });
+        throw error;
+      }
+    }
+
+    const description: ExtensionRuntimeRequest = { ...baseRequest };
+    try {
+      Object.assign(description, await readRequestBodyForLog(request));
+    } catch {
+      // Failure: 请求体快照失败不影响判定与放行。
+    }
+    reportTrafficStart({
+      id: trafficId, source: "fetch", decision: "pending", startedAt,
+      request: requestSnapshot(description),
+    });
 
     let decision: ExtensionRuntimeResponse;
     try {
-      const description: ExtensionRuntimeRequest = {
-        url: request.url,
-        method: request.method,
-        headers: headersToRecord(request.headers),
-      };
-      Object.assign(description, await readRequestBodyForLog(request));
       decision = await askResolver(withLogBody(description), request.signal);
     } catch {
-      return nativeFetch(request);
+      decision = { action: "pass", reason: "invalid-request" };
     }
-    if (!isMonitoringActive() || decision.action === "pass") return nativeFetch(request);
+    if (!isMonitoringActive() || decision.action === "pass")
+      return forwardFetchWithTraffic(request, trafficId, "pass", decision.action === "pass" ? decision.reason : undefined);
 
     try {
       await waitForDelay(decision.delayMs, request.signal);
       if (request.signal.aborted) throw abortError();
       const body = [204, 205, 304].includes(decision.status) ? null : decision.body;
-      return new Response(body, { status: decision.status, headers: decision.headers });
+      const response = new Response(body, { status: decision.status, headers: decision.headers });
+      reportTrafficFinish({
+        id: trafficId,
+        decision: "mock",
+        endedAt: currentTime(),
+        response: {
+          status: decision.status,
+          statusText: response.statusText,
+          headers: decision.headers,
+          mimeType: decision.headers["content-type"],
+          ...createBodyInfo(body ?? undefined),
+        },
+      });
+      return response;
     } catch (error) {
-      if (isAbortError(error)) throw error;
+      if (isAbortError(error)) {
+        reportTrafficFinish({ id: trafficId, decision: "mock", endedAt: currentTime(), error: describeError(error) });
+        throw error;
+      }
       // Failure: 本地判定无效时保持浏览器原生请求，不把扩展错误变成页面请求失败。
-      return nativeFetch(request);
+      return forwardFetchWithTraffic(request, trafficId, "pass");
     }
   }) as typeof window.fetch;
   interceptedFetch = fetchInterceptor;
   window.fetch = interceptedFetch;
+}
+
+async function forwardFetchWithTraffic(
+  request: Request,
+  id: string,
+  decision: TrafficFinishMessage["decision"],
+  passReason?: ExtensionPassReason,
+) {
+  try {
+    const response = await nativeFetch(request);
+    void finishFetchTraffic(id, response, decision, passReason);
+    return response;
+  } catch (error) {
+    reportTrafficFinish({ id, decision, passReason, endedAt: currentTime(), error: describeError(error) });
+    throw error;
+  }
+}
+
+async function finishFetchTraffic(
+  id: string,
+  response: Response,
+  decision: TrafficFinishMessage["decision"],
+  passReason?: TrafficFinishMessage["passReason"],
+) {
+  const contentType = response.headers.get("content-type") || "";
+  const contentLength = Number(response.headers.get("content-length"));
+  const snapshot: NonNullable<TrafficFinishMessage["response"]> = {
+    status: response.status,
+    statusText: response.statusText,
+    headers: headersToRecord(response.headers),
+    ...(contentType ? { mimeType: contentType } : {}),
+    ...(Number.isFinite(contentLength) && contentLength >= 0 ? { size: contentLength } : {}),
+  };
+  if (response.type === "opaque" || response.type === "opaqueredirect") snapshot.bodyUnavailable = "unavailable";
+  else if (/^text\/event-stream/i.test(contentType)) snapshot.bodyUnavailable = "unavailable";
+  else if (isBinaryContentType(contentType)) snapshot.bodyUnavailable = "binary";
+  else {
+    try {
+      Object.assign(snapshot, await readResponseBodyInfo(response));
+    } catch {
+      snapshot.bodyUnavailable = "unavailable";
+    }
+  }
+  reportTrafficFinish({ id, decision, passReason, endedAt: currentTime(), response: snapshot });
+}
+
+async function readResponseBodyInfo(response: Response): Promise<TrafficBodyInfo> {
+  let clone: Response;
+  try {
+    clone = response.clone();
+  } catch {
+    return { bodyUnavailable: "unavailable" };
+  }
+  const reader = clone.body?.getReader();
+  if (!reader) return { body: "" };
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let truncated = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      if (size + value.byteLength > TRAFFIC_BODY_LIMIT) {
+        const remaining = TRAFFIC_BODY_LIMIT - size;
+        if (remaining > 0) {
+          chunks.push(value.subarray(0, remaining));
+          size += remaining;
+        }
+        truncated = true;
+        void reader.cancel().catch(() => {});
+        break;
+      }
+      chunks.push(value);
+      size += value.byteLength;
+    }
+  } catch {
+    return { bodyUnavailable: "unavailable" };
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { body: new TextDecoder().decode(bytes), ...(truncated ? { bodyTruncated: true } : {}) };
+}
+
+function currentTime() {
+  const perf = typeof performance === "object" && typeof performance.timeOrigin === "number" ? performance : undefined;
+  return perf ? perf.timeOrigin + perf.now() : Date.now();
+}
+
+function createTrafficId(source: "fetch" | "xhr") {
+  return `${source}-${requestIdPrefix}-${nextTrafficId++}`;
+}
+
+function createBodyInfo(value: string | undefined): TrafficBodyInfo {
+  if (value === undefined) return {};
+  if (value.length <= TRAFFIC_BODY_LIMIT) return { body: value };
+  return { body: value.slice(0, TRAFFIC_BODY_LIMIT), bodyTruncated: true };
+}
+
+function requestSnapshot(request: ExtensionRuntimeRequest): TrafficRequestSnapshot {
+  const snapshot: TrafficRequestSnapshot = {
+    method: request.method,
+    url: request.url,
+    headers: { ...request.headers },
+  };
+  if (request.body !== undefined) Object.assign(snapshot, createBodyInfo(request.body));
+  else if (request.bodyUnavailable) snapshot.bodyUnavailable = request.bodyUnavailable;
+  return snapshot;
+}
+
+function describeError(error: unknown) {
+  if (error instanceof Error) return { name: error.name, message: error.message };
+  return { name: "Error", message: String(error) };
+}
+
+function reportTraffic(message: TrafficWindowMessage) {
+  try {
+    window.postMessage(message, "*");
+  } catch {
+    // Failure: 面板上报失败不能影响页面请求。
+  }
+}
+
+function reportTrafficStart(entry: TrafficStartEntry) {
+  const message: TrafficStartMessage = { channel: CHANNEL, type: TRAFFIC_START_TYPE, entry };
+  reportTraffic(message);
+}
+
+function reportTrafficRequestBody(id: string, body: TrafficBodyInfo) {
+  const message: TrafficRequestBodyMessage = { channel: CHANNEL, type: TRAFFIC_REQUEST_BODY_TYPE, id, ...body };
+  reportTraffic(message);
+}
+
+function reportTrafficFinish(payload: Omit<TrafficFinishMessage, "channel" | "type">) {
+  const message: TrafficFinishMessage = { channel: CHANNEL, type: TRAFFIC_FINISH_TYPE, ...payload };
+  reportTraffic(message);
 }
 
 function askResolver(request: ExtensionRuntimeRequest, signal?: AbortSignal): Promise<ExtensionRuntimeResponse> {
@@ -249,6 +474,14 @@ type XhrState = {
   listeners: XhrListener[];
   mock?: Extract<ExtensionRuntimeResponse, { action: "mock" }>;
   timeoutTimer?: number;
+  traffic?: {
+    id: string;
+    startedAt: number;
+    decision: "pending" | "capture";
+    request: TrafficRequestSnapshot;
+    passReason?: ExtensionPassReason;
+    closed?: boolean;
+  };
 };
 
 function createXhrHandler(state: XhrState): ProxyHandler<XMLHttpRequest> {
@@ -325,7 +558,7 @@ function openXhr(state: XhrState, args: unknown[]) {
     installNativeListeners(state);
     return;
   }
-  if (!isMonitoringActive() || !async || !isHttpUrl(url.href)) {
+  if ((!isMonitoringActive() && !isCaptureActive()) || !async || !isHttpUrl(url.href)) {
     state.mode = "direct";
     state.target.open(...args as [string, string, boolean, string?, string?]);
     installNativeListeners(state);
@@ -348,8 +581,30 @@ function setRequestHeader(state: XhrState, name: string, value: string) {
 function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | null) {
   if (state.mode === "direct") return state.target.send(body);
   if (!state.opened || state.sent) throw new DOMException("Invalid XMLHttpRequest state", "InvalidStateError");
-  if (isBinaryOrStreamBody(body) || !isMonitoringActive())
+  const mockActive = isMonitoringActive();
+  if (isBinaryOrStreamBody(body) || (!mockActive && !isCaptureActive())) {
+    if (isBinaryOrStreamBody(body) && (mockActive || isCaptureActive())) {
+      state.traffic = {
+        id: createTrafficId("xhr"),
+        startedAt: currentTime(),
+        decision: "capture",
+        request: {
+          url: state.url,
+          method: state.method.toUpperCase(),
+          headers: { ...state.requestHeaders },
+          bodyUnavailable: "binary",
+        },
+      };
+      reportTrafficStart({
+        id: state.traffic.id,
+        source: "xhr",
+        decision: state.traffic.decision,
+        startedAt: state.traffic.startedAt,
+        request: state.traffic.request,
+      });
+    }
     return useDirectXhr(state, body);
+  }
   if (typeof FormData !== "undefined" && body instanceof FormData) {
     // Guarantee: 固定 send 时的字段顺序和 File 引用，不读取文件内容，避免等待期间被页面修改。
     const snapshot = new FormData();
@@ -371,9 +626,29 @@ function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | nul
   else if (typeof body === "string") request.body = body;
   else if (body instanceof URLSearchParams) request.body = body.toString();
   else if (body != null) request.bodyUnavailable = "unavailable";
+  state.traffic = {
+    id: createTrafficId("xhr"),
+    startedAt: currentTime(),
+    decision: mockActive ? "pending" : "capture",
+    request: requestSnapshot(request),
+  };
+  reportTrafficStart({
+    id: state.traffic.id,
+    source: "xhr",
+    decision: state.traffic.decision,
+    startedAt: state.traffic.startedAt,
+    request: state.traffic.request,
+  });
+  if (!mockActive) {
+    useDirectXhr(state, body);
+    return;
+  }
   void askResolver(withLogBody(request), state.mockAbortController.signal).then((decision) => {
     if (state.generation !== generation || state.aborted || state.finished) return;
-    if (!isMonitoringActive() || decision.action === "pass") return useDirectXhr(state, body);
+    if (!isMonitoringActive() || decision.action === "pass") {
+      if (decision.action === "pass" && state.traffic) state.traffic.passReason = decision.reason;
+      return useDirectXhr(state, body);
+    }
     void useMockXhr(state, decision, generation);
   }).catch(() => {
     if (state.generation !== generation || state.aborted || state.finished) return;
@@ -391,6 +666,9 @@ function useDirectXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit 
   state.target.withCredentials = state.withCredentials;
   if (state.responseType) state.target.responseType = state.responseType;
   for (const [name, value] of Object.entries(state.requestHeaders)) state.target.setRequestHeader(name, value);
+  const traffic = state.traffic;
+  if (traffic && !traffic.closed)
+    state.target.addEventListener("loadend", () => finishXhrTraffic(state, traffic), { once: true });
   state.target.send(body);
 }
 
@@ -415,17 +693,116 @@ async function useMockXhr(
   emitXhrEvent(state, "readystatechange");
   state.readyState = XMLHttpRequest.DONE;
   state.finished = true;
+  reportMockXhrTraffic(state, decision);
   emitXhrEvent(state, "readystatechange");
   emitXhrEvent(state, "load");
   emitXhrEvent(state, "loadend");
 }
 
+function reportMockXhrTraffic(state: XhrState, decision: Extract<ExtensionRuntimeResponse, { action: "mock" }>) {
+  const traffic = state.traffic;
+  if (!traffic || traffic.closed) return;
+  traffic.closed = true;
+  reportTrafficFinish({
+    id: traffic.id,
+    decision: "mock",
+    endedAt: currentTime(),
+    response: {
+      status: decision.status,
+      statusText: String(decision.status),
+      headers: decision.headers,
+      mimeType: decision.headers["content-type"],
+      ...createBodyInfo(decision.body),
+    },
+  });
+}
+
+function finishXhrTraffic(state: XhrState, traffic: NonNullable<XhrState["traffic"]>) {
+  if (traffic.closed) return;
+  traffic.closed = true;
+  const target = state.target;
+  const decision = traffic.decision === "pending" ? "pass" : traffic.decision;
+  const endedAt = currentTime();
+  if (target.status === 0) {
+    reportTrafficFinish({
+      id: traffic.id,
+      decision,
+      endedAt,
+      error: state.aborted
+        ? { name: "AbortError", message: "请求已取消" }
+        : { name: "NetworkError", message: "请求未收到响应" },
+    });
+    return;
+  }
+  const headers = parseResponseHeaders(target.getAllResponseHeaders());
+  reportTrafficFinish({
+    id: traffic.id,
+    decision,
+    endedAt,
+    passReason: traffic.passReason,
+    response: {
+      status: target.status,
+      statusText: target.statusText,
+      headers,
+      ...(headers["content-type"] ? { mimeType: headers["content-type"] } : {}),
+      ...readXhrBody(target, state.responseType),
+    },
+  });
+}
+
+function closeXhrTraffic(state: XhrState, error: { name: string; message: string }) {
+  const traffic = state.traffic;
+  if (!traffic || traffic.closed) return;
+  traffic.closed = true;
+  reportTrafficFinish({
+    id: traffic.id,
+    decision: traffic.decision === "pending" ? "pass" : traffic.decision,
+    endedAt: currentTime(),
+    passReason: traffic.passReason,
+    error,
+  });
+}
+
+function readXhrBody(target: XMLHttpRequest, responseType: XMLHttpRequestResponseType): TrafficBodyInfo {
+  if (responseType === "" || responseType === "text") return createBodyInfo(target.responseText);
+  if (responseType === "json") {
+    try {
+      return createBodyInfo(JSON.stringify(target.response));
+    } catch {
+      return { bodyUnavailable: "unavailable" };
+    }
+  }
+  if (responseType === "blob") {
+    const blob = target.response as Blob | null;
+    return { bodyUnavailable: "binary", ...(blob ? { size: blob.size } : {}) };
+  }
+  if (responseType === "arraybuffer") {
+    const buffer = target.response as ArrayBuffer | null;
+    return { bodyUnavailable: "binary", ...(buffer ? { size: buffer.byteLength } : {}) };
+  }
+  return { bodyUnavailable: "binary" };
+}
+
+function parseResponseHeaders(raw: string) {
+  const headers: Record<string, string> = {};
+  for (const line of raw.trim().split(/[\r\n]+/)) {
+    const index = line.indexOf(":");
+    if (index <= 0) continue;
+    headers[line.slice(0, index).trim().toLowerCase()] = line.slice(index + 1).trim();
+  }
+  return headers;
+}
+
 function abortXhr(state: XhrState) {
-  if (state.mode === "direct") return state.target.abort();
+  if (state.mode === "direct") {
+    state.aborted = true;
+    return state.target.abort();
+  }
   if (!state.sent || state.finished) return;
   state.mockAbortController.abort();
   state.aborted = true;
   clearXhrTimeout(state);
+  closeXhrTraffic(state, { name: "AbortError", message: "请求已取消" });
   state.readyState = XMLHttpRequest.DONE;
   state.finished = true;
   emitXhrEvent(state, "abort");
@@ -437,6 +814,7 @@ function timeoutXhr(state: XhrState, generation: number) {
   state.mockAbortController.abort();
   state.finished = true;
   state.mode = "mock";
+  closeXhrTraffic(state, { name: "TimeoutError", message: `请求超过 ${state.timeout}ms` });
   state.readyState = XMLHttpRequest.DONE;
   emitXhrEvent(state, "readystatechange");
   emitXhrEvent(state, "timeout");
@@ -445,6 +823,16 @@ function timeoutXhr(state: XhrState, generation: number) {
 
 function resetXhr(state: XhrState) {
   clearXhrTimeout(state);
+  if (state.traffic && !state.traffic.closed) {
+    state.traffic.closed = true;
+    reportTrafficFinish({
+      id: state.traffic.id,
+      decision: state.traffic.decision === "pending" ? "pass" : state.traffic.decision,
+      endedAt: currentTime(),
+      error: { name: "AbortError", message: "请求被重新打开" },
+    });
+  }
+  state.traffic = undefined;
   state.mockAbortController.abort();
   state.mockAbortController = new AbortController();
   state.generation += 1;
@@ -597,11 +985,15 @@ async function readRequestBodyForLog(request: Request): Promise<Pick<ExtensionRu
 }
 
 function isBinaryRequest(request: Request) {
-  const contentType = request.headers.get("content-type")?.toLowerCase() || "";
-  return contentType.startsWith("image/") ||
-    contentType.startsWith("audio/") ||
-    contentType.startsWith("video/") ||
-    contentType === "application/octet-stream";
+  return isBinaryContentType(request.headers.get("content-type") || "");
+}
+
+function isBinaryContentType(contentType: string) {
+  const value = contentType.toLowerCase();
+  return value.startsWith("image/") ||
+    value.startsWith("audio/") ||
+    value.startsWith("video/") ||
+    value === "application/octet-stream";
 }
 
 function isBinaryOrStreamBody(value: unknown) {
@@ -616,7 +1008,9 @@ function isBinaryOrStreamBody(value: unknown) {
 }
 
 function isMonitoringStateWindowMessage(value: unknown): value is MonitoringStateWindowMessage {
-  return isRecord(value) && value.channel === CHANNEL && value.type === MONITORING_STATE_TYPE && typeof value.enabled === "boolean";
+  return isRecord(value) && value.channel === CHANNEL && value.type === MONITORING_STATE_TYPE &&
+    typeof value.enabled === "boolean" &&
+    (value.capture === undefined || typeof value.capture === "boolean");
 }
 
 function isRuntimeResponse(value: unknown): value is ExtensionRuntimeResponse {
@@ -660,6 +1054,10 @@ function urlMatchesWhitelist(value: string, whitelist: readonly string[]) {
 
 function isMonitoringActive() {
   return monitoringEnabled && urlMatchesWhitelist(window.location.href, monitoringWhitelist);
+}
+
+function isCaptureActive() {
+  return captureEnabled;
 }
 
 function isHttpUrl(value: string) {

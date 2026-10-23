@@ -9,6 +9,12 @@ import type {
   ResolveCancelMessage,
   PopupResponse,
   PopupState,
+  TrafficEntry,
+  TrafficFinishMessage,
+  TrafficPanelMessage,
+  TrafficRequestBodyMessage,
+  TrafficStartMessage,
+  TrafficWindowMessage,
 } from "./protocol.js";
 import {
   CHANNEL,
@@ -17,7 +23,13 @@ import {
   RESOLVE_TIMEOUT_MS,
   RESOLVER_PATH,
   STATUS_PATH,
+  TRAFFIC_PANEL_PORT,
   isRuntimeResponse,
+  isStoredTrafficEntry,
+  isTrafficFinishMessage,
+  isTrafficRequestBodyMessage,
+  isTrafficStartMessage,
+  isTrafficWindowMessage,
 } from "./protocol.js";
 import { DEFAULT_WHITELIST, WHITELIST_STORAGE_KEY, urlMatchesWhitelist, normalizeWhitelist } from "./domain-whitelist.js";
 import {
@@ -30,7 +42,13 @@ import {
 
 const GLOBAL_ENABLED_KEY = "globalEnabled";
 const DISABLED_TAB_IDS_KEY = "disabledTabIds";
+const CAPTURE_TAB_IDS_KEY = "captureTabIds";
 const RESOLVER_HEALTH_KEY = "resolverHealth";
+const TRAFFIC_STORAGE_PREFIX = "traffic:";
+const MAX_TRAFFIC_ENTRIES = 500;
+const MAX_PERSISTED_TRAFFIC = 200;
+const PERSISTED_BODY_LIMIT = 4096;
+const TRAFFIC_PERSIST_DELAY_MS = 600;
 
 type ResolveMessage = {
   channel: typeof CHANNEL;
@@ -41,12 +59,20 @@ type ResolveMessage = {
 
 type MonitoringResponse = {
   enabled: boolean;
+  capture: boolean;
   whitelist: string[];
 };
 
 type ActivationState = {
   globalEnabled: boolean;
   disabledTabIds: number[];
+  captureTabIds: number[];
+};
+
+type TrafficPort = {
+  postMessage(message: unknown): void;
+  onMessage: { addListener(listener: (message: unknown) => void): void };
+  onDisconnect: { addListener(listener: () => void): void };
 };
 
 type ServerStatus = {
@@ -63,6 +89,12 @@ let resolverHealthWrite = Promise.resolve();
 const pendingResolvers = new Map<string, AbortController>();
 const MAX_RESOLVER_CONCURRENCY = 32;
 let activeResolverCount = 0;
+const trafficStores = new Map<number, Map<string, TrafficEntry>>();
+const trafficLoads = new Map<number, Promise<void>>();
+const trafficVersions = new Map<number, number>();
+const trafficPersistTimers = new Map<number, number>();
+const trafficPanelPorts = new Map<number, Set<TrafficPort>>();
+let trafficStorageWrite: Promise<void> = Promise.resolve();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (isResolveMessage(message)) {
@@ -80,8 +112,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (isMonitoringQueryMessage(message)) {
     void getMonitoringState(sender)
       .then(sendResponse)
-      .catch(() => sendResponse({ enabled: false, whitelist: [] } satisfies MonitoringResponse));
+      .catch(() => sendResponse({ enabled: false, capture: false, whitelist: [] } satisfies MonitoringResponse));
     return true;
+  }
+
+  if (isTrafficWindowMessage(message)) {
+    applyTrafficMessage(message, sender);
+    return undefined;
   }
 
   if (isPopupMessage(message)) {
@@ -111,13 +148,277 @@ async function getMonitoringState(sender: unknown): Promise<MonitoringResponse> 
   const activation = await getActivationState();
   const tabId = senderTabId(sender);
   const whitelist = await getWhitelist();
+  const pageUrl = isRecord(sender) && typeof sender.url === "string" ? sender.url : "";
+  // Rule: sender.url 来自 Chrome，按发消息的 frame 自身页面判断，不能信任页面提交的请求 URL 或顶层标签页 URL。
+  const enabled = pageUrl !== "" && urlMatchesWhitelist(pageUrl, whitelist) &&
+    activation.globalEnabled && (tabId === undefined || !activation.disabledTabIds.includes(tabId));
+  const capture = enabled || (tabId !== undefined && activation.captureTabIds.includes(tabId));
+  return { enabled, capture, whitelist };
+}
+
+function applyTrafficMessage(message: TrafficWindowMessage, sender: unknown) {
+  const tabId = senderTabId(sender);
+  if (tabId === undefined || !isRecord(sender)) return;
+  const frameId = typeof sender.frameId === "number" ? sender.frameId : 0;
+  const pageUrl = typeof sender.url === "string" ? sender.url : "";
+  const store = getTrafficStore(tabId);
+
+  if (isTrafficStartMessage(message)) {
+    const entry: TrafficEntry = { ...message.entry, tabId, frameId, pageUrl };
+    store.set(trafficKey(frameId, entry.id), entry);
+    trimTrafficStore(store);
+    broadcastTrafficEntry(tabId, entry);
+  } else if (isTrafficRequestBodyMessage(message)) {
+    const existing = store.get(trafficKey(frameId, message.id));
+    if (!existing) return;
+    if (message.body !== undefined) {
+      existing.request.body = message.body;
+      delete existing.request.bodyUnavailable;
+      if (message.bodyTruncated) existing.request.bodyTruncated = true;
+      else delete existing.request.bodyTruncated;
+    } else if (message.bodyUnavailable) {
+      delete existing.request.body;
+      existing.request.bodyUnavailable = message.bodyUnavailable;
+      delete existing.request.bodyTruncated;
+    }
+    broadcastTrafficEntry(tabId, existing);
+  } else if (isTrafficFinishMessage(message)) {
+    const existing = store.get(trafficKey(frameId, message.id));
+    if (!existing) return;
+    existing.decision = message.decision;
+    existing.endedAt = message.endedAt;
+    if (message.passReason) existing.passReason = message.passReason;
+    if (message.response) existing.response = message.response;
+    if (message.error) existing.error = message.error;
+    broadcastTrafficEntry(tabId, existing);
+  }
+  scheduleTrafficPersist(tabId);
+}
+
+function trafficKey(frameId: number, id: string) {
+  return `${frameId}:${id}`;
+}
+
+function getTrafficStore(tabId: number) {
+  let store = trafficStores.get(tabId);
+  if (!store) {
+    store = new Map();
+    trafficStores.set(tabId, store);
+    void ensureTrafficLoaded(tabId).catch(() => undefined);
+  }
+  return store;
+}
+
+function ensureTrafficLoaded(tabId: number) {
+  const existing = trafficLoads.get(tabId);
+  if (existing) return existing;
+  const load = loadPersistedTraffic(tabId).finally(() => trafficLoads.delete(tabId));
+  trafficLoads.set(tabId, load);
+  return load;
+}
+
+async function loadPersistedTraffic(tabId: number) {
+  const version = trafficVersions.get(tabId) ?? 0;
+  const key = `${TRAFFIC_STORAGE_PREFIX}${tabId}`;
+  let raw: unknown;
+  try {
+    const stored = await chrome.storage.session.get([key]);
+    raw = stored[key];
+  } catch {
+    return;
+  }
+  // Guarantee: 读取期间发生的清空或关闭不能被旧快照重新填回。
+  if ((trafficVersions.get(tabId) ?? 0) !== version) return;
+  if (!Array.isArray(raw)) return;
+  const store = getTrafficStore(tabId);
+  let changed = false;
+  for (const item of raw) {
+    if (!isStoredTrafficEntry(item) || item.tabId !== tabId) continue;
+    const key = trafficKey(item.frameId, item.id);
+    if (store.has(key)) continue;
+    store.set(key, item);
+    changed = true;
+  }
+  if (!changed) return;
+  trimTrafficStore(store);
+  for (const entry of store.values()) broadcastTrafficEntry(tabId, entry);
+}
+
+function trimTrafficStore(store: Map<string, TrafficEntry>) {
+  if (store.size <= MAX_TRAFFIC_ENTRIES) return;
+  const ordered = [...store.entries()].sort((left, right) => left[1].startedAt - right[1].startedAt);
+  for (let index = 0; index < ordered.length - MAX_TRAFFIC_ENTRIES; index += 1) store.delete(ordered[index][0]);
+}
+
+function scheduleTrafficPersist(tabId: number) {
+  if (trafficPersistTimers.has(tabId)) return;
+  trafficPersistTimers.set(tabId, globalThis.setTimeout(() => {
+    trafficPersistTimers.delete(tabId);
+    void persistTraffic(tabId);
+  }, TRAFFIC_PERSIST_DELAY_MS) as unknown as number);
+}
+
+async function persistTraffic(tabId: number) {
+  const store = trafficStores.get(tabId);
+  if (!store) return;
+  const entries = [...store.values()]
+    .sort((left, right) => left.startedAt - right.startedAt)
+    .slice(-MAX_PERSISTED_TRAFFIC)
+    .map(toPersistedTraffic);
+  await writeTrafficStorage(tabId, entries);
+}
+
+// Guarantee: 持久化写入串行，避免清空与旧快照的写回竞争。
+function writeTrafficStorage(tabId: number, entries: TrafficEntry[]) {
+  const key = `${TRAFFIC_STORAGE_PREFIX}${tabId}`;
+  trafficStorageWrite = trafficStorageWrite
+    .catch(() => undefined)
+    .then(() => chrome.storage.session.set({ [key]: entries }))
+    .catch(() => undefined);
+  return trafficStorageWrite;
+}
+
+function toPersistedTraffic(entry: TrafficEntry): TrafficEntry {
   return {
-    // Rule: sender.url 来自 Chrome，按发消息的 frame 自身页面判断，不能信任页面提交的请求 URL 或顶层标签页 URL。
-    enabled: isRecord(sender) && typeof sender.url === "string" && urlMatchesWhitelist(sender.url, whitelist) &&
-      activation.globalEnabled && (tabId === undefined || !activation.disabledTabIds.includes(tabId)),
-    whitelist,
+    ...entry,
+    request: { ...entry.request, ...truncatePersistedBody(entry.request) },
+    ...(entry.response ? { response: { ...entry.response, ...truncatePersistedBody(entry.response) } } : {}),
   };
 }
+
+function truncatePersistedBody(target: { body?: string; bodyUnavailable?: string; bodyTruncated?: boolean }) {
+  if (target.body === undefined) return {};
+  if (target.body.length <= PERSISTED_BODY_LIMIT) return { body: target.body };
+  return { body: target.body.slice(0, PERSISTED_BODY_LIMIT), bodyTruncated: true };
+}
+
+function broadcastTrafficEntry(tabId: number, entry: TrafficEntry) {
+  const ports = trafficPanelPorts.get(tabId);
+  if (!ports) return;
+  const message: TrafficPanelMessage = { type: "entry", entry };
+  for (const port of ports) {
+    try {
+      port.postMessage(message);
+    } catch {
+      ports.delete(port);
+    }
+  }
+}
+
+async function sendTrafficSnapshot(tabId: number, port: TrafficPort) {
+  const store = getTrafficStore(tabId);
+  await ensureTrafficLoaded(tabId).catch(() => undefined);
+  const activation = await getActivationState();
+  const entries = [...store.values()].sort((left, right) => left.startedAt - right.startedAt);
+  const message: TrafficPanelMessage = {
+    type: "snapshot",
+    entries,
+    captureTab: activation.captureTabIds.includes(tabId),
+  };
+  try {
+    port.postMessage(message);
+  } catch {
+    // Failure: 面板已关闭时忽略推送失败。
+  }
+}
+
+function clearTraffic(tabId: number) {
+  trafficVersions.set(tabId, (trafficVersions.get(tabId) ?? 0) + 1);
+  const timer = trafficPersistTimers.get(tabId);
+  if (timer !== undefined) globalThis.clearTimeout(timer);
+  trafficPersistTimers.delete(tabId);
+  trafficStores.get(tabId)?.clear();
+  void writeTrafficStorage(tabId, []);
+  const message: TrafficPanelMessage = { type: "cleared" };
+  for (const port of trafficPanelPorts.get(tabId) ?? []) {
+    try {
+      port.postMessage(message);
+    } catch {
+      // Failure: 面板已关闭时忽略推送失败。
+    }
+  }
+}
+
+function dropTrafficTab(tabId: number) {
+  trafficVersions.set(tabId, (trafficVersions.get(tabId) ?? 0) + 1);
+  trafficStores.delete(tabId);
+  trafficLoads.delete(tabId);
+  trafficPanelPorts.delete(tabId);
+  const timer = trafficPersistTimers.get(tabId);
+  if (timer !== undefined) globalThis.clearTimeout(timer);
+  trafficPersistTimers.delete(tabId);
+  void writeTrafficStorage(tabId, []);
+}
+
+function broadcastTrafficState(tabId: number, captureTab: boolean) {
+  const message: TrafficPanelMessage = { type: "state", captureTab };
+  for (const port of trafficPanelPorts.get(tabId) ?? []) {
+    try {
+      port.postMessage(message);
+    } catch {
+      // Failure: 面板已关闭时忽略推送失败。
+    }
+  }
+}
+
+async function setCaptureTab(tabId: number, enabled: boolean) {
+  const activation = await getActivationState();
+  activation.captureTabIds = enabled
+    ? [...new Set([...activation.captureTabIds, tabId])]
+    : activation.captureTabIds.filter((id) => id !== tabId);
+  await saveActivationState(activation);
+  await broadcastMonitoringState();
+  broadcastTrafficState(tabId, enabled);
+}
+
+function registerTrafficPanel() {
+  chrome.runtime.onConnect?.addListener?.((port) => {
+    if (port.name !== TRAFFIC_PANEL_PORT) return;
+    let tabId: number | undefined;
+    const addPort = (id: number) => {
+      const ports = trafficPanelPorts.get(id) ?? new Set<TrafficPort>();
+      ports.add(port);
+      trafficPanelPorts.set(id, ports);
+    };
+    port.onMessage.addListener((message: unknown) => {
+      if (!isRecord(message) || typeof message.type !== "string") return;
+      if (message.type === "subscribe") {
+        if (typeof message.tabId !== "number" || !Number.isInteger(message.tabId)) return;
+        tabId = message.tabId;
+        addPort(tabId);
+        void sendTrafficSnapshot(tabId, port);
+        return;
+      }
+      if (tabId === undefined) return;
+      // Rule: 每条命令都确保端口仍在推送集合中，SW 热重启或注册丢失后可自愈。
+      addPort(tabId);
+      if (message.type === "ping") {
+        try {
+          port.postMessage({ type: "pong" } satisfies TrafficPanelMessage);
+        } catch {
+          // Failure: 面板已关闭时忽略。
+        }
+        return;
+      }
+      if (message.type === "clear") {
+        clearTraffic(tabId);
+        return;
+      }
+      if (message.type === "set-capture" && typeof message.enabled === "boolean") {
+        void setCaptureTab(tabId, message.enabled);
+      }
+    });
+    port.onDisconnect.addListener(() => {
+      if (tabId === undefined) return;
+      const ports = trafficPanelPorts.get(tabId);
+      ports?.delete(port);
+      if (ports?.size === 0) trafficPanelPorts.delete(tabId);
+    });
+  });
+  chrome.tabs.onRemoved?.addListener?.((tabId) => dropTrafficTab(tabId));
+}
+
+registerTrafficPanel();
 
 async function resolve(request: ExtensionRuntimeRequest, controller: AbortController): Promise<ExtensionRuntimeResponse> {
   // Failure: 连续两次 resolver 失败后短路 3 秒，避免服务不可用时每个页面请求都等待完整超时。
@@ -225,6 +526,14 @@ async function handlePopupMessage(message: PopupMessage): Promise<PopupResponse>
       : [...new Set([...activation.disabledTabIds, message.tabId])];
     await saveActivationState(activation);
     refreshMonitoring = true;
+  } else if (message.type === "set-capture-tab") {
+    const activation = await getActivationState();
+    activation.captureTabIds = message.enabled
+      ? [...new Set([...activation.captureTabIds, message.tabId])]
+      : activation.captureTabIds.filter((id) => id !== message.tabId);
+    await saveActivationState(activation);
+    broadcastTrafficState(message.tabId, message.enabled);
+    refreshMonitoring = true;
   } else if (message.type === "set-whitelist") {
     const domains = normalizeWhitelist(message.domains);
     if (domains.length !== message.domains.length) throw new Error("白名单包含无效域名");
@@ -260,6 +569,7 @@ async function popupState(): Promise<PopupResponse> {
     globalEnabled: activation.globalEnabled,
     tabEnabled,
     effectiveEnabled: pageWhitelisted && activation.globalEnabled && tabEnabled,
+    captureTab: tabId !== null && activation.captureTabIds.includes(tabId),
   };
   return { ok: true, state };
 }
@@ -283,15 +593,18 @@ async function getServerStatus(): Promise<ServerStatus> {
 async function getActivationState(): Promise<ActivationState> {
   if (activationCache) return activationCache;
   try {
-    const stored = await chrome.storage.session.get([GLOBAL_ENABLED_KEY, DISABLED_TAB_IDS_KEY]);
+    const stored = await chrome.storage.session.get([GLOBAL_ENABLED_KEY, DISABLED_TAB_IDS_KEY, CAPTURE_TAB_IDS_KEY]);
     activationCache = {
       globalEnabled: stored[GLOBAL_ENABLED_KEY] !== false,
       disabledTabIds: Array.isArray(stored[DISABLED_TAB_IDS_KEY])
         ? stored[DISABLED_TAB_IDS_KEY].filter((id): id is number => typeof id === "number" && Number.isInteger(id))
         : [],
+      captureTabIds: Array.isArray(stored[CAPTURE_TAB_IDS_KEY])
+        ? stored[CAPTURE_TAB_IDS_KEY].filter((id): id is number => typeof id === "number" && Number.isInteger(id))
+        : [],
     };
   } catch {
-    activationCache = { globalEnabled: true, disabledTabIds: [] };
+    activationCache = { globalEnabled: true, disabledTabIds: [], captureTabIds: [] };
   }
   return activationCache;
 }
@@ -301,6 +614,7 @@ async function saveActivationState(state: ActivationState) {
   await chrome.storage.session.set({
     [GLOBAL_ENABLED_KEY]: state.globalEnabled,
     [DISABLED_TAB_IDS_KEY]: state.disabledTabIds,
+    [CAPTURE_TAB_IDS_KEY]: state.captureTabIds,
   });
 }
 
@@ -355,6 +669,8 @@ function isPopupMessage(value: unknown): value is PopupMessage {
   if (value.type === "get-state") return true;
   if (value.type === "set-global") return typeof value.enabled === "boolean";
   if (value.type === "set-tab")
+    return typeof value.tabId === "number" && Number.isInteger(value.tabId) && typeof value.enabled === "boolean";
+  if (value.type === "set-capture-tab")
     return typeof value.tabId === "number" && Number.isInteger(value.tabId) && typeof value.enabled === "boolean";
   return value.type === "set-whitelist" && Array.isArray(value.domains) && value.domains.every((domain) => typeof domain === "string");
 }

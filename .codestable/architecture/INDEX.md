@@ -4,7 +4,7 @@
 
 - **workspace**：`mockJson`，Node.js 单仓库、npm workspaces。
 - **package:mock-console**：`packages/mock-console/`，本地 Mock / Proxy 控制台，负责配置、匹配、resolver、Proxy、日志和 Vue 管理页面。详见 [`packages/mock-console.md`](./packages/mock-console.md)。
-- **package:chrome-extension**：`packages/chrome-extension/`，Chrome Manifest V3 扩展，负责页面请求桥接、白名单、开关和原生放行。详见 [`packages/chrome-extension.md`](./packages/chrome-extension.md)。
+- **package:chrome-extension**：`packages/chrome-extension/`，Chrome Manifest V3 扩展，负责页面请求桥接、白名单、开关、原生放行，以及 DevTools / 独立页共用的本地请求观测面板。详见 [`packages/chrome-extension.md`](./packages/chrome-extension.md)。
 - **package:extension-contract**：`packages/extension-contract/`，只提供扩展与本机 resolver 之间的 TypeScript 线协议类型。详见 [`packages/extension-contract.md`](./packages/extension-contract.md)。
 - **shared:extension-runtime**：两个产品包共同遵守的 resolver 调用、Mock / pass 和放行语义。详见 [`shared/extension-runtime.md`](./shared/extension-runtime.md)。
 
@@ -30,7 +30,9 @@ package:mock-console ─────┘
 | mock-console web | `packages/mock-console/web/src/` | Vue 管理页面和管理 API 客户端 |
 | chrome-extension main | `packages/chrome-extension/src/content-main.ts` | MAIN world fetch / 异步 XHR 桥接 |
 | chrome-extension bridge | `packages/chrome-extension/src/content-bridge.ts` | 隔离世界消息桥 |
-| chrome-extension worker | `packages/chrome-extension/src/service-worker.ts` | 白名单、resolver、开关和健康状态 |
+| chrome-extension worker | `packages/chrome-extension/src/service-worker.ts` | 白名单、resolver、开关、traffic 缓冲和面板推送 |
+| chrome-extension devtools | `packages/chrome-extension/src/devtools.ts`、`public/devtools.html` | 注册 DevTools「接口面板」标签 |
+| chrome-extension panel | `packages/chrome-extension/src/panel.ts`、`public/panel.html` | DevTools / 独立页共用的请求列表、详情与 cURL 复制 |
 | chrome-extension popup | `packages/chrome-extension/src/popup.ts` | Popup 配置和连接状态 |
 | extension-contract | `packages/extension-contract/src/index.ts` | 跨包 DTO 和放行原因类型 |
 

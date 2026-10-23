@@ -21,6 +21,7 @@
 - Mock 响应包含状态码、0–30000ms 延迟、JSON 字符串 body 和响应 Header。
 - `pass` 表示扩展不接管真实请求；浏览器随后以原始 URL、Cookie、凭据、CORS 和请求体语义发出真实请求。
 - 页面授权未通过（见 [Chrome Extension 领域规则](../../requirements/CONTEXT.md#chrome-extension-领域规则)）、resolver 未命中、服务不可用、超时或取消都必须保持真实请求放行；采集日志用的请求体副本不得消耗原始 Request，也不得为未进入 resolver 的请求增加日志。
+- 请求观测面板（traffic）是扩展内部能力，使用 `packages/chrome-extension/src/protocol.ts` 的内部消息和本地缓冲，不经过 resolver，也不改变本页描述的线协议；面板可在 resolver 离线时记录放行的真实响应。
 
 ## 所有者
 

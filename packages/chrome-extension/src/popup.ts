@@ -12,6 +12,9 @@ const serverDetail = required<HTMLElement>("server-detail");
 const globalToggle = required<HTMLInputElement>("global-toggle");
 const tabToggle = required<HTMLInputElement>("tab-toggle");
 const tabDetail = required<HTMLElement>("tab-detail");
+const captureToggle = required<HTMLInputElement>("capture-toggle");
+const captureDetail = required<HTMLElement>("capture-detail");
+const openPanelButton = required<HTMLButtonElement>("open-panel");
 const domainWhitelist = required<HTMLTextAreaElement>("domain-whitelist");
 const whitelistStatus = required<HTMLElement>("whitelist-status");
 const saveWhitelistButton = required<HTMLButtonElement>("save-whitelist");
@@ -36,6 +39,18 @@ tabToggle.addEventListener("change", () => {
   });
 });
 
+captureToggle.addEventListener("change", () => {
+  if (currentState?.tabId === null || currentState?.tabId === undefined) return;
+  void update({
+    channel: POPUP_CHANNEL,
+    type: "set-capture-tab",
+    tabId: currentState.tabId,
+    enabled: captureToggle.checked,
+  });
+});
+
+openPanelButton.addEventListener("click", () => void openPanel());
+
 saveWhitelistButton.addEventListener("click", () => void saveWhitelist());
 refreshButton.addEventListener("click", () => void refresh());
 
@@ -47,6 +62,13 @@ async function saveWhitelist() {
     return;
   }
   await update({ channel: POPUP_CHANNEL, type: "set-whitelist", domains: parsed.domains });
+}
+
+async function openPanel() {
+  const tabId = currentState?.tabId;
+  const url = chrome.runtime.getURL("panel.html") + (tabId === null || tabId === undefined ? "" : `?tabId=${tabId}`);
+  await chrome.tabs.create({ url });
+  window.close();
 }
 
 async function update(message: PopupMessage) {
@@ -92,6 +114,14 @@ function render(state: PopupState) {
   globalToggle.checked = state.globalEnabled;
   tabToggle.checked = state.pageWhitelisted && state.tabEnabled;
   tabToggle.disabled = !state.pageWhitelisted || state.tabId === null;
+  captureToggle.checked = state.captureTab;
+  captureToggle.disabled = !state.supportedPage || state.tabId === null;
+  captureDetail.textContent = state.captureTab
+    ? "正在记录本页 fetch / XHR，不改写请求"
+    : state.effectiveEnabled
+      ? "Mock 命中时自动记录，无需单独开启"
+      : "开启后只观测 fetch / XHR，不改写请求";
+  openPanelButton.disabled = !state.supportedPage || state.tabId === null;
   domainWhitelist.value = state.whitelist.join("\n");
   whitelistStatus.className = "field-status";
   whitelistStatus.textContent = state.whitelist.length === 0
@@ -102,9 +132,9 @@ function render(state: PopupState) {
     : `${state.host || "当前页面"} · ${!state.pageWhitelisted ? "不在页面白名单" : state.effectiveEnabled ? "已启用" : "已暂停"}`;
 
   hint.textContent = state.whitelist.length === 0
-    ? "请先配置页面域名白名单；留空时所有页面都保持原生请求 API。"
+    ? "请先配置页面域名白名单；留空时页面默认保持原生请求 API，仍可单页开启只记录。"
     : !state.pageWhitelisted
-      ? "当前页面不在白名单，不包装 fetch 或 XHR，也不发送 Mock 判定请求。"
+      ? "当前页面不在白名单，默认不包装 fetch 或 XHR；可开启“记录本页请求”仅观测。"
       : state.effectiveEnabled
       ? "当前页面的请求会询问 Mock Console，不按请求目标域名过滤；规则和场景仍由 Mock Console 管理。"
       : state.globalEnabled
@@ -124,7 +154,11 @@ function setBusy(busy: boolean) {
   globalToggle.disabled = busy;
   domainWhitelist.disabled = busy;
   saveWhitelistButton.disabled = busy;
-  if (busy) tabToggle.disabled = true;
+  openPanelButton.disabled = busy;
+  if (busy) {
+    tabToggle.disabled = true;
+    captureToggle.disabled = true;
+  }
 }
 
 function isPopupResponse(value: unknown): value is PopupResponse {
@@ -146,7 +180,8 @@ function isPopupState(value: unknown): value is PopupState {
     value.whitelist.every((domain) => typeof domain === "string") &&
     typeof value.globalEnabled === "boolean" &&
     typeof value.tabEnabled === "boolean" &&
-    typeof value.effectiveEnabled === "boolean"
+    typeof value.effectiveEnabled === "boolean" &&
+    typeof value.captureTab === "boolean"
   );
 }
 

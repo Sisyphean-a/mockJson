@@ -14,6 +14,7 @@ const compiledSource = transpileModule(source, {
 function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock") {
   const forwarded: Request[] = [];
   const posted: ExtensionRuntimeRequest[] = [];
+  const trafficMessages: Array<{ type: string; id?: string; entry?: any; decision?: string; response?: any; body?: string }> = [];
   const bodyClones: Request[] = [];
   const messageListeners: Array<(event: { source: unknown; data: unknown }) => void> = [];
   const nativeXhrInstances: NativeXMLHttpRequest[] = [];
@@ -47,15 +48,19 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock")
   const fakeWindow = {
     fetch(input: RequestInfo | URL) {
       forwarded.push(input as Request);
-      return Promise.resolve();
+      return Promise.resolve(new Response("ok", { status: 200, headers: { "content-type": "text/plain" } }));
     },
     XMLHttpRequest: NativeXMLHttpRequest,
     location: { hostname: "upload.test", port: "443", href: "https://upload.test/" },
     addEventListener(type: string, listener: (event: { source: unknown; data: unknown }) => void) {
       if (type === "message") messageListeners.push(listener);
     },
-    postMessage(message: { type?: string; id?: string; request?: ExtensionRuntimeRequest }) {
+    postMessage(message: { type?: string; id?: string; request?: ExtensionRuntimeRequest; entry?: unknown; decision?: string; response?: unknown; body?: string }) {
       if (message.type === "monitoring-state-request") return;
+      if (message.type?.startsWith("traffic-")) {
+        trafficMessages.push(message as (typeof trafficMessages)[number]);
+        return;
+      }
       if (message.type !== "resolve") return;
       if (message.request) posted.push(message.request);
       if (mode === "throw") throw new Error("bridge unavailable");
@@ -112,7 +117,7 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock")
   new Script(compiledSource).runInNewContext(sandbox);
   const messageListener = messageListeners[0];
   assert.ok(messageListener);
-  return { fakeWindow, forwarded, posted, bodyClones, messageListener, originalFetch, originalXMLHttpRequest, nativeXhrInstances };
+  return { fakeWindow, forwarded, posted, trafficMessages, bodyClones, messageListener, originalFetch, originalXMLHttpRequest, nativeXhrInstances };
 }
 
 async function runForwardedFetch(
@@ -148,7 +153,7 @@ test("resolver timeout and invalid responses fail open without an unhandled acti
 });
 
 test("MAIN world avoids resolver work when monitoring is inactive and propagates cancellation", () => {
-  const fastPath = source.indexOf("if (!isMonitoringActive()) return nativeFetch(input, init)");
+  const fastPath = source.indexOf("if (!mockActive && !isCaptureActive()) return nativeFetch(input, init)");
   const requestConstruction = source.indexOf("const request = new Request");
   assert.ok(fastPath >= 0 && fastPath < requestConstruction);
   assert.match(source, /type: "cancel"/);
@@ -471,4 +476,111 @@ test("fetch pass-through keeps FormData files and ReadableStream bodies", async 
     }),
   );
   assert.equal(await forwardedBlob.text(), "blob-payload");
+});
+
+test("面板记录 Mock fetch 的请求体、判定和响应体", async () => {
+  const harness = createContentScriptHarness("mock");
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, capture: true, whitelist: ["upload.test"],
+  } });
+  await harness.fakeWindow.fetch("https://upload.test/api?token=secret", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer secret" },
+    body: '{"amount":120}',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const start = harness.trafficMessages.find((message) => message.type === "traffic-start");
+  assert.ok(start?.entry);
+  assert.equal(start.entry.request.method, "POST");
+  assert.equal(start.entry.request.url, "https://upload.test/api?token=secret");
+  assert.equal(start.entry.request.headers.authorization, "Bearer secret");
+  assert.equal(start.entry.request.body, '{"amount":120}');
+  const finish = harness.trafficMessages.find((message) => message.type === "traffic-finish");
+  assert.ok(finish);
+  assert.equal(finish.decision, "mock");
+  assert.equal(finish.response?.status, 200);
+  assert.equal(finish.response?.body, "{}");
+});
+
+test("面板记录放行 fetch 的真实响应体和状态", async () => {
+  const harness = createContentScriptHarness("pass");
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, whitelist: ["upload.test"],
+  } });
+  await harness.fakeWindow.fetch("https://upload.test/api");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const finish = harness.trafficMessages.find((message) => message.type === "traffic-finish");
+  assert.ok(finish);
+  assert.equal(finish.decision, "pass");
+  assert.equal(finish.response?.status, 200);
+  assert.equal(finish.response?.body, "ok");
+});
+
+test("只记录模式不调用 resolver，仍上报请求和响应", async () => {
+  const harness = createContentScriptHarness("pass");
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: false, capture: true, whitelist: [],
+  } });
+  assert.notEqual(harness.fakeWindow.fetch, harness.originalFetch);
+  await harness.fakeWindow.fetch("https://other.test/api", { method: "POST", body: "a=1" });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(harness.posted.length, 0);
+  const start = harness.trafficMessages.find((message) => message.type === "traffic-start");
+  assert.ok(start?.entry);
+  assert.equal(start.entry.decision, "capture");
+  const bodyPatch = harness.trafficMessages.find((message) => message.type === "traffic-request-body");
+  assert.equal(bodyPatch?.body, "a=1");
+  const finish = harness.trafficMessages.find((message) => message.type === "traffic-finish");
+  assert.equal(finish?.decision, "capture");
+  assert.equal(finish?.response?.body, "ok");
+});
+
+test("关闭只记录后恢复原生 fetch 和 XHR", () => {
+  const harness = createContentScriptHarness("pass");
+  const state = (enabled: boolean, capture: boolean, whitelist: string[]) => harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled, capture, whitelist,
+  } });
+  state(false, true, []);
+  assert.notEqual(harness.fakeWindow.fetch, harness.originalFetch);
+  state(false, false, []);
+  assert.equal(harness.fakeWindow.fetch, harness.originalFetch);
+  assert.equal(harness.fakeWindow.XMLHttpRequest, harness.originalXMLHttpRequest);
+});
+
+test("面板记录 XHR Mock 的文本请求体和响应体", async () => {
+  const harness = createContentScriptHarness("mock");
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, capture: true, whitelist: ["upload.test"],
+  } });
+  const xhr = new harness.fakeWindow.XMLHttpRequest();
+  xhr.open("POST", "https://upload.test/api");
+  xhr.setRequestHeader("Authorization", "Bearer secret");
+  xhr.send("password=secret&amount=120");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const start = harness.trafficMessages.find((message) => message.type === "traffic-start");
+  assert.ok(start?.entry);
+  assert.equal(start.entry.source, "xhr");
+  assert.equal(start.entry.request.body, "password=secret&amount=120");
+  const finish = harness.trafficMessages.find((message) => message.type === "traffic-finish");
+  assert.equal(finish?.decision, "mock");
+  assert.equal(finish?.response?.status, 200);
+  assert.equal(finish?.response?.body, "{}");
+});
+
+test("二进制 fetch 放行时仍记录请求元数据和真实响应", async () => {
+  const harness = createContentScriptHarness("mock");
+  harness.messageListener({ source: harness.fakeWindow, data: {
+    channel: "__mock_console_extension_v1", type: "monitoring-state", enabled: true, whitelist: ["upload.test"],
+  } });
+  await harness.fakeWindow.fetch("https://upload.test/upload", {
+    method: "POST",
+    body: new Blob(["binary-payload"], { type: "image/png" }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const start = harness.trafficMessages.find((message) => message.type === "traffic-start");
+  assert.equal(start?.entry?.request.bodyUnavailable, "binary");
+  assert.equal(start?.entry?.request.url, "https://upload.test/upload");
+  const finish = harness.trafficMessages.find((message) => message.type === "traffic-finish");
+  assert.equal(finish?.decision, "capture");
+  assert.equal(finish?.response?.status, 200);
 });

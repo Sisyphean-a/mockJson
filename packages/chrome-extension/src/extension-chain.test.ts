@@ -15,6 +15,7 @@ const compiledWorker = transpileModule(worker, {
 
 function createWorkerHarness(pageUrl: string, whitelist = ["app.test"], session: Record<string, unknown> = {}) {
   let listener: (message: unknown, sender: unknown, respond: (response: any) => void) => unknown;
+  let connectListener: ((port: any) => void) | undefined;
   const resolverRequests: unknown[] = [];
   const local: Record<string, unknown> = { [domains.WHITELIST_STORAGE_KEY]: whitelist };
   const storage = (values: Record<string, unknown>) => ({
@@ -29,7 +30,10 @@ function createWorkerHarness(pageUrl: string, whitelist = ["app.test"], session:
       return dependencies[name];
     },
     chrome: {
-      runtime: { onMessage: { addListener(handler: typeof listener) { listener = handler; } } },
+      runtime: {
+        onMessage: { addListener(handler: typeof listener) { listener = handler; } },
+        onConnect: { addListener(handler: typeof connectListener) { connectListener = handler; } },
+      },
       storage: { local: storage(local), session: storage(session) },
       tabs: { async query() { return [{ id: 1, url: pageUrl }]; }, async sendMessage() {} },
     },
@@ -49,6 +53,25 @@ function createWorkerHarness(pageUrl: string, whitelist = ["app.test"], session:
     dispatch(message: unknown) { return listener(message, sender, () => {}); },
     send(message: unknown, from: unknown = sender): Promise<any> {
       return new Promise((resolve) => assert.equal(listener(message, from, resolve), true));
+    },
+    connectPanel() {
+      const posted: any[] = [];
+      const messageListeners: Array<(message: unknown) => void> = [];
+      let disconnectListener: (() => void) | undefined;
+      const port = {
+        name: protocol.TRAFFIC_PANEL_PORT,
+        postMessage(message: unknown) { posted.push(message); },
+        disconnect() {},
+        onMessage: { addListener(handler: (message: unknown) => void) { messageListeners.push(handler); } },
+        onDisconnect: { addListener(handler: () => void) { disconnectListener = handler; } },
+      };
+      assert.ok(connectListener);
+      connectListener(port);
+      return {
+        posted,
+        receive(message: unknown) { for (const handler of messageListeners) handler(message); },
+        disconnect() { disconnectListener?.(); },
+      };
     },
   };
 }
@@ -174,4 +197,70 @@ test("service worker aborts cancelled resolver requests and protects concurrency
   assert.match(worker, /timedOut/);
   assert.match(worker, /chrome\.storage\.session/);
   assert.match(worker, /loadResolverHealth/);
+});
+
+test("后台缓冲请求观测并按标签页推送给面板", async () => {
+  const harness = createWorkerHarness("https://app.test/page");
+  const panel = harness.connectPanel();
+  panel.receive({ type: "subscribe", tabId: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(panel.posted.find((message) => message.type === "snapshot")?.entries.length, 0);
+
+  harness.dispatch({
+    channel: protocol.CHANNEL,
+    type: "traffic-start",
+    entry: {
+      id: "fetch-1", source: "fetch", decision: "pending", startedAt: 100,
+      request: { method: "POST", url: "https://api.test/a", headers: { authorization: "Bearer x" }, body: "{}" },
+    },
+  });
+  harness.dispatch({
+    channel: protocol.CHANNEL,
+    type: "traffic-request-body",
+    id: "fetch-1",
+    body: '{"amount":120}',
+  });
+  harness.dispatch({
+    channel: protocol.CHANNEL,
+    type: "traffic-finish",
+    id: "fetch-1",
+    decision: "pass",
+    endedAt: 180,
+    response: { status: 200, headers: { "content-type": "application/json" }, body: '{"ok":true}' },
+  });
+
+  const entries = panel.posted.filter((message) => message.type === "entry").map((message) => message.entry);
+  assert.ok(entries.length >= 3);
+  const last = entries.at(-1);
+  assert.equal(last.tabId, 1);
+  assert.equal(last.frameId, 0);
+  assert.equal(last.pageUrl, "https://app.test/page");
+  assert.equal(last.request.body, '{"amount":120}');
+  assert.equal(last.decision, "pass");
+  assert.equal(last.response.status, 200);
+  assert.equal(last.response.body, '{"ok":true}');
+
+  panel.receive({ type: "clear" });
+  assert.ok(panel.posted.some((message) => message.type === "cleared"));
+});
+
+test("面板可以给非白名单页面单独开启只记录", async () => {
+  const harness = createWorkerHarness("https://other.test/", ["app.test"]);
+  assert.equal((await harness.send(monitoringQuery)).capture, false);
+  const panel = harness.connectPanel();
+  panel.receive({ type: "subscribe", tabId: 1 });
+  panel.receive({ type: "ping" });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.ok(panel.posted.some((message) => message.type === "pong"));
+  panel.receive({ type: "set-capture", enabled: true });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(panel.posted.find((message) => message.type === "state")?.captureTab, true);
+  assert.equal((await harness.send(monitoringQuery)).enabled, false);
+  assert.equal((await harness.send(monitoringQuery)).capture, true);
+
+  panel.receive({ type: "set-capture", enabled: false });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal((await harness.send(monitoringQuery)).capture, false);
 });

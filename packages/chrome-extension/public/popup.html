@@ -21,7 +21,7 @@
         <span id="server-detail">连接本机 22333</span>
       </section>
 
-      <section class="switches" aria-label="Mock 开关">
+      <section class="switches" aria-label="扩展开关">
         <label class="switch-row">
           <span>
             <strong>全局 Mock</strong>
@@ -39,12 +39,24 @@
           <input id="tab-toggle" type="checkbox" />
           <span class="switch" aria-hidden="true"></span>
         </label>
+
+        <label class="switch-row">
+          <span>
+            <strong>记录本页请求</strong>
+            <small id="capture-detail">开启后只观测 fetch / XHR，不改写请求</small>
+          </span>
+          <input id="capture-toggle" type="checkbox" />
+          <span class="switch" aria-hidden="true"></span>
+        </label>
       </section>
+
+      <button id="open-panel" class="open-panel" type="button">独立页打开请求面板</button>
+      <small class="devtools-hint">也可以按 F12，在 DevTools 顶部选择「接口面板」。</small>
 
       <section class="whitelist-card" aria-label="页面域名白名单">
         <label for="domain-whitelist"><strong>页面域名白名单</strong></label>
         <textarea id="domain-whitelist" rows="3" placeholder="app.example.com\nlocalhost"></textarea>
-        <small>默认包含 localhost 和 127.0.0.1；每行一个页面域名，example.com 同时匹配其子域名。仅白名单页面启用请求包装，不限制请求目标域名；留空则所有页面保持原生请求 API。</small>
+        <small>默认包含 localhost 和 127.0.0.1；每行一个页面域名，example.com 同时匹配其子域名。白名单页面启用 Mock 判定，不限制请求目标域名；其他页面可单页开启“记录本页请求”仅观测，留空时所有页面保持原生 Mock 行为。</small>
         <span id="whitelist-status" class="field-status"></span>
         <button id="save-whitelist" class="save" type="button">保存白名单</button>
       </section>

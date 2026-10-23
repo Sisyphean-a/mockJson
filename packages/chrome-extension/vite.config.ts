@@ -29,6 +29,8 @@ export default defineConfig({
         "content-bridge": resolve(packageRoot, "src/content-bridge.ts"),
         "service-worker": resolve(packageRoot, "src/service-worker.ts"),
         popup: resolve(packageRoot, "src/popup.ts"),
+        panel: resolve(packageRoot, "src/panel.ts"),
+        devtools: resolve(packageRoot, "src/devtools.ts"),
       },
       output: {
         format: "es",
