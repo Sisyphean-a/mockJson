@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { Script } from "node:vm";
 import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import * as protocol from "./protocol.js";
+import * as handoff from "./capture-handoff.js";
 
 const source = readFileSync(new URL("./panel.ts", import.meta.url), "utf8");
 const html = readFileSync(new URL("../public/panel.html", import.meta.url), "utf8");
@@ -43,7 +44,9 @@ class FakeElement {
   }
 }
 
-function createPanelHarness() {
+function createPanelHarness(failHandoff = false) {
+  const openedUrls: string[] = [];
+  const capturesSent: unknown[] = [];
   const elements = new Map<string, FakeElement>();
   for (const match of html.matchAll(/id="([^"]+)"/g)) elements.set(match[1], new FakeElement("div"));
   let messageListener: ((message: unknown) => void) | undefined;
@@ -62,6 +65,14 @@ function createPanelHarness() {
   new Script(compiled).runInNewContext({
     exports: {},
     require(name: string) {
+      if (name === "./capture-handoff.js") return {
+        ...handoff,
+        handoffCapture: (entry: protocol.TrafficEntry) => handoff.handoffCapture(entry, async (_url, init) => {
+          if (failHandoff) throw new TypeError("offline");
+          capturesSent.push(JSON.parse(String(init?.body)));
+          return Response.json({ id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", expiresAt: Date.now() + 10000 }, { status: 201 });
+        }),
+      };
       assert.equal(name, "./protocol.js");
       return protocol;
     },
@@ -76,6 +87,7 @@ function createPanelHarness() {
       clearTimeout,
     },
     chrome: {
+      tabs: { async create({ url }: { url: string }) { openedUrls.push(url); return {}; } },
       runtime: {
         connect() {
           return port;
@@ -84,13 +96,14 @@ function createPanelHarness() {
     },
     URL,
     URLSearchParams,
+    Error,
     Date,
     Math,
     setTimeout,
     clearTimeout,
   });
   assert.ok(messageListener);
-  return { elements, posted, messageListener };
+  return { elements, posted, messageListener, openedUrls, capturesSent };
 }
 
 test("面板页面元素完整，快照可渲染列表和详情", () => {
@@ -157,6 +170,39 @@ test("面板过滤和清空消息不会抛错", () => {
   assert.equal(harness.elements.get("rows")!.children.length, 0);
   harness.messageListener({ type: "cleared" });
   assert.equal(harness.elements.get("rows")!.children.length, 0);
+});
+
+test("选中请求可交接到控制台，截断响应禁止保存，离线明确提示", async () => {
+  function find(root: FakeElement, text: string): FakeElement | undefined {
+    if (root.textContent === text) return root;
+    for (const child of root.children) { const found = find(child, text); if (found) return found; }
+  }
+  const entry: protocol.TrafficEntry = {
+    id: "capture", tabId: 1, frameId: 0, pageUrl: "https://app.test/", source: "fetch", decision: "pass",
+    startedAt: 1000, endedAt: 1100,
+    request: { method: "GET", url: "https://api.test/users", headers: { Cookie: "secret" } },
+    response: { status: 200, headers: {}, body: '{"ok":true}' },
+  };
+  for (const offline of [false, true]) {
+    const h = createPanelHarness(offline);
+    h.messageListener({ type: "snapshot", captureTab: true, entries: [entry] });
+    h.elements.get("rows")!.children[0].listeners.click();
+    const button = find(h.elements.get("detail")!, "保存为 Mock 场景")!;
+    assert.equal(button.disabled, false);
+    button.listeners.click();
+    await new Promise((resolve) => setImmediate(resolve));
+    if (offline) {
+      assert.match(h.elements.get("toast")!.textContent, /22333/);
+      assert.equal(h.openedUrls.length, 0);
+    } else {
+      assert.equal(h.openedUrls[0], "http://127.0.0.1:22333/#capture=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+      assert.deepEqual(h.capturesSent, [{ request: { method: "GET", url: entry.request.url }, response: { status: 200, body: '{"ok":true}' } }]);
+    }
+    h.messageListener({ type: "entry", entry: { ...entry, response: { ...entry.response!, bodyTruncated: true } } });
+    const disabled = find(h.elements.get("detail")!, "保存为 Mock 场景")!;
+    assert.equal(disabled.disabled, true);
+    assert.match(disabled.title, /完整/);
+  }
 });
 
 test("DevTools 面板已注册并复用独立面板页面", () => {

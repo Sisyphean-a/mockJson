@@ -1,4 +1,11 @@
-/** 扩展与本机 resolver 的共享线协议，不依赖浏览器或 Mock Console 运行时。 */
+/** 扩展与本机服务的共享线协议，不依赖浏览器或 Mock Console 运行时。 */
+export type ExtensionCaptureInput = {
+  request: { url: string; method: string };
+  response: { status: number; body: string };
+};
+
+export type ExtensionCaptureTicket = { id: string; expiresAt: number };
+
 export type ExtensionPassReason = "unmatched" | "disabled" | "invalid-request" | "unsupported-status";
 
 export type ExtensionRuntimeRequest = {

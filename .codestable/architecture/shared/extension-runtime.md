@@ -2,7 +2,7 @@
 
 ## 作用域
 
-本页记录 `package:mock-console` 与 `package:chrome-extension` 共同遵守的扩展运行时线协议；类型定义唯一位于 [`package:extension-contract`](../packages/extension-contract.md)。
+本页记录 `package:mock-console` 与 `package:chrome-extension` 共同遵守的扩展运行时及主动响应交接线协议；类型定义唯一位于 [`package:extension-contract`](../packages/extension-contract.md)。
 
 ## 调用流
 
@@ -22,6 +22,16 @@
 - `pass` 表示扩展不接管真实请求；浏览器随后以原始 URL、Cookie、凭据、CORS 和请求体语义发出真实请求。
 - 页面授权未通过（见 [Chrome Extension 领域规则](../../requirements/CONTEXT.md#chrome-extension-领域规则)）、resolver 未命中、服务不可用、超时或取消都必须保持真实请求放行；用于条件判定和日志的请求体副本不得消耗原始 Request，也不得为未进入 resolver 的请求增加日志。
 - 请求观测面板（traffic）是扩展内部能力，使用 `packages/chrome-extension/src/protocol.ts` 的内部消息和本地缓冲，不经过 resolver，也不改变本页描述的线协议；面板可在 resolver 离线时记录放行的真实响应。
+
+## 主动响应交接
+
+此通道独立于 resolver 和本地观测缓冲，只有用户主动点击时调用，不改变运行时判定协议。
+
+- 扩展 `capture-handoff.ts` 校验响应已完成、未截断、可采集且为合法 JSON，再发送 `ExtensionCaptureInput`（仅 URL、Method、响应状态码和文本内容）至 `POST /__mock_extension/captures`；不发送请求 Header、Cookie 或请求体。
+- 服务端 `capture-routes.ts` 复核 http(s) URL、Method、200–599 状态码、合法 JSON 和既有观测的 64K 字符文本上限（XHR 多字节完整文本不按字节再次裁剪），返回 `ExtensionCaptureTicket`；扩展打开 `/#capture=<id>`，URL 不携带响应原文。
+- 草稿只在服务内存驻留，15 分钟后不可读取、每分钟清理过期原文，关闭服务时清空，不写配置或请求日志。期限用于减少响应原文留存；服务重启或草稿过期后须从扩展重新交接。
+- 控制台通过 `GET /__mock_admin/captures/:id` 读取，通过 `POST /__mock_admin/captures/:id/save` 确认；同一草稿的并发保存与成功后重试返回同一结果，保存失败保留可重试草稿。保存业务语义唯一见[扩展响应转场景规则](../../requirements/CONTEXT.md#mock-console-领域规则)。
+- 交接和确认接口均限制 loopback，显式拒绝非本机网页 Origin；允许 Chrome 扩展和本机控制台来源，POST 必须为 application/json，响应 no-store。捕获数据与配置仍由 Mock Console 拥有，扩展不读写配置副本。
 
 ## 所有者
 

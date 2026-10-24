@@ -19,10 +19,11 @@
 | server/bootstrap | `packages/mock-console/server/src/index.ts` | Fastify、CORS、静态页面、端口和组合根 |
 | server/config | `config-service.ts` | 串行配置变更、失败恢复和持久化协调 |
 | server/routes | `admin-routes.ts`、`extension-routes.ts` | 管理 API 与扩展 resolver 的 HTTP 转换 |
+| server/capture | `capture-routes.ts`、`config-service.ts` 的 `saveCapturedScenario` | 主动响应草稿、确认保存和原子配置提交；协议见[主动响应交接](../shared/extension-runtime.md#主动响应交接) |
 | server/runtime | `runtime-resolver.ts` | 按当前 Package、接口优先级和响应选择生成 Mock / pass 判定 |
 | server/proxy | `proxy.ts` | Reqable / 本地 Proxy 请求匹配、Mock 返回和真实转发 |
 | server/logs | `request-logs.ts` | 运行态 Proxy / 扩展判定日志 |
-| web | `packages/mock-console/web/src/` | Vue 管理页面和管理请求 |
+| web | `packages/mock-console/web/src/`、`use-capture-import.ts`、`components/CaptureImportPanel.vue` | Vue 管理页面、管理请求和扩展响应确认入口 |
 
 ## 依赖
 

@@ -6,7 +6,7 @@
 
 - `packages/mock-console`：Fastify Mock / Proxy 服务和 Vue 管理页面，拥有 Mock 配置、匹配和运行日志。
 - `packages/chrome-extension`：Chrome Manifest V3 扩展，不保存 Mock 配置，只负责页面请求桥接。
-- `packages/extension-contract`：扩展与本机 resolver 共用的 TypeScript 线协议类型，不包含运行时逻辑。
+- `packages/extension-contract`：扩展与本机服务共用的 resolver 和响应交接 TypeScript 线协议类型，不包含运行时逻辑。
 
 ## 启动 Mock Console
 
@@ -91,8 +91,22 @@ packages/chrome-extension/dist
 - 列表按发起时间显示方法、URL、状态码、耗时、大小，以及该请求是 Mock、放行还是仅记录；点击行后在底部的「请求 / 响应」tab 间切换，查看请求头、文本请求体、响应头、文本响应体和错误。
 - 支持搜索、按 Mock / 放行 / 只记录 / 失败筛选、暂停、清空，以及复制 URL、复制为 cURL、复制响应体；敏感 Header 默认遮罩，可在详情栏切换显示。
 - 放行请求的响应体通过 `Response.clone()` 读取，不会改变页面拿到的响应；单条请求体/响应体预览上限 64 KB，超出显示为截断。上传体（multipart / FormData）、流式（`text/event-stream`）和不透明响应不采集内容；二进制请求仍记录 URL、方法、状态和响应头，但不读取内容。
-- 记录只保存在扩展的 `chrome.storage.session` 和 Service Worker 内存中，不写入 Mock Console，不需要后端；Mock Console 离线时仍能记录放行请求。每个标签页内存保留最近 500 条，会话存储保留最近 200 条。
+- 日常记录只保存在扩展的 `chrome.storage.session` 和 Service Worker 内存中，不自动发送到 Mock Console，不需要后端；Mock Console 离线时仍能记录放行请求。每个标签页内存保留最近 500 条，会话存储保留最近 200 条。
 - 面板不覆盖静态资源、导航、Worker / Service Worker、WebSocket 和重定向中间跳，也不推断请求之间的调用因果；它定位为接口级观测面板，不承诺完整替代 DevTools Network。
+
+### 将选中的响应保存为 Mock 场景
+
+更新后先重启 Mock Console 服务，并在 `chrome://extensions` 中重新加载扩展；已打开的 DevTools 面板也需重新打开。
+
+1. 在接口面板选中一条请求，点击「保存为 Mock 场景」；也可点击「打开控制台」直接进入 22333 页面。
+2. 控制台自动打开响应草稿，预填完整 JSON、HTTP 状态码和名称。保存到当前测试包，可新建逻辑接口，或选择已有接口追加场景；响应、名称、状态码和延迟都可修改。
+3. 点击「保存场景」只保存、不改变当前响应；点击「保存并启用」会启用接口并切换固定响应，随后自动定位到新场景。目标使用条件分支时只能保存，之后在响应规则中引用该场景，不会自动切换模式。
+
+新建接口采用 AND 联合匹配 Method、Host 和 Path，忽略查询参数；追加场景保留原匹配规则。启用场景不会改变扩展的白名单或 Mock 开关，需要按现有接入方式重新发起请求。
+
+仅支持完整、合法的 JSON 响应及 200–599 状态码；未完成、失败、空、非 JSON 或被截断的响应不能直接保存。扩展会话恢复的预览也可能被截断，此时请重新请求后再保存。
+
+只有主动点击交接时，选中的 URL、Method 和响应内容才发送到本机服务，不携带请求 Cookie、请求头或请求体，也不重放真实请求。草稿仅在服务内存中保留 15 分钟（过期后定时清理），重启后失效，不写入请求日志或配置；确认保存后，场景才进入正常配置持久化。
 
 ## 当前能力
 

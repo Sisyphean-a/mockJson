@@ -1,4 +1,17 @@
-import type { ExtensionPassReason, ExtensionRuntimeRequest } from "@mock-json/extension-contract";
+import type { ExtensionCaptureInput, ExtensionCaptureTicket, ExtensionPassReason, ExtensionRuntimeRequest } from "@mock-json/extension-contract";
+
+export type CaptureSaveResult = { packageId: string; apiId: string; scenarioId: string; activated: boolean };
+export type CaptureDraft = ExtensionCaptureInput & ExtensionCaptureTicket & { saved?: CaptureSaveResult };
+export type SaveCaptureInput = {
+  packageId: string;
+  apiId?: string;
+  apiName: string;
+  scenarioName: string;
+  status: number;
+  delayMs: number;
+  responseBody: string;
+  activate: boolean;
+};
 
 export type MatchSource = "header" | "url" | "method";
 export type MatchOperator =

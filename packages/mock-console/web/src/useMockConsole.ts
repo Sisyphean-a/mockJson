@@ -8,6 +8,7 @@ import { useScenarioActions } from "./use-scenario-actions";
 import { createRuntimeEndpoints, type RuntimeEndpoints } from "./runtime-endpoints";
 import { useRequestLogs } from "./use-request-logs";
 import { useResponseSelection } from "./use-response-selection";
+import { useCaptureImport } from "./use-capture-import";
 
 export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoints()) {
   const client = new MockAdminClient(endpoints);
@@ -79,20 +80,44 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
     }
   }
 
+  const capture = useCaptureImport(client, model, async (result) => {
+    await model.load();
+    if (model.pkg.value?.id !== result.packageId)
+      throw new Error("当前测试包已变化，请在顶部切换到保存场景的测试包后重试");
+    const api = model.pkg.value.apis.find((a) => a.id === result.apiId);
+    if (!api?.scenarios.some((s) => s.id === result.scenarioId))
+      throw new Error("已保存的接口或场景已被删除");
+    model.search.value = "";
+    model.selectedId.value = result.apiId;
+    model.sceneId.value = result.scenarioId;
+    responseActions.rulesOpen.value = false;
+    requestLogs.showWorkspace();
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    notice(result.activated ? "场景已保存并启用" : "场景已保存，未改变当前响应");
+  });
+
+  function closeCapture() {
+    if (!capture.close()) return false;
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    return true;
+  }
+
   function handleBeforeUnload(event: BeforeUnloadEvent) {
-    if (!forms.draftDirty.value && !responseActions.responseDirty.value) return;
+    if (!forms.draftDirty.value && !responseActions.responseDirty.value && !capture.dirty.value && !capture.saving.value) return;
     event.preventDefault();
     event.returnValue = "";
   }
 
   onMounted(() => {
     window.addEventListener("beforeunload", handleBeforeUnload);
-    void retryLoad();
+    void retryLoad().then(() => capture.readLocation(window.location.hash));
   });
   onBeforeUnmount(() => window.removeEventListener("beforeunload", handleBeforeUnload));
 
   return {
     ...model,
+    capture,
+    closeCapture,
     ...requestLogs,
     ...forms,
     toast,
@@ -115,7 +140,11 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
       responseActions.rulesOpen.value = false;
       scenarioActions.openSceneEdit(scene);
     },
-    showLogs: () => responseActions.guardResponseLeave(requestLogs.showLogs),
+    showWorkspace: () => { if (!capture.open.value || closeCapture()) requestLogs.showWorkspace(); },
+    showLogs: () => {
+      if (capture.open.value && !closeCapture()) return;
+      return responseActions.guardResponseLeave(requestLogs.showLogs);
+    },
     switchPkg: (id: string) => responseActions.guardResponseLeave(() => packageActions.switchPackage(id)),
     createApi: () => responseActions.guardResponseLeave(apiActions.createApi),
     moveApi: () => responseActions.guardResponseLeave(apiActions.moveApi),

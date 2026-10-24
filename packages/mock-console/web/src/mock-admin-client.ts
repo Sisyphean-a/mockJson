@@ -1,5 +1,8 @@
 import {
   MAX_REQUEST_LOGS,
+  type CaptureDraft,
+  type CaptureSaveResult,
+  type SaveCaptureInput,
   type LogicalApi,
   type MatchRule,
   type PackageConfig,
@@ -53,6 +56,14 @@ export class MockAdminClient {
     private readonly endpoints: RuntimeEndpoints = createRuntimeEndpoints(),
     private readonly transport: AdminTransport = browserTransport,
   ) {}
+
+  async getCapture(id: string) {
+    return this.request<CaptureDraft>(`/__mock_admin/captures/${encodeURIComponent(id)}`);
+  }
+
+  async saveCapture(id: string, input: SaveCaptureInput) {
+    return this.request<CaptureSaveResult>(`/__mock_admin/captures/${encodeURIComponent(id)}/save`, json("POST", input));
+  }
 
   async getState() {
     return this.request<State>("/__mock_admin/state");

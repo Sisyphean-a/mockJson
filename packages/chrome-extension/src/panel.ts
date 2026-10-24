@@ -1,10 +1,13 @@
 import {
   TRAFFIC_PANEL_PORT,
+  DEFAULT_RUNTIME_URL,
   type TrafficBodyInfo,
   type TrafficEntry,
   type TrafficPanelCommand,
   type TrafficPanelMessage,
 } from "./protocol.js";
+
+import { captureUnavailableReason, handoffCapture } from "./capture-handoff.js";
 
 type DetailTab = "request" | "response";
 
@@ -41,6 +44,7 @@ let detailTab: DetailTab = "response";
 let detailScrollTop = 0;
 let timelineStart = 0;
 let timelineSpan = 1;
+let handingOff = false;
 
 captureButton.addEventListener("click", () => {
   captureTab = !captureTab;
@@ -354,6 +358,15 @@ function detailBar(entry: TrafficEntry) {
   const bar = el("div", "detail-bar");
   bar.append(tabButton("请求", "request"), tabButton("响应", "response"));
   const actions = el("div", "detail-actions");
+  const saveMock = actionButton(handingOff ? "发送中…" : "保存为 Mock 场景", () => { void saveToConsole(entry); });
+  const reason = captureUnavailableReason(entry);
+  saveMock.disabled = handingOff || Boolean(reason);
+  saveMock.title = reason || "将此响应带到 22333 控制台，确认后保存；不会自动启用";
+  saveMock.classList.add("mock-action");
+  actions.append(saveMock);
+  actions.append(actionButton("打开控制台", () => {
+    void chrome.tabs.create({ url: DEFAULT_RUNTIME_URL }).catch(() => showToast("无法打开控制台，请访问 127.0.0.1:22333"));
+  }));
   actions.append(actionButton("复制 URL", () => copyText(entry.request.url)));
   if (detailTab === "request") actions.append(actionButton("复制 cURL", () => copyText(toCurl(entry))));
   if (detailTab === "response" && entry.response?.body !== undefined)
@@ -364,6 +377,22 @@ function detailBar(entry: TrafficEntry) {
   }));
   bar.append(actions);
   return bar;
+}
+
+async function saveToConsole(entry: TrafficEntry) {
+  if (handingOff) return;
+  handingOff = true;
+  renderDetail();
+  try {
+    const ticket = await handoffCapture(entry);
+    await chrome.tabs.create({ url: `${DEFAULT_RUNTIME_URL}/#capture=${encodeURIComponent(ticket.id)}` });
+    showToast("已带到控制台，请确认并保存；草稿 15 分钟内有效");
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : "无法交接响应");
+  } finally {
+    handingOff = false;
+    renderDetail();
+  }
 }
 
 function tabButton(label: string, tab: DetailTab) {

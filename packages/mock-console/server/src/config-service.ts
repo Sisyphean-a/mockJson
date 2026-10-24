@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
+import type { ExtensionCaptureInput } from "@mock-json/extension-contract";
 import { scenarioReferences, selectionFor, validateSelection } from "../../shared/response-selection.js";
 import type {
   LogicalApi,
+  CaptureSaveResult,
+  SaveCaptureInput,
   MatchRule,
   PackageConfig,
   PersistedPackageConfig,
@@ -25,6 +28,7 @@ export interface StateRepository {
 }
 
 export class NotFoundError extends Error {}
+export class InvalidCaptureError extends Error {}
 
 export class MockConfigService {
   private state: State | null = null;
@@ -307,6 +311,57 @@ export class MockConfigService {
       if (shouldActivate) api.activeScenarioId = scenario.id;
       await this.save();
       return scenario;
+    });
+  }
+
+  async saveCapturedScenario(capture: ExtensionCaptureInput, input: SaveCaptureInput): Promise<CaptureSaveResult> {
+    return this.enqueue(async () => {
+      if (input.packageId !== this.getState().currentPackageId)
+        throw new InvalidCaptureError("当前测试包已变化，请刷新页面确认保存目标");
+      if (typeof input.activate !== "boolean") throw new InvalidCaptureError("请选择是否启用场景");
+      const candidate = structuredClone(this.getState());
+      const pkg = candidate.packages.find((p) => p.id === input.packageId);
+      if (!pkg) throw new NotFoundError("测试包不存在");
+      let api = input.apiId ? pkg.apis.find((a) => a.id === input.apiId) : undefined;
+      if (input.apiId && !api) throw new NotFoundError("目标接口不存在或已移至其他测试包");
+      if (input.activate && api?.responseSelection?.mode === "conditional")
+        throw new InvalidCaptureError("目标接口使用条件分支，请仅保存后在响应规则中选择该场景");
+      let scene: Scenario;
+      try {
+        const status = validateStatus(input.status);
+        if (status < 200) throw new Error("浏览器 Mock 仅支持 200–599 状态码");
+        if (typeof input.responseBody !== "string") throw new Error("响应内容必须是 JSON 文本");
+        scene = {
+          id: randomUUID(), name: validateName(input.scenarioName, "场景"), status,
+          delayMs: validateDelay(input.delayMs), responseBody: parseJsonBody(input.responseBody), color: "blue",
+        };
+        if (!api) validateName(input.apiName, "接口");
+      } catch (error) {
+        throw new InvalidCaptureError(error instanceof Error ? error.message : "场景参数无效");
+      }
+      if (!api) {
+        const url = new URL(capture.request.url);
+        api = {
+          id: randomUUID(), name: validateName(input.apiName, "接口"), enabled: true,
+          priority: Math.max(0, ...pkg.apis.map((a) => a.priority)) + 10,
+          matchMode: "AND",
+          matchRules: [
+            { id: randomUUID(), source: "method", field: "method", operator: "equals", value: capture.request.method },
+            { id: randomUUID(), source: "url", field: "host", operator: "equals", value: url.host },
+            { id: randomUUID(), source: "url", field: "path", operator: "equals", value: url.pathname },
+          ],
+          activeScenarioId: null, scenarios: [],
+        };
+        pkg.apis.push(api);
+      }
+      api.scenarios.push(scene);
+      if (input.activate) { api.enabled = true; api.activeScenarioId = scene.id; }
+      // Guarantee: 接口、规则、场景一起提交；写盘成功前不改变正在生效的配置。
+      const serialized = JSON.stringify(candidate, null, 2);
+      await this.repository.write(candidate, serialized);
+      this.state = candidate;
+      this.persistedSnapshot = serialized;
+      return { packageId: pkg.id, apiId: api.id, scenarioId: scene.id, activated: input.activate };
     });
   }
 

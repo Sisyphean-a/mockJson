@@ -9,6 +9,7 @@ import MatchPanel from "./components/MatchPanel.vue";
 import PackageBar from "./components/PackageBar.vue";
 import RequestLogPanel from "./components/RequestLogPanel.vue";
 import ScenarioPanel from "./components/ScenarioPanel.vue";
+import CaptureImportPanel from "./components/CaptureImportPanel.vue";
 import type { ContextMenuItem, ContextMenuState, ContextTarget } from "./context-menu";
 import { createRuntimeEndpoints } from "./runtime-endpoints";
 
@@ -83,8 +84,8 @@ function openContextMenu(event: MouseEvent, target: ContextTarget) {
 <template>
   <div class="app-shell">
     <PackageBar :controller="c" />
-    <main :class="{ 'startup-state': c.loading.value || c.loadError.value, 'logs-mode': c.activeView.value === 'logs' }">
-      <ApiSidebar v-if="!c.loading.value && !c.loadError.value && c.activeView.value === 'workspace'" :controller="c" :open-context-menu="openContextMenu" />
+    <main :class="{ 'startup-state': c.loading.value || c.loadError.value, 'logs-mode': c.activeView.value === 'logs' || c.capture.open.value }">
+      <ApiSidebar v-if="!c.loading.value && !c.loadError.value && !c.capture.open.value && c.activeView.value === 'workspace'" :controller="c" :open-context-menu="openContextMenu" />
       <section class="content" :aria-busy="c.loading.value">
         <div v-if="c.loading.value" class="loading-panel" role="status" aria-live="polite">
           <div class="loading-mark" aria-hidden="true">✦</div>
@@ -94,6 +95,7 @@ function openContextMenu(event: MouseEvent, target: ContextTarget) {
           <p>{{ c.loadError.value }}</p>
           <button class="primary" @click="c.retryLoad">重试</button>
         </div>
+        <CaptureImportPanel v-else-if="c.capture.open.value" :controller="c.capture" :pkg="c.pkg.value" @close="c.closeCapture" @create-package="c.openPackage" />
         <RequestLogPanel v-else-if="c.activeView.value === 'logs'" :controller="c" />
         <div v-else-if="!c.api.value" class="welcome">
           <div class="welcome-icon">✦</div>

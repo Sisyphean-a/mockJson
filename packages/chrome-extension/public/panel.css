@@ -323,6 +323,9 @@ body {
 }
 
 .detail-actions button:hover { background: var(--accent-soft); }
+.detail-actions button.mock-action { background: var(--accent); color: #fff; font-weight: 600; }
+.detail-actions button.mock-action:hover { filter: brightness(.95); }
+.detail-actions button:disabled { opacity: .45; cursor: not-allowed; }
 
 .detail-body {
   display: flex;
