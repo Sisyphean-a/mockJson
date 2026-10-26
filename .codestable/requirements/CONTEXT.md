@@ -45,7 +45,7 @@
 - Popup 提供页面域名白名单、全局 Mock、当前标签页 Mock、Mock Console 连接状态、“记录本页请求”和打开请求面板的入口；当前页面不命中时显示“不在页面白名单”并禁用标签页 Mock 开关，该开关不能绕过页面授权，但“记录本页请求”仍可对受支持的 http(s) 页面显式开启。白名单为空或全局/当前标签页暂停时恢复原生请求 API，已保存的包装也不再发起 Mock 判定；只记录开启时请求 API 保持观测包装但不进入判定。
 - 扩展模式不使用 Package 的 RealService 配置，因为未命中请求必须由浏览器以原始 URL、Cookie、凭据和 CORS 语义直接发出；当前 Package 仍是全局选择。
 - 扩展 resolver 只允许 loopback 访问，不承担真实请求代理；扩展 resolver 和 Mock Console 服务端日志都不记录真实放行请求的最终响应，放行响应默认由扩展本地请求观测面板保存在浏览器会话中；主动交接响应转场景不经过 resolver 或请求日志。现有 Reqable / Proxy 路径和其日志语义保持不变。
-- **请求观测面板**：面板注册为 DevTools 顶部标签，也可作为独立扩展页打开；两者按标签页展示 `fetch` / 异步 XHR 的请求详情和发起顺序，不依赖后端，Mock Console 离线时仍可记录放行请求。记录来源是 Mock 判定或用户显式开启的“只记录”；顺序按发起时间而非推断调用因果。单条请求体/响应体预览上限 64 KiB，上传体、二进制、流式（`text/event-stream`）和不透明响应不采集内容（二进制请求仍保留 URL、方法、状态和响应头）；每标签页内存保留最近 500 条，`chrome.storage.session` 保留最近 200 条且单字段预览 4 KiB。静态资源、导航、Worker / Service Worker、WebSocket 和重定向中间跳不出现在面板中，面板不承诺替代 DevTools Network。
+- **请求观测面板**：面板注册为 DevTools 顶部标签，也可作为独立扩展页打开；请求头和响应头直接显示原值，不按字段替换内容，也不提供显示/隐藏值的开关。原值本就可由浏览器开发工具和 cURL 获取，不将本地显示开关当作访问保护；实现锚点：`packages/chrome-extension/src/panel.ts` 的 `headerTable`、`detailBar`。两者按标签页展示 `fetch` / 异步 XHR 的请求详情和发起顺序，不依赖后端，Mock Console 离线时仍可记录放行请求。记录来源是 Mock 判定或用户显式开启的“只记录”；顺序按发起时间而非推断调用因果。单条请求体/响应体预览上限 64 KiB，上传体、二进制、流式（`text/event-stream`）和不透明响应不采集内容（二进制请求仍保留 URL、方法、状态和响应头）；每标签页内存保留最近 500 条，`chrome.storage.session` 保留最近 200 条且单字段预览 4 KiB。静态资源、导航、Worker / Service Worker、WebSocket 和重定向中间跳不出现在面板中，面板不承诺替代 DevTools Network。
 - 扩展 MVP 支持白名单页面请求中的 JSON、200–599 状态码和异步请求；非白名单页面、1xx 场景、同步 XHR、导航/资源加载、Worker / Service Worker 请求、WebSocket、流式或二进制 Mock 不由扩展接管。浏览器自动补充且页面不可观察的 Header 不保证可用于扩展匹配。
 
 ## 运行规则

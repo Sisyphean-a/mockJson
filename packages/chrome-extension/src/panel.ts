@@ -39,7 +39,6 @@ let paused = false;
 let captureTab = false;
 let search = "";
 let decisionFilter = "all";
-let revealSensitive = false;
 let detailTab: DetailTab = "response";
 let detailScrollTop = 0;
 let timelineStart = 0;
@@ -371,10 +370,6 @@ function detailBar(entry: TrafficEntry) {
   if (detailTab === "request") actions.append(actionButton("复制 cURL", () => copyText(toCurl(entry))));
   if (detailTab === "response" && entry.response?.body !== undefined)
     actions.append(actionButton("复制响应", () => copyText(entry.response?.body ?? "")));
-  actions.append(actionButton(revealSensitive ? "隐藏敏感值" : "显示敏感值", () => {
-    revealSensitive = !revealSensitive;
-    renderDetail();
-  }));
   bar.append(actions);
   return bar;
 }
@@ -650,17 +645,10 @@ function headerTable(headers: Record<string, string>) {
   const table = el("table", "headers");
   for (const [name, value] of Object.entries(headers)) {
     const row = document.createElement("tr");
-    row.append(el("td", "", name), el("td", "", displayHeaderValue(name, value)));
+    row.append(el("td", "", name), el("td", "", value));
     table.append(row);
   }
   return table;
-}
-
-const sensitiveHeaders = new Set(["authorization", "cookie", "set-cookie", "proxy-authorization"]);
-
-function displayHeaderValue(name: string, value: string) {
-  if (revealSensitive || !sensitiveHeaders.has(name.toLowerCase())) return value;
-  return "••••••";
 }
 
 function unavailableText(reason: NonNullable<TrafficBodyInfo["bodyUnavailable"]>) {

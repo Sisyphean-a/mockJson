@@ -89,7 +89,7 @@ packages/chrome-extension/dist
 面板能力：
 
 - 列表按发起时间显示方法、URL、状态码、耗时、大小，以及该请求是 Mock、放行还是仅记录；点击行后在底部的「请求 / 响应」tab 间切换，查看请求头、文本请求体、响应头、文本响应体和错误。
-- 支持搜索、按 Mock / 放行 / 只记录 / 失败筛选、暂停、清空，以及复制 URL、复制为 cURL、复制响应体；敏感 Header 默认遮罩，可在详情栏切换显示。
+- 支持搜索、按 Mock / 放行 / 只记录 / 失败筛选、暂停、清空，以及复制 URL、复制为 cURL、复制响应体；请求头和响应头直接显示原值。
 - 放行请求的响应体通过 `Response.clone()` 读取，不会改变页面拿到的响应；单条请求体/响应体预览上限 64 KB，超出显示为截断。上传体（multipart / FormData）、流式（`text/event-stream`）和不透明响应不采集内容；二进制请求仍记录 URL、方法、状态和响应头，但不读取内容。
 - 日常记录只保存在扩展的 `chrome.storage.session` 和 Service Worker 内存中，不自动发送到 Mock Console，不需要后端；Mock Console 离线时仍能记录放行请求。每个标签页内存保留最近 500 条，会话存储保留最近 200 条。
 - 面板不覆盖静态资源、导航、Worker / Service Worker、WebSocket 和重定向中间跳，也不推断请求之间的调用因果；它定位为接口级观测面板，不承诺完整替代 DevTools Network。

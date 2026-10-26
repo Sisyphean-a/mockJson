@@ -46,6 +46,7 @@ class FakeElement {
 
 function createPanelHarness(failHandoff = false) {
   const openedUrls: string[] = [];
+  const copiedTexts: string[] = [];
   const capturesSent: unknown[] = [];
   const elements = new Map<string, FakeElement>();
   for (const match of html.matchAll(/id="([^"]+)"/g)) elements.set(match[1], new FakeElement("div"));
@@ -94,6 +95,7 @@ function createPanelHarness(failHandoff = false) {
         },
       },
     },
+    navigator: { clipboard: { async writeText(text: string) { copiedTexts.push(text); } } },
     URL,
     URLSearchParams,
     Error,
@@ -103,7 +105,7 @@ function createPanelHarness(failHandoff = false) {
     clearTimeout,
   });
   assert.ok(messageListener);
-  return { elements, posted, messageListener, openedUrls, capturesSent };
+  return { elements, posted, messageListener, openedUrls, capturesSent, copiedTexts };
 }
 
 test("面板页面元素完整，快照可渲染列表和详情", () => {
@@ -142,6 +144,45 @@ test("面板页面元素完整，快照可渲染列表和详情", () => {
   assert.equal(detail.children[1].className, "detail-body");
   const bar = detail.children[0].children[1];
   assert.match(bar.children[1].className, /active/);
+});
+
+test("请求和响应头直接显示原值，复制 cURL 保留请求内容", async () => {
+  const h = createPanelHarness();
+  const entry: protocol.TrafficEntry = {
+    id: "headers", tabId: 1, frameId: 0, pageUrl: "https://app.test/", source: "fetch", decision: "pass",
+    startedAt: 1000, endedAt: 1100,
+    request: {
+      method: "POST", url: "https://api.test/users?token=abc",
+      headers: { Authorization: "Bearer abc", cOoKiE: "session=abc", "Proxy-Authorization": "Basic abc", "X-Api-Key": "key-abc" },
+      body: '{"token":"abc"}',
+    },
+    response: { status: 200, headers: { "Set-Cookie": "session=xyz; HttpOnly", authorization: "Bearer xyz" }, body: '{"token":"xyz"}' },
+  };
+  h.messageListener({ type: "snapshot", captureTab: true, entries: [entry] });
+  h.elements.get("rows")!.children[0].listeners.click();
+  const detail = h.elements.get("detail")!;
+  function descendants(root: FakeElement): FakeElement[] {
+    return [root, ...root.children.flatMap(descendants)];
+  }
+  function checkHeaders(headers: Record<string, string>) {
+    const table = descendants(detail).find((node) => node.className === "headers")!;
+    assert.deepEqual(table.children.map((row) => row.children.map((cell) => cell.textContent)), Object.entries(headers));
+  }
+  function checkActions(labels: string[]) {
+    const actions = descendants(detail).find((node) => node.className === "detail-actions")!;
+    assert.deepEqual(actions.children.map((button) => button.textContent), labels);
+  }
+  checkHeaders(entry.response!.headers);
+  checkActions(["保存为 Mock 场景", "打开控制台", "复制 URL", "复制响应"]);
+  descendants(detail).find((node) => node.textContent === "请求")!.listeners.click();
+  checkHeaders(entry.request.headers);
+  checkActions(["保存为 Mock 场景", "打开控制台", "复制 URL", "复制 cURL"]);
+  descendants(detail).find((node) => node.textContent === "复制 cURL")!.listeners.click();
+  await new Promise((resolve) => setImmediate(resolve));
+  const curl = h.copiedTexts[0];
+  assert.ok(curl.includes(entry.request.url));
+  for (const [name, value] of Object.entries(entry.request.headers)) assert.ok(curl.includes(`${name}: ${value}`));
+  assert.ok(curl.includes(entry.request.body!));
 });
 
 test("面板过滤和清空消息不会抛错", () => {

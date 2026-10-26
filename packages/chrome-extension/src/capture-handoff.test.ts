@@ -10,7 +10,7 @@ const entry: TrafficEntry = {
   response: { status: 200, headers: {}, body: '{"ok":true}' },
 };
 
-test("仅主动交接完整 JSON，不发送敏感请求数据", async () => {
+test("仅主动交接 URL、Method 和完整 JSON 响应", async () => {
   let sent: unknown;
   const ticket = { id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", expiresAt: Date.now() + 1000 };
   const result = await handoffCapture(entry, async (url, init) => {
