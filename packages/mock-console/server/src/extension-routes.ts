@@ -38,7 +38,7 @@ function recordExtensionDecision(
 ) {
   if (!logs) return;
   const response = resolution.response;
-  const outcome: RequestLogOutcome = response.action === "mock"
+  const outcome: RequestLogOutcome = response.action !== "pass"
     ? "mocked"
     : response.reason === "unmatched"
       ? "unmatched"
@@ -72,6 +72,7 @@ function recordExtensionDecision(
     apiName: resolution.api?.name || null,
     scenarioId: resolution.scenario?.id || null,
     scenarioName: resolution.scenario?.name || null,
+    // Rule: 混合判定尚未取得真实响应，不能把配置状态码记为请求成功。
     status: response.action === "mock" ? response.status : 0,
     request: { headers: logRequestHeaders(request.headers), body: requestBody },
     response: responseBody,

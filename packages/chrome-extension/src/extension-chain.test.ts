@@ -14,7 +14,7 @@ const compiledWorker = transpileModule(worker, {
   compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 },
 }).outputText;
 
-function createWorkerHarness(pageUrl: string, whitelist = ["app.test"], session: Record<string, unknown> = {}) {
+function createWorkerHarness(pageUrl: string, whitelist = ["app.test"], session: Record<string, unknown> = {}, resolverResult: unknown = { action: "pass", reason: "unmatched" }) {
   let listener: (message: unknown, sender: unknown, respond: (response: any) => void) => unknown;
   let connectListener: ((port: any) => void) | undefined;
   const resolverRequests: unknown[] = [];
@@ -41,7 +41,7 @@ function createWorkerHarness(pageUrl: string, whitelist = ["app.test"], session:
     async fetch(url: string, init?: RequestInit) {
       if (url.endsWith(protocol.RESOLVER_PATH)) {
         resolverRequests.push(JSON.parse(String(init?.body)));
-        return Response.json({ action: "pass", reason: "unmatched" });
+        return Response.json(resolverResult);
       }
       assert.ok(url.endsWith(protocol.STATUS_PATH));
       return Response.json({ online: true, hasPackage: true });
@@ -188,6 +188,33 @@ test("multipart 元数据及未采集标记通过 bridge 和后台到达 resolve
   assert.equal(harness.resolverRequests.length, 1);
   assert.equal(harness.dispatch({ channel: protocol.CHANNEL, type: "resolve", id: "invalid-worker", request: { ...request, bodyUnavailable: "unknown" } }), undefined);
   assert.equal(harness.resolverRequests.length, 1);
+});
+
+test("混合指令通过 worker 和 bridge，畸形指令保持原生放行", async () => {
+  for (const responseType of ["real-overrides", "mock-with-real", "invalid"]) {
+    const result = { action: "transform", responseType, fieldPaths: ["/data/imageUrl"], status: 200, delayMs: 0, body: "{}" };
+    const harness = createWorkerHarness("https://app.test/", ["app.test"], {}, result);
+    let pageListener: (event: { source: unknown; data: unknown }) => void;
+    const posted: any[] = [];
+    const fakeWindow = {
+      addEventListener(_type: string, listener: typeof pageListener) { pageListener = listener; },
+      postMessage(message: unknown) { posted.push(message); },
+    };
+    const compiledBridge = transpileModule(bridge, {
+      compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 },
+    }).outputText.replace(/\nexport \{\};?\s*$/, "\n");
+    new Script(compiledBridge).runInNewContext({ window: fakeWindow, chrome: { runtime: {
+      onMessage: { addListener() {} }, sendMessage: (message: unknown) => harness.send(message),
+    } } });
+    pageListener!({ source: fakeWindow, data: resolution("https://api.other.test/api") });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    const response = posted.find(message => message.type === "resolve-result")?.result;
+    assert.equal(response?.action, responseType === "invalid" ? "pass" : "transform");
+    assert.equal(harness.resolverRequests.length, 1);
+    if (responseType !== "invalid") assert.deepEqual(JSON.parse(JSON.stringify(response)), result);
+  }
+  for (const fieldPaths of [[], ["data/url"], ["/bad~2key"]])
+    assert.equal(protocol.isRuntimeResponse({ action: "transform", responseType: "mock-with-real", status: 200, delayMs: 0, body: "{}", fieldPaths }), false);
 });
 
 test("service worker aborts cancelled resolver requests and protects concurrency", () => {

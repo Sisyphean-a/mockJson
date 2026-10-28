@@ -30,12 +30,16 @@ export type MatchRule = {
   value: string;
 };
 
+export type { ScenarioResponseType } from "@mock-json/extension-contract";
+
 export type Scenario = {
   id: string;
   name: string;
   status: number;
   delayMs: number;
   responseBody: unknown;
+  responseType?: import("@mock-json/extension-contract").ScenarioResponseType;
+  fieldPaths?: string[];
   color?: string;
 };
 

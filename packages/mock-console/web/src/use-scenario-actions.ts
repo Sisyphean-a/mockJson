@@ -1,4 +1,5 @@
 import { onBeforeUnmount, watch } from "vue";
+import { validateResponseFields } from "@mock-json/extension-contract/response-fields";
 import type { Api, MockAdminClient, Scene } from "./mock-admin-client";
 import type { useConsoleForms } from "./use-console-forms";
 import type { useMockState } from "./use-mock-state";
@@ -39,55 +40,88 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     draftRevision += 1;
     scheduleJsonAutosave();
   });
+  watch([
+    forms.sceneName, forms.sceneResponseType, forms.sceneFieldPaths, forms.sceneInitialBody,
+    forms.editSceneName, forms.editSceneStatus, forms.editSceneDelay, forms.editSceneColor,
+  ], () => {
+    if (!forms.sceneSaving.value) forms.sceneFormError.value = "";
+  }, { flush: "sync" });
   onBeforeUnmount(clearJsonAutosave);
 
   function openSceneCreate() {
-    if (!canLeave()) return;
+    if (forms.sceneSaving.value || !canLeave()) return;
     forms.sceneEditMode.value = false;
     forms.sceneName.value = "";
+    forms.sceneResponseType.value = "mock";
+    forms.sceneFieldPaths.value = "";
+    forms.sceneInitialBody.value = "{}";
+    forms.sceneFormError.value = "";
     forms.showScene.value = true;
   }
 
   function openSceneEdit(scene: Scene) {
+    if (forms.sceneSaving.value) return;
     if (model.sceneId.value !== scene.id && !canLeave()) return;
     model.sceneId.value = scene.id;
     forms.editSceneName.value = scene.name;
     forms.editSceneStatus.value = scene.status;
     forms.editSceneDelay.value = scene.delayMs;
     forms.editSceneColor.value = scene.color || "blue";
+    forms.sceneResponseType.value = scene.responseType ?? "mock";
+    forms.sceneFieldPaths.value = (scene.fieldPaths ?? []).join("\n");
+    forms.sceneFormError.value = "";
     forms.sceneEditMode.value = true;
     forms.showScene.value = true;
   }
 
   async function createScene() {
     const api = model.api.value;
-    if (!api || !forms.sceneName.value.trim()) return;
+    if (!api || forms.sceneSaving.value) return;
     const isFirstScene = api.scenarios.length === 0;
+    forms.sceneSaving.value = true;
+    forms.sceneFormError.value = "";
     try {
-      const created = await model.runAdminRequest(() => client.createScenario(api.id, { name: forms.sceneName.value, responseBody: {} }));
+      if (!forms.sceneName.value.trim()) throw new Error("请输入场景名称");
+      const fields = responseFields();
+      let responseBody: unknown;
+      try { responseBody = JSON.parse(forms.sceneInitialBody.value); }
+      catch { throw new Error("JSON 格式有误，请修正后再创建"); }
+      const created = await model.runAdminRequest(() => client.createScenario(api.id, { name: forms.sceneName.value, responseBody, ...fields }));
       api.scenarios.push(created);
       if (isFirstScene) api.activeScenarioId = created.id;
       forms.sceneName.value = "";
       forms.showScene.value = false;
       model.sceneId.value = created.id;
       notify(isFirstScene ? "场景已创建并启用" : "场景已创建");
-    } catch (error) { notify(message(error)); }
+    } catch (error) { forms.sceneFormError.value = message(error); }
+    finally { forms.sceneSaving.value = false; }
+  }
+
+  function responseFields() {
+    const responseType = forms.sceneResponseType.value;
+    const fieldPaths = responseType === "mock" ? [] : forms.sceneFieldPaths.value.split(/\r?\n/).map((p) => p.trim()).filter(Boolean);
+    validateResponseFields(responseType, fieldPaths);
+    return { responseType, fieldPaths };
   }
 
   async function saveScene() {
+    if (forms.sceneSaving.value) return;
     if (!forms.sceneEditMode.value) { await createScene(); return; }
     const scene = model.scene.value;
     if (!scene) return;
+    forms.sceneSaving.value = true;
+    forms.sceneFormError.value = "";
     try {
       const saved = await model.runAdminRequest(() => client.updateScenario(scene.id, {
         name: forms.editSceneName.value, status: forms.editSceneStatus.value,
-        delayMs: forms.editSceneDelay.value, color: forms.editSceneColor.value,
+        delayMs: forms.editSceneDelay.value, color: forms.editSceneColor.value, ...responseFields(),
       }));
       Object.assign(scene, saved);
       forms.showScene.value = false;
       forms.sceneEditMode.value = false;
       notify("场景已更新");
-    } catch (error) { notify(message(error)); }
+    } catch (error) { forms.sceneFormError.value = message(error); }
+    finally { forms.sceneSaving.value = false; }
   }
 
   async function saveJson(silent = false) {
@@ -181,6 +215,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
       const created = await model.runAdminRequest(() => client.createScenario(api.id, {
         name: `${scene.name} 副本`, status: scene.status, delayMs: scene.delayMs,
         responseBody: scene.responseBody, color: scene.color, activate: false,
+        responseType: scene.responseType, fieldPaths: scene.fieldPaths,
       }));
       api.scenarios.push(created);
       notify("场景已复制");

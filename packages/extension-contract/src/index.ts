@@ -1,3 +1,6 @@
+import type { ScenarioResponseType } from "./response-fields.js";
+export type { ScenarioResponseType } from "./response-fields.js";
+
 /** 扩展与本机服务的共享线协议，不依赖浏览器或 Mock Console 运行时。 */
 export type ExtensionCaptureInput = {
   request: { url: string; method: string };
@@ -25,6 +28,14 @@ export type ExtensionRuntimeResponse =
       delayMs: number;
       body: string;
       headers: Record<string, string>;
+    }
+  | {
+      action: "transform";
+      responseType: Exclude<ScenarioResponseType, "mock">;
+      fieldPaths: string[];
+      status: number;
+      delayMs: number;
+      body: string;
     }
   | {
       action: "pass";

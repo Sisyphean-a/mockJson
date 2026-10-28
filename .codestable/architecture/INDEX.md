@@ -5,8 +5,8 @@
 - **workspace**：`mockJson`，Node.js 单仓库、npm workspaces。
 - **package:mock-console**：`packages/mock-console/`，本地 Mock / Proxy 控制台，负责配置、匹配、resolver、Proxy、日志和 Vue 管理页面。详见 [`packages/mock-console.md`](./packages/mock-console.md)。
 - **package:chrome-extension**：`packages/chrome-extension/`，Chrome Manifest V3 扩展，负责页面请求桥接、白名单、开关、原生放行，以及 DevTools / 独立页共用的本地请求观测面板。详见 [`packages/chrome-extension.md`](./packages/chrome-extension.md)。
-- **package:extension-contract**：`packages/extension-contract/`，只提供扩展与本机服务之间的 resolver 和主动响应交接 TypeScript 线协议类型。详见 [`packages/extension-contract.md`](./packages/extension-contract.md)。
-- **shared:extension-runtime**：两个产品包共同遵守的 resolver 调用、Mock / pass、放行和主动响应交接语义。详见 [`shared/extension-runtime.md`](./shared/extension-runtime.md)。
+- **package:extension-contract**：`packages/extension-contract/`，提供扩展与本机服务之间的 resolver、主动响应交接 TypeScript 线协议类型及无 IO 的 JSON 字段组合。详见 [`packages/extension-contract.md`](./packages/extension-contract.md)。
+- **shared:extension-runtime**：两个产品包共同遵守的 resolver 调用、Mock / transform / pass、放行和主动响应交接语义。详见 [`shared/extension-runtime.md`](./shared/extension-runtime.md)。
 
 ## 包边界与依赖方向
 
@@ -26,7 +26,7 @@ package:mock-console ─────┘
 | 范围 | 入口 | 责任 |
 | --- | --- | --- |
 | mock-console server | `packages/mock-console/server/src/index.ts` | Fastify 组合根、服务端口和运行边界 |
-| mock-console resolver | `packages/mock-console/server/src/extension-routes.ts`、`runtime-resolver.ts` | 扩展判定 HTTP 转换与 Mock / pass 结果 |
+| mock-console resolver | `packages/mock-console/server/src/extension-routes.ts`、`runtime-resolver.ts` | 扩展判定 HTTP 转换与 Mock / transform / pass 结果 |
 | mock-console web | `packages/mock-console/web/src/` | Vue 管理页面和管理 API 客户端 |
 | chrome-extension main | `packages/chrome-extension/src/content-main.ts` | MAIN world fetch / 异步 XHR 桥接 |
 | chrome-extension bridge | `packages/chrome-extension/src/content-bridge.ts` | 隔离世界消息桥 |

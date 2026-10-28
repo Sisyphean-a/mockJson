@@ -20,6 +20,7 @@ import {
   validateMatchRules,
   validateName,
   validateStatus,
+  validateScenarioResponse,
 } from "./validation.js";
 
 export interface StateRepository {
@@ -294,6 +295,8 @@ export class MockConfigService {
     delayMs?: unknown;
     responseBody?: unknown;
     color?: unknown;
+    responseType?: unknown;
+    fieldPaths?: unknown;
     activate?: unknown;
   }) {
     return this.enqueue(async () => {
@@ -307,6 +310,9 @@ export class MockConfigService {
         responseBody: parseJsonBody(input.responseBody === undefined ? {} : input.responseBody),
         color: typeof input.color === "string" ? input.color : "blue",
       };
+      validateScenarioResponse(input.responseType, input.fieldPaths, scenario.status, scenario.responseBody);
+      if (input.responseType !== undefined) scenario.responseType = input.responseType as Scenario["responseType"];
+      if (input.fieldPaths !== undefined) scenario.fieldPaths = input.fieldPaths as string[];
       api.scenarios.push(scenario);
       if (shouldActivate) api.activeScenarioId = scenario.id;
       await this.save();
@@ -371,6 +377,8 @@ export class MockConfigService {
     delayMs?: unknown;
     responseBody?: unknown;
     color?: unknown;
+    responseType?: unknown;
+    fieldPaths?: unknown;
   }) {
     return this.enqueue(async () => {
       const scenario = this.requireScenario(id).scenario;
@@ -382,6 +390,11 @@ export class MockConfigService {
         scenario.color = input.color;
       }
       if (input.responseBody !== undefined) scenario.responseBody = parseJsonBody(input.responseBody);
+      const responseType = input.responseType === undefined ? scenario.responseType : input.responseType;
+      const fieldPaths = input.fieldPaths === undefined ? scenario.fieldPaths : input.fieldPaths;
+      validateScenarioResponse(responseType, fieldPaths, scenario.status, scenario.responseBody);
+      if (input.responseType !== undefined) scenario.responseType = input.responseType as Scenario["responseType"];
+      if (input.fieldPaths !== undefined) scenario.fieldPaths = input.fieldPaths as string[];
       await this.save();
       return scenario;
     });

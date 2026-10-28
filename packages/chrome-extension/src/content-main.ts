@@ -1,3 +1,4 @@
+import { composeResponse, composedHeaders } from "@mock-json/extension-contract/response-fields";
 import type {
   ExtensionPassReason,
   ExtensionRuntimeRequest,
@@ -134,6 +135,7 @@ function installFetchInterceptor() {
       return forwardFetchWithTraffic(request, traffic);
     }
 
+    if (decision.action === "transform") return transformFetch(request, traffic, decision);
     try {
       await waitForDelay(decision.delayMs, request.signal);
       if (request.signal.aborted) throw abortError();
@@ -159,6 +161,26 @@ function installFetchInterceptor() {
   }) as typeof window.fetch;
   interceptedFetch = fetchInterceptor;
   window.fetch = interceptedFetch;
+}
+
+async function transformFetch(request: Request, traffic: RequestTraffic, decision: Extract<ExtensionRuntimeResponse, { action: "transform" }>) {
+  try {
+    // Guarantee: 只发一次真实请求；组合失败绝不进入完整 Mock 的原生重发分支。
+    const real = await nativeFetch(request);
+    if (!real.ok) throw new Error(`真实接口返回 HTTP ${real.status}`);
+    if (request.method === "HEAD" || !/json/i.test(real.headers.get("content-type") ?? "")) throw new Error("混合响应需要真实 JSON 响应");
+    const body = JSON.stringify(composeResponse(decision.responseType, JSON.parse(decision.body), await real.json(), decision.fieldPaths));
+    await waitForDelay(decision.delayMs, request.signal);
+    if (request.signal.aborted) throw abortError();
+    const headers = composedHeaders(headersToRecord(real.headers));
+    const response = new Response(body, { status: decision.status, headers });
+    Object.defineProperties(response, { url: { value: real.url }, redirected: { value: real.redirected }, type: { value: real.type } });
+    traffic.finish({ decision: "mock", response: { status: decision.status, statusText: response.statusText, headers, mimeType: headers["content-type"], body } });
+    return response;
+  } catch (error) {
+    traffic.finish({ decision: "mock", error: describeError(error) });
+    throw error;
+  }
 }
 
 async function forwardFetchWithTraffic(request: Request, traffic: RequestTraffic) {
@@ -442,6 +464,7 @@ type XhrListener = {
   type: string;
   listener: EventListenerOrEventListenerObject;
   options?: boolean | AddEventListenerOptions;
+  nativeListener?: EventListener;
 };
 type XhrState = {
   target: XMLHttpRequest;
@@ -610,7 +633,8 @@ function sendXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit | nul
       state.traffic?.pass(decision.action === "pass" ? decision.reason : undefined);
       return useDirectXhr(state, body);
     }
-    void useMockXhr(state, decision, generation);
+    if (decision.action === "transform") void useTransformedXhr(state, decision, generation, body);
+    else void useMockXhr(state, decision, generation);
   }).catch(() => {
     if (state.generation !== generation || state.aborted || state.finished) return;
     useDirectXhr(state, body);
@@ -631,6 +655,52 @@ function useDirectXhr(state: XhrState, body?: Document | XMLHttpRequestBodyInit 
   if (traffic)
     state.target.addEventListener("loadend", () => finishXhrTraffic(state, traffic), { once: true });
   state.target.send(body);
+}
+
+async function useTransformedXhr(
+  state: XhrState,
+  decision: Extract<ExtensionRuntimeResponse, { action: "transform" }>,
+  generation: number,
+  body?: Document | XMLHttpRequestBodyInit | null,
+) {
+  const target = state.target;
+  try {
+    const real = await new Promise<{ body: string; headers: Record<string, string> }>((resolve, reject) => {
+      const cleanup = () => {
+        for (const type of ["load", "error", "abort", "timeout"]) target.removeEventListener(type, finish);
+        state.mockAbortController.signal.removeEventListener("abort", cancel);
+      };
+      const cancel = () => { cleanup(); target.abort(); reject(abortError()); };
+      const finish = (event: Event) => {
+        cleanup();
+        if (event.type !== "load") { reject(new Error(`真实 XHR 请求失败：${event.type}`)); return; }
+        if (target.status < 200 || target.status >= 300) { reject(new Error(`真实接口返回 HTTP ${target.status}`)); return; }
+        const headers = parseResponseHeaders(target.getAllResponseHeaders());
+        if (state.method.toUpperCase() === "HEAD" || !/json/i.test(headers["content-type"] ?? "")) { reject(new Error("混合响应需要真实 JSON 响应")); return; }
+        resolve({ body: target.responseText, headers });
+      };
+      target.open(...state.openArgs as [string, string, boolean, string?, string?]);
+      target.responseType = "text";
+      target.withCredentials = state.withCredentials;
+      for (const [name, value] of Object.entries(state.requestHeaders)) target.setRequestHeader(name, value);
+      for (const type of ["load", "error", "abort", "timeout"]) target.addEventListener(type, finish);
+      state.mockAbortController.signal.addEventListener("abort", cancel, { once: true });
+      try { target.send(body); } catch (error) { cleanup(); reject(error); }
+    });
+    if (state.generation !== generation || state.aborted || state.finished) return;
+    const composed = JSON.stringify(composeResponse(decision.responseType, JSON.parse(decision.body), JSON.parse(real.body), decision.fieldPaths));
+    await useMockXhr(state, { action: "mock", status: decision.status, delayMs: decision.delayMs, body: composed, headers: composedHeaders(real.headers) }, generation);
+  } catch (error) {
+    if (state.generation !== generation || state.aborted || state.finished) return;
+    clearXhrTimeout(state);
+    state.mode = "mock";
+    state.readyState = XMLHttpRequest.DONE;
+    state.finished = true;
+    state.traffic?.finish({ decision: "mock", error: describeError(error) });
+    emitXhrEvent(state, "readystatechange");
+    emitXhrEvent(state, "error");
+    emitXhrEvent(state, "loadend");
+  }
 }
 
 async function useMockXhr(
@@ -747,6 +817,9 @@ function timeoutXhr(state: XhrState, generation: number) {
 }
 
 function resetXhr(state: XhrState) {
+  // Guarantee: 放行转混合时，旧原生监听器不能提前泄露未组合响应或与合成事件重复触发。
+  for (const property of state.handlers.keys()) Reflect.set(state.target, property, null, state.target);
+  for (const item of state.listeners) state.target.removeEventListener(item.type, item.nativeListener ?? item.listener, item.options);
   clearXhrTimeout(state);
   state.traffic?.finish({ error: { name: "AbortError", message: "请求被重新打开" } });
   state.traffic = undefined;
@@ -767,20 +840,33 @@ function resetXhr(state: XhrState) {
 
 function installNativeListeners(state: XhrState) {
   for (const [property, handler] of state.handlers) Reflect.set(state.target, property, handler, state.target);
-  for (const { type, listener, options } of state.listeners) state.target.addEventListener(type, listener, options);
+  for (const item of state.listeners) attachNativeXhrListener(state, item);
 }
 
 function addXhrListener(state: XhrState, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) {
-  if (state.mode === "direct") return state.target.addEventListener(type, listener, options);
+  state.listeners = state.listeners.filter((item) => !(typeof item.options === "object" && item.options.signal?.aborted));
+  if (typeof options === "object" && options.signal?.aborted) return;
   // Rule: 与原生 addEventListener 一致，相同类型、监听器和捕获阶段的重复注册是幂等的。
   if (state.listeners.some((item) => sameXhrListener(item, type, listener, options))) return;
-  state.listeners.push({ type, listener, options });
+  const item = { type, listener, options };
+  state.listeners.push(item);
+  if (state.mode === "direct") attachNativeXhrListener(state, item);
+}
+
+function attachNativeXhrListener(state: XhrState, item: XhrListener) {
+  item.nativeListener ??= (event) => {
+    if (typeof item.options === "object" && item.options.once) state.listeners = state.listeners.filter((entry) => entry !== item);
+    invokeListener(item.listener, event, state.proxy);
+  };
+  state.target.addEventListener(item.type, item.nativeListener, item.options);
 }
 
 function removeXhrListener(state: XhrState, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) {
   // Rule: 无论当前模式都先清理本地记录，避免 direct 往返时把已移除的监听器重新装回原生实例。
+  for (const item of state.listeners.filter((entry) => sameXhrListener(entry, type, listener, options))) {
+    state.target.removeEventListener(type, item.nativeListener ?? item.listener, item.options);
+  }
   state.listeners = state.listeners.filter((item) => !sameXhrListener(item, type, listener, options));
-  if (state.mode === "direct") return state.target.removeEventListener(type, listener, options);
 }
 
 function sameXhrListener(item: XhrListener, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions | EventListenerOptions) {
@@ -789,8 +875,11 @@ function sameXhrListener(item: XhrListener, type: string, listener: EventListene
 
 function emitXhrEvent(state: XhrState, type: string) {
   const event = new Event(type);
-  for (const { type: listenerType, listener } of state.listeners) {
-    if (listenerType === type) invokeListener(listener, event, state.proxy);
+  for (const item of [...state.listeners]) {
+    if (item.type !== type || (typeof item.options === "object" && item.options.signal?.aborted)) continue;
+    if (!state.listeners.includes(item)) continue;
+    if (typeof item.options === "object" && item.options.once) removeXhrListener(state, item.type, item.listener, item.options);
+    invokeListener(item.listener, event, state.proxy);
   }
   const handler = state.handlers.get(`on${type}`);
   if (handler) invokeListener(handler, event, state.proxy);
@@ -931,12 +1020,16 @@ function isMonitoringStateWindowMessage(value: unknown): value is MonitoringStat
 }
 
 function isRuntimeResponse(value: unknown): value is ExtensionRuntimeResponse {
-  if (!isRecord(value) || (value.action !== "mock" && value.action !== "pass")) return false;
+  if (!isRecord(value) || !["mock", "transform", "pass"].includes(String(value.action))) return false;
   if (value.action === "pass") return true;
+  if (value.action === "transform" &&
+    (!["real-overrides", "mock-with-real"].includes(String(value.responseType)) || !Array.isArray(value.fieldPaths) ||
+      !value.fieldPaths.length || !value.fieldPaths.every((p) => typeof p === "string" && p.startsWith("/") && !/~(?![01])/.test(p)) ||
+      [204, 205, 304].includes(Number(value.status)))) return false;
   return (
     typeof value.status === "number" && Number.isInteger(value.status) && value.status >= 200 && value.status <= 599 &&
     typeof value.delayMs === "number" && Number.isInteger(value.delayMs) && value.delayMs >= 0 && value.delayMs <= 30000 &&
-    typeof value.body === "string" && isRecord(value.headers) && Object.values(value.headers).every((header) => typeof header === "string")
+    typeof value.body === "string" && (value.action === "transform" || (isRecord(value.headers) && Object.values(value.headers).every((header) => typeof header === "string")))
   );
 }
 

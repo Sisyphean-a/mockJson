@@ -4,6 +4,7 @@
   "type": "module",
   "types": "./src/index.ts",
   "exports": {
+    "./response-fields": "./src/response-fields.ts",
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"

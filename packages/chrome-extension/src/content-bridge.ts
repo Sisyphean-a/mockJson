@@ -170,14 +170,18 @@ function isRuntimeRequest(value: unknown): value is ExtensionRuntimeRequest {
 }
 
 function isRuntimeResponse(value: unknown): value is ExtensionRuntimeResponse {
-  if (!isRecord(value) || (value.action !== "mock" && value.action !== "pass")) return false;
+  if (!isRecord(value) || !["mock", "transform", "pass"].includes(String(value.action))) return false;
   if (value.action === "pass") return true;
+  if (value.action === "transform" &&
+    (!["real-overrides", "mock-with-real"].includes(String(value.responseType)) || !Array.isArray(value.fieldPaths) ||
+      !value.fieldPaths.length || !value.fieldPaths.every((p) => typeof p === "string" && p.startsWith("/") && !/~(?![01])/.test(p)) ||
+      [204, 205, 304].includes(Number(value.status)))) return false;
   const status = value.status;
   const delayMs = value.delayMs;
   return (
     typeof status === "number" && Number.isInteger(status) && status >= 200 && status <= 599 &&
     typeof delayMs === "number" && Number.isInteger(delayMs) && delayMs >= 0 && delayMs <= 30000 &&
-    typeof value.body === "string" && isRecord(value.headers) && Object.values(value.headers).every((header) => typeof header === "string")
+    typeof value.body === "string" && (value.action === "transform" || (isRecord(value.headers) && Object.values(value.headers).every((header) => typeof header === "string")))
   );
 }
 

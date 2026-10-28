@@ -1,12 +1,12 @@
 # Mock Console
 
-本地 Mock / Proxy 控制台：用逻辑接口、匹配条件和完整响应场景，快速切换不同请求的返回结果。
+本地 Mock / Proxy 控制台：用逻辑接口、匹配条件和响应场景，快速切换不同请求的返回结果。
 
 仓库现在包含两个产品 npm workspace 和一个共享契约 workspace：
 
 - `packages/mock-console`：Fastify Mock / Proxy 服务和 Vue 管理页面，拥有 Mock 配置、匹配和运行日志。
 - `packages/chrome-extension`：Chrome Manifest V3 扩展，不保存 Mock 配置，只负责页面请求桥接。
-- `packages/extension-contract`：扩展与本机服务共用的 resolver 和响应交接 TypeScript 线协议类型，不包含运行时逻辑。
+- `packages/extension-contract`：扩展与本机服务共用的 resolver、响应交接 TypeScript 线协议类型，以及无 IO 的 JSON 字段组合函数。
 
 ## 启动 Mock Console
 
@@ -26,7 +26,7 @@ npm run build
 npm start
 ```
 
-此时页面、管理 API 和 Mock 请求统一使用 `http://127.0.0.1:22333`。终端默认只输出启动、错误和安全拒绝信息，不再逐条输出请求的 `incoming request` / `request completed`；Proxy 和 Chrome 扩展判定结果请在控制台日志面板查看，日志可按来源区分 `Proxy / Reqable` 与 `Chrome 扩展`。Package 内可配置多个真实服务环境，当前选中的环境是 Reqable / 本地 Proxy 未命中时的转发目标，不默认占用本地 Mock 端口。
+此时页面、管理 API 和 Mock 请求统一使用 `http://127.0.0.1:22333`。终端默认只输出启动、错误和安全拒绝信息，不再逐条输出请求的 `incoming request` / `request completed`；Proxy 和 Chrome 扩展判定结果请在控制台日志面板查看，日志可按来源区分 `Proxy / Reqable` 与 `Chrome 扩展`。Package 内可配置多个真实服务环境，当前选中的环境是 Reqable / 本地 Proxy 未命中或执行混合场景时的真实请求目标，不默认占用本地 Mock 端口。
 
 ## 使用 Mock Console
 
@@ -34,7 +34,7 @@ npm start
 2. 首次启动为空白状态，点击「+ 包」创建测试包。
 3. 在顶部「真实服务」点击「配置」，新增真实服务并填写名称和基础地址，例如「测试环境」与 `https://api.test.example.com`；再新增「生产环境」等其他地址。下拉框切换当前环境后，Reqable / 本地 Proxy 未命中 Mock 或关闭 Mock 时就会转发到该环境。
 4. 创建逻辑接口，添加任意 Header、URL.path 或 HTTP Method 匹配条件；新接口默认启用，匹配方式默认是满足任一（OR），已有条件可在操作列直接编辑或删除。接口列表可通过左侧拖拽手柄长按排序，搜索时暂不允许排序。
-5. 创建场景并设置完整 JSON、状态码和延迟；接口没有场景时，首个新场景默认启用，后续新场景默认不启用；使用场景旁的开关启用、停用或快速切换当前返回。场景列表也支持拖拽排序，顺序会保存到当前接口。
+5. 创建场景，选择响应类型并设置 JSON、状态码和延迟；接口没有场景时，首个新场景默认启用，后续新场景默认不启用；使用场景旁的开关启用、停用或快速切换当前返回。场景列表也支持拖拽排序，顺序会保存到当前接口。
 6. Reqable 将需要 Mock 的请求重写到 `http://电脑局域网IP:22333/原始路径`，保留查询参数和业务 Header。
 7. 顶部「请求日志」进入独立的全宽观测视图；点击日志行查看详情，命中接口可在详情中通过「查看接口配置」返回对应接口。
 
@@ -45,6 +45,26 @@ npm start
 - 只希望 Reqable 自己处理未命中请求：不要把这些请求重写到 `22333`。
 
 HTTPS 请求由 Reqable 负责解密和重写；本项目不提供 HTTPS MITM。Android 连接电脑时使用电脑局域网 IP，不要使用 Android 自己的 `127.0.0.1`。
+
+### 三种响应场景类型
+
+新建或编辑响应场景时选择「响应类型」，不改变固定响应/条件分支的选择方式；旧场景仍按完整 Mock 执行。
+
+| 类型 | 响应来源 | 字段配置 |
+| --- | --- | --- |
+| 完整 Mock | 直接返回场景 JSON，不请求真实接口 | 不需要 |
+| 真实响应 + 字段 Mock | 以本次真实 JSON 为底，覆盖选中字段 | 填需要 Mock 的路径；场景 JSON 提供对应值 |
+| Mock 响应 + 真实字段 | 以场景 JSON 为底，仅更新选中字段 | 填需要真实值的路径 |
+
+例如图片 URL 会过期：选择「Mock 响应 + 真实字段」，填写 `/data/imageUrl`，JSON 中填写其余需要 Mock 的内容（如 `{ "data": { "name": "测试用户" } }`）。下次请求时只把 `data.imageUrl` 换成本次真实接口的最新值。新建场景时，在侧栏设置名称、类型和字段，在 JSON 编辑器填写初始响应；后续仍在工作区编辑 JSON。场景「编辑」只保存名称、类型与字段等设置，状态码、延迟和标记颜色位于「更多设置」。
+
+- 每行一个 JSON Pointer，例如 `/data/imageUrl`；两份数据使用相同路径。父级必须存在，允许新增对象末级字段；数组使用已存在的明确下标（如 `/items/0/url`），不自动按 ID 对齐。路径不能重复或父子重叠。
+- **混合场景会真实调用一次接口，提交类接口也会产生真实操作。** Proxy 使用顶部当前真实服务环境；扩展复用浏览器原始 URL、登录态、请求体和凭证设置，不使用该环境。
+- 真实请求必须返回成功（2xx）的可读 JSON。网络、HTTP、JSON 或字段错误只让该请求失败：Proxy 返回 502，fetch 拒绝，XHR 触发 error；不重试、不返回旧 Mock，其他完整 Mock 不受影响。
+- 最终状态码使用场景配置（200–599，排除 204/205/304），延迟在真实响应后追加。不支持 HEAD、流式或二进制响应组合；需要读取完整 JSON，不是流式转发，大响应会增加内存与等待时间。
+- 扩展服务端日志只显示混合判定（没有最终响应）；最终组合结果和错误在扩展接口面板查看。
+
+更新后重启 Mock Console，在 `chrome://extensions` 重新加载扩展，并刷新业务页面，确保三方协议同步。
 
 ## 使用 Chrome 扩展
 
@@ -73,8 +93,8 @@ packages/chrome-extension/dist
 
 扩展默认连接本机 `http://127.0.0.1:22333`。页面域名命中白名单且 Mock 开关启用时，扩展才包装该页面的 `fetch` 和异步 `XMLHttpRequest`，把 URL、Method 和页面可观察的 Header 交给 Mock Console 判定；对单个标签页显式开启“记录本页请求”时也会包装，但只观测和本地记录，不发送判定请求。请求目标域名不参与白名单过滤，白名单页面访问跨域 API 也可以进入判定；multipart / FormData 上传也能 Mock JSON 返回，不支持的请求仍原生放行：
 
-- 命中启用接口和当前场景：返回场景中的 JSON、状态码和延迟。
-- **上传接口**：照常用路径与 Method 等规则匹配，无需新开关。fetch multipart 或异步 XHR FormData / multipart 只发送 URL、Method 和页面可见 Header，不读取或传输文件；命中时直接返回配置的 JSON，不实际上传，未命中或判定失败时保留原始请求体正常上传。日志显示“上传请求体未采集”，不支持按文件内容匹配；XHR 自动生成的 Content-Type 不保证可参与匹配。若返回图片地址供页面预览，请使用真实可访问的地址。独立 Blob / 二进制 XHR 上传及 fetch 的图片、音视频、application/octet-stream 请求仍直接放行。
+- 命中启用接口和当前场景：完整 Mock 直接返回场景 JSON；混合类型发出一次原生请求，再按指定字段组合（见上方三种响应场景类型）。
+- **上传接口**：照常用路径与 Method 等规则匹配，无需新开关。fetch multipart 或异步 XHR FormData / multipart 只发送 URL、Method 和页面可见 Header，不读取或传输文件；完整 Mock 命中时直接返回配置的 JSON，不实际上传；混合场景需真实上传一次后组合 JSON；未命中或判定失败时保留原始请求体正常上传。日志显示“上传请求体未采集”，不支持按文件内容匹配；XHR 自动生成的 Content-Type 不保证可参与匹配。若返回图片地址供页面预览，请使用真实可访问的地址。独立 Blob / 二进制 XHR 上传及 fetch 的图片、音视频、application/octet-stream 请求仍直接放行。
 - 未命中、接口未启用、Mock Console 未启动或判定超时：调用浏览器原生 API，继续真实请求。Service Worker 最多等待 1 秒，页面桥接再保留 200ms 消息往返余量；连续两次 resolver 失败后扩展短路 3 秒，并在当前扩展会话保存健康状态，后续请求立即放行，避免服务不可用时反复等待。已取消或超过 32 个并发判定的请求也直接放行。已到达 Mock Console 的扩展判定会写入请求日志并标记为 `Chrome 扩展`，白名单过滤、扩展暂停或扩展侧超时不会产生服务端日志。
 
 扩展模式不使用 Package 的真实服务环境配置，也不保存接口、规则或场景。页面取消请求时，扩展会尽量同步取消尚未完成的本机判定；当前只覆盖页面脚本的 `fetch` / 异步 XHR，不覆盖导航、图片/脚本资源、WebSocket、Worker / Service Worker 请求、同步 XHR、流式或二进制响应。浏览器自动补充且页面不可观察的 Header（例如 Cookie）不保证可参与扩展匹配。
@@ -113,7 +133,7 @@ packages/chrome-extension/dist
 - 空白初始状态，不携带参考项目的 Package 或 Mock 数据
 - Package / Logical API / Scenario 完整创建、修改和删除
 - 任意 Header（名称大小写不敏感）、URL 与 HTTP Method 匹配
-- 优先级命中、场景即时切换、JSON/状态码/延迟校验
+- 优先级命中、场景即时切换、JSON/状态码/延迟校验；支持完整 Mock 和两种字段混合响应
 - Package 内支持多个真实服务环境，并可在顶部下拉框切换；Reqable / 本地 Proxy 未命中或关闭 Mock 时透明转发到当前环境
 - 请求日志独立全宽展示 Proxy 与 Chrome 扩展判定来源，并支持按来源和结果筛选；详情可跳转到对应逻辑接口配置
 - 逻辑接口和响应场景支持长按拖拽排序，排序保存为配置数组顺序，不改变接口 `priority` 匹配规则

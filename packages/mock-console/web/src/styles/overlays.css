@@ -190,6 +190,49 @@
   width: 100%;
 }
 
+.modal.scene-create-modal {
+  width: min(1080px, 100%);
+  height: min(720px, calc(100dvh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.scene-create-modal > h2 { flex-shrink: 0; padding: 22px 24px 0; }
+.scene-create-modal > .scene-dialog-context { flex-shrink: 0; margin: 5px 24px 18px; }
+.scene-create-modal > .close { top: 16px; right: 16px; }
+.modal.scene-settings-modal { width: min(460px, 100%); }
+.scene-dialog-form { display: flex; flex-direction: column; min-height: 0; }
+.scene-create-modal .scene-dialog-form { flex: 1; }
+.scene-dialog-body { min-height: 0; }
+.scene-create-modal .scene-dialog-body { display: grid; grid-template-columns: 280px minmax(0, 1fr); flex: 1; border-top: 1px solid var(--line); }
+.scene-settings { min-width: 0; margin: 0; padding: 0; border: 0; }
+.scene-create-modal .scene-settings { padding: 20px 22px; overflow: auto; border-right: 1px solid var(--line); }
+.scene-compose { min-width: 0; min-height: 0; padding: 16px 20px 20px; display: flex; flex-direction: column; }
+.scene-compose h3 { flex-shrink: 0; margin: 0 0 10px; color: var(--ink); font-size: 12px; font-weight: 650; }
+.scene-compose > .json-editor-shell { flex: 1 1 0; min-height: 0; }
+.scene-more-settings { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.scene-more-settings summary { color: var(--ink); font-size: 12px; cursor: pointer; }
+.scene-more-settings summary > span { margin-left: 8px; color: var(--ink-muted); font-size: 11px; }
+.scene-more-settings[open] summary { margin-bottom: 16px; }
+.scene-dialog-footer { flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 24px; border-top: 1px solid var(--line); }
+.scene-settings-modal .scene-dialog-footer { margin-top: 18px; padding: 16px 0 0; }
+.scene-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-left: auto; }
+.scene-dialog-actions > button { min-width: 86px; }
+.modal .scene-dialog-error { flex: 1 1 200px; margin: 0; color: var(--danger); font-size: 12px; line-height: 1.6; }
+.scene-dialog-form button:disabled, .modal > .close:disabled { opacity: .55; cursor: not-allowed; }
+.scene-dialog-form summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 2px; }
+
+@media (max-width: 760px) {
+  .modal.scene-create-modal { height: calc(100dvh - 32px); }
+  .scene-create-modal > h2 { padding: 18px 18px 0; }
+  .scene-create-modal > .scene-dialog-context { margin: 5px 18px 14px; }
+  .scene-create-modal .scene-dialog-body { display: flex; flex-direction: column; overflow: auto; }
+  .scene-create-modal .scene-settings { overflow: visible; flex-shrink: 0; padding: 16px 18px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .scene-compose { flex: 0 0 360px; padding: 16px 18px; }
+  .scene-dialog-footer { padding: 12px 18px; }
+}
+
 .full {
   width: 100%;
 }

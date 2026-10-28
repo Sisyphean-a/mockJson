@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { ConsoleController } from "../console-controller";
+import ScenarioTypeFields from "./ScenarioTypeFields.vue";
+import JsonEditor from "./JsonEditor.vue";
 
-type ConsoleModalsController = Pick<ConsoleController, "showApi" | "showScene" | "showPackage" | "showPackageForm" | "showRealServices" | "showRealServiceForm" | "showMoveApi" | "movingApiId" | "destinationPackageId" | "state" | "sceneEditMode" | "editingPackageId" | "apiEditName" | "apiName" | "apiPriority" | "packageName" | "realServiceName" | "realServiceEditId" | "targetUrl" | "sceneName" | "editSceneName" | "editSceneStatus" | "editSceneDelay" | "editSceneColor" | "pkg" | "openPackage" | "deletePackage" | "savePackage" | "saveApi" | "createApi" | "openNewRealService" | "openRealServiceEdit" | "selectRealService" | "saveRealService" | "deleteRealService" | "moveApi" | "saveScene" | "createScene" | "leavePrompt" | "resolveResponseLeave" | "responseSaving" | "responseError">;
+type ConsoleModalsController = Pick<ConsoleController, "showApi" | "showScene" | "showPackage" | "showPackageForm" | "showRealServices" | "showRealServiceForm" | "showMoveApi" | "movingApiId" | "destinationPackageId" | "state" | "sceneEditMode" | "editingPackageId" | "apiEditName" | "apiName" | "apiPriority" | "packageName" | "realServiceName" | "realServiceEditId" | "targetUrl" | "sceneName" | "sceneResponseType" | "sceneFieldPaths" | "sceneInitialBody" | "sceneFormError" | "sceneSaving" | "api" | "editSceneName" | "editSceneStatus" | "editSceneDelay" | "editSceneColor" | "pkg" | "openPackage" | "deletePackage" | "savePackage" | "saveApi" | "createApi" | "openNewRealService" | "openRealServiceEdit" | "selectRealService" | "saveRealService" | "deleteRealService" | "moveApi" | "saveScene" | "createScene" | "leavePrompt" | "resolveResponseLeave" | "responseSaving" | "responseError">;
 const { controller: c } = defineProps<{ controller: ConsoleModalsController }>();
 const modalRef = ref<HTMLElement | null>(null);
 const modalTrigger = ref<HTMLElement | null>(null);
 const modalOpen = computed(() => c.leavePrompt.value || c.showApi.value || c.showScene.value || c.showPackage.value || c.showRealServices.value || c.showMoveApi.value);
 const movingApi = computed(() => c.pkg.value?.apis.find((item) => item.id === c.movingApiId.value));
+const sceneDialog = computed(() => c.showScene.value && !c.leavePrompt.value);
 
 function closeModal() {
+  if (sceneDialog.value && c.sceneSaving.value) return;
   if (c.leavePrompt.value) { void c.resolveResponseLeave("cancel"); return; }
   c.showApi.value = false;
   c.showScene.value = false;
@@ -19,15 +23,21 @@ function closeModal() {
   c.sceneEditMode.value = false;
 }
 
+function revealInvalidField(event: Event) {
+  if (!(event.target instanceof HTMLElement)) return;
+  const section = event.target.closest("details");
+  if (section) section.open = true;
+}
+
 function focusableElements() {
   if (!modalRef.value) return [] as HTMLElement[];
   return Array.from(modalRef.value.querySelectorAll<HTMLElement>(
-    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-  )).filter((element) => element.getClientRects().length > 0);
+    'a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])',
+  )).filter((element) => element.getClientRects().length > 0 && !element.matches(":disabled") && !element.closest("[inert]"));
 }
 
 function handleKeydown(event: KeyboardEvent) {
-  if (!modalOpen.value || !modalRef.value) return;
+  if (!modalOpen.value || !modalRef.value || event.defaultPrevented) return;
   if (event.key === "Escape") {
     event.preventDefault();
     closeModal();
@@ -79,10 +89,11 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 <template>
   <!-- Rule: 点击遮罩不关闭弹窗，避免选中文本或拖拽时误关；只通过关闭按钮、取消或 Escape 退出。 -->
   <div v-if="modalOpen" class="modal-backdrop">
-    <div ref="modalRef" :class="['modal', { 'real-services-modal': c.showRealServices.value }]" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-description" tabindex="-1">
-      <button class="close" aria-label="关闭" @click="closeModal">×</button>
+    <div ref="modalRef" :class="['modal', { 'real-services-modal': c.showRealServices.value, 'scene-create-modal': sceneDialog && !c.sceneEditMode.value, 'scene-settings-modal': sceneDialog && c.sceneEditMode.value }]" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-description" tabindex="-1">
+      <button class="close" aria-label="关闭" :disabled="sceneDialog && c.sceneSaving.value" @click="closeModal">×</button>
       <h2 id="modal-title">{{ c.leavePrompt.value ? "响应选择尚未保存" : c.showMoveApi.value ? "切换包" : c.showRealServices.value ? "管理转发环境" : c.showPackage.value ? "管理测试包" : c.showApi.value ? (c.apiEditName.value ? "编辑逻辑接口" : "新建逻辑接口") : c.sceneEditMode.value ? "编辑响应场景" : "新建响应场景" }}</h2>
-      <p id="modal-description">{{ c.leavePrompt.value ? "保存后生效，或放弃本轮响应模式与分支改动；取消则继续编辑。场景 JSON 仍独立保存。" : c.showMoveApi.value ? `将「${movingApi?.name || '接口'}」及其规则、响应场景移至其他测试包。当前运行测试包不会切换。` : c.showRealServices.value ? `仅管理「${c.pkg.value?.name || '当前测试包'}」的未命中 Mock 转发地址。` : c.showPackage.value ? "测试包各自拥有独立的接口与转发环境。" : c.showApi.value ? "用业务名称和优先级标识一个可切换的接口。" : "每个场景保存一份完整的 JSON 响应。" }}</p>
+      <p v-if="sceneDialog" id="modal-description" class="scene-dialog-context">{{ c.api.value?.name }}</p>
+      <p v-else id="modal-description">{{ c.leavePrompt.value ? "保存后生效，或放弃本轮响应模式与分支改动；取消则继续编辑。场景 JSON 仍独立保存。" : c.showMoveApi.value ? `将「${movingApi?.name || '接口'}」及其规则、响应场景移至其他测试包。当前运行测试包不会切换。` : c.showRealServices.value ? `仅管理「${c.pkg.value?.name || '当前测试包'}」的真实转发地址（未命中与混合响应使用）。` : c.showPackage.value ? "测试包各自拥有独立的接口与转发环境。" : c.showApi.value ? "用业务名称和优先级标识一个可切换的接口。" : "" }}</p>
       <template v-if="c.leavePrompt.value">
         <p v-if="c.responseError.value" class="response-error" role="alert">{{ c.responseError.value }}</p>
         <div class="modal-footer"><button class="secondary" :disabled="c.responseSaving.value" @click="c.resolveResponseLeave('cancel')">取消</button><button class="secondary" :disabled="c.responseSaving.value" @click="c.resolveResponseLeave('discard')">放弃修改</button><button class="primary" :disabled="c.responseSaving.value" @click="c.resolveResponseLeave('save')">{{ c.responseSaving.value ? '保存中…' : '保存并继续' }}</button></div>
@@ -110,7 +121,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
             </div>
           </div>
         </div>
-        <div v-else class="empty-real-services">尚未配置转发环境。接口未命中 Mock 时将无法转发。</div>
+        <div v-else class="empty-real-services">尚未配置转发环境。未命中 Mock 或混合响应将无法请求真实接口。</div>
         <div v-if="c.showRealServiceForm.value" class="manager-form">
           <h3>{{ c.realServiceEditId.value ? "编辑环境" : "新增环境" }}</h3>
           <label class="form-label" for="real-service-name">服务名称</label>
@@ -147,21 +158,37 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <input id="api-priority" v-if="c.apiEditName.value" v-model.number="c.apiPriority.value" type="number" min="0" placeholder="优先级" @keyup.enter="c.saveApi" />
         <button class="primary full" @click="c.apiEditName.value ? c.saveApi() : c.createApi()">保存</button>
       </template>
-      <template v-else-if="c.sceneEditMode.value">
-        <label class="form-label" for="edit-scene-name">场景名称</label>
-        <input id="edit-scene-name" v-model="c.editSceneName.value" autofocus placeholder="场景名称" />
-        <div class="scene-form-row">
-          <div><label class="form-label" for="edit-scene-status">HTTP 状态码</label><input id="edit-scene-status" v-model.number="c.editSceneStatus.value" type="number" min="100" max="599" placeholder="例如 200" /></div>
-          <div><label class="form-label" for="edit-scene-delay">延迟毫秒</label><input id="edit-scene-delay" v-model.number="c.editSceneDelay.value" type="number" min="0" max="30000" placeholder="例如 0" /></div>
+      <form v-else class="scene-dialog-form" :aria-busy="c.sceneSaving.value" @submit.prevent="c.saveScene" @invalid.capture="revealInvalidField">
+        <div class="scene-dialog-body">
+          <fieldset class="scene-settings" :disabled="c.sceneSaving.value">
+            <legend class="response-sr-only">场景设置</legend>
+            <label class="form-label" :for="c.sceneEditMode.value ? 'edit-scene-name' : 'scene-name'">场景名称</label>
+            <input v-if="c.sceneEditMode.value" id="edit-scene-name" v-model="c.editSceneName.value" autofocus required placeholder="场景名称" />
+            <input v-else id="scene-name" v-model="c.sceneName.value" autofocus required placeholder="例如：审核失败" />
+            <ScenarioTypeFields v-model:type="c.sceneResponseType.value" v-model:paths="c.sceneFieldPaths.value" />
+            <details v-if="c.sceneEditMode.value" class="scene-more-settings">
+              <summary>更多设置 <span>HTTP {{ c.editSceneStatus.value }} · {{ c.editSceneDelay.value }} ms</span></summary>
+              <div class="scene-form-row">
+                <div><label class="form-label" for="edit-scene-status">HTTP 状态码</label><input id="edit-scene-status" v-model.number="c.editSceneStatus.value" type="number" min="100" max="599" required /></div>
+                <div><label class="form-label" for="edit-scene-delay">延迟毫秒</label><input id="edit-scene-delay" v-model.number="c.editSceneDelay.value" type="number" min="0" max="30000" required /></div>
+              </div>
+              <label class="form-label" for="edit-scene-color">标记颜色</label>
+              <select id="edit-scene-color" v-model="c.editSceneColor.value"><option value="blue">蓝色</option><option value="green">绿色</option><option value="yellow">黄色</option><option value="red">红色</option><option value="gray">灰色</option></select>
+            </details>
+          </fieldset>
+          <section v-if="!c.sceneEditMode.value" class="scene-compose" :inert="c.sceneSaving.value" aria-labelledby="scene-json-title">
+            <h3 id="scene-json-title">{{ c.sceneResponseType.value === 'real-overrides' ? 'Mock 字段 JSON' : '响应 JSON' }}</h3>
+            <JsonEditor id="scene-initial-body" :value="c.sceneInitialBody.value" @update:value="c.sceneInitialBody.value = $event" @save="c.saveScene" />
+          </section>
         </div>
-        <label class="form-label" for="edit-scene-color">状态颜色</label>
-        <select id="edit-scene-color" v-model="c.editSceneColor.value"><option value="blue">蓝色</option><option value="green">绿色</option><option value="yellow">黄色</option><option value="red">红色</option><option value="gray">灰色</option></select>
-        <button class="primary full" @click="c.saveScene">保存</button>
-      </template>
-      <template v-else>
-        <label class="form-label" for="scene-name">场景名称</label>
-        <input id="scene-name" v-model="c.sceneName.value" autofocus placeholder="例如：审核失败" @keyup.enter="c.createScene" /><button class="primary full" @click="c.createScene">创建</button>
-      </template>
+        <div class="scene-dialog-footer">
+          <p v-if="c.sceneFormError.value" class="scene-dialog-error" role="alert">{{ c.sceneFormError.value }}</p>
+          <div class="scene-dialog-actions">
+            <button type="button" class="secondary" :disabled="c.sceneSaving.value" @click="closeModal">取消</button>
+            <button type="submit" class="primary" :disabled="c.sceneSaving.value">{{ c.sceneSaving.value ? c.sceneEditMode.value ? '保存中…' : '创建中…' : c.sceneEditMode.value ? '保存设置' : '创建场景' }}</button>
+          </div>
+        </div>
+      </form>
     </div>
   </div>
 </template>

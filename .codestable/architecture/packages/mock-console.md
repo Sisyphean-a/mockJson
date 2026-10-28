@@ -20,14 +20,14 @@
 | server/config | `config-service.ts` | 串行配置变更、失败恢复和持久化协调 |
 | server/routes | `admin-routes.ts`、`extension-routes.ts` | 管理 API 与扩展 resolver 的 HTTP 转换 |
 | server/capture | `capture-routes.ts`、`config-service.ts` 的 `saveCapturedScenario` | 主动响应草稿、确认保存和原子配置提交；协议见[主动响应交接](../shared/extension-runtime.md#主动响应交接) |
-| server/runtime | `runtime-resolver.ts` | 按当前 Package、接口优先级和响应选择生成 Mock / pass 判定 |
+| server/runtime | `runtime-resolver.ts` | 按当前 Package、接口优先级和响应选择生成 Mock / transform / pass 判定 |
 | server/proxy | `proxy.ts` | Reqable / 本地 Proxy 请求匹配、Mock 返回和真实转发 |
 | server/logs | `request-logs.ts` | 运行态 Proxy / 扩展判定日志 |
 | web | `packages/mock-console/web/src/`、`use-capture-import.ts`、`components/CaptureImportPanel.vue` | Vue 管理页面、管理请求和扩展响应确认入口 |
 
 ## 依赖
 
-- 依赖 [`package:extension-contract`](./extension-contract.md) 获取扩展 resolver 的线协议类型。
+- 依赖 [`package:extension-contract`](./extension-contract.md) 获取扩展 resolver 的线协议类型及无 IO 的 JSON 字段组合/校验；Proxy 与浏览器采用相同组合规则，真实 IO 仍归各自运行边界。
 - 不依赖 `package:chrome-extension` 的源码、构建产物或浏览器 API。
 - 扩展 resolver 的传输语义见 [`shared/extension-runtime.md`](../shared/extension-runtime.md)。
 
@@ -36,5 +36,5 @@
 - 正式运行入口：`http://127.0.0.1:22333`。
 - 管理 API：`/__mock_admin/*`，仅限本机访问。
 - 响应选择保存：`PUT /__mock_admin/apis/:id/response-selection`，原子保存当前接口的模式、固定选择、分支与兜底；场景内容仍使用原独立接口。
-- 扩展 resolver：`POST /__mock_extension/resolve`，未命中返回 pass，命中返回一次性 JSON Mock 判定。
+- 扩展 resolver：`POST /__mock_extension/resolve`，未命中返回 pass，命中返回一次性完整 Mock 或 transform 判定；transform 不让 resolver 执行真实请求。
 - Chrome 扩展模式不使用 Package 的 RealService 配置；真实放行请求由浏览器自己发出。

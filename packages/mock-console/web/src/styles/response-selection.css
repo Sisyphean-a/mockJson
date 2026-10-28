@@ -1,6 +1,9 @@
 .response-scenarios .scenario-workspace { grid-template-columns: 320px minmax(0, 1fr); }
 .response-detail { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .response-detail > .editor-panel { flex: 1; }
+.scenario-type-label { color: var(--ink-muted); font-size: 11px; }
+.scenario-field-summary { display: flex; flex-wrap: wrap; align-items: baseline; flex-shrink: 0; gap: 5px 8px; padding: 6px 0 10px; color: var(--ink-muted); font-size: 11px; }
+.scenario-field-summary code { max-width: 100%; padding: 2px 6px; border-radius: 4px; background: var(--surface-muted); color: var(--ink); font: 11px/1.6 var(--font-mono); overflow-wrap: anywhere; }
 .scene-list-toolbar { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; }
 .scene-list-toolbar > .secondary { flex-shrink: 0; white-space: nowrap; }
 .response-mode { display: flex; flex: 1; min-width: 0; margin: 0; padding: 3px; background: #eef2f7; border: 1px solid var(--line); border-radius: 7px; }

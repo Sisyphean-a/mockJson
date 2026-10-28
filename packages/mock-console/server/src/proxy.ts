@@ -1,6 +1,9 @@
 import http from "node:http";
 import https from "node:https";
 import { Transform } from "node:stream";
+import { promisify } from "node:util";
+import { gunzip, inflate, brotliDecompress } from "node:zlib";
+import { composeResponse, composedHeaders } from "@mock-json/extension-contract/response-fields";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { PackageConfig, RequestLogOutcome, RequestLogResponse, State } from "../../shared/types.js";
 import { selectMatchingApi } from "./runtime-resolver.js";
@@ -172,7 +175,8 @@ export async function createProxy(
     });
   };
 
-  if (scene) {
+  const mixed = scene?.responseType && scene.responseType !== "mock" ? scene : undefined;
+  if (scene && !mixed) {
     if (streamRequestBody) {
       if (requestCollector) req.raw.on("data", (chunk: Buffer) => requestCollector.collect(chunk));
       await consumeRequestBody(req);
@@ -190,9 +194,9 @@ export async function createProxy(
       if (requestCollector) req.raw.on("data", (chunk: Buffer) => requestCollector.collect(chunk));
       await consumeRequestBody(req);
     }
-    const body = { error: "未命中 Mock，且当前 Package 未配置真实服务" };
+    const body = { error: mixed ? "混合响应需要当前 Package 配置真实服务" : "未命中 Mock，且当前 Package 未配置真实服务" };
     const serialized = JSON.stringify(body);
-    record("unmatched", 502, textLogResponse("application/json; charset=utf-8", serialized));
+    record(mixed ? "error" : "unmatched", 502, textLogResponse("application/json; charset=utf-8", serialized));
     return streamRequestBody
       ? sendRaw(res, 502, "application/json; charset=utf-8", serialized)
       : res.code(502).send(body);
@@ -204,6 +208,7 @@ export async function createProxy(
       ([key]) => !hop.has(key.toLowerCase()) && key.toLowerCase() !== "host",
     ),
   );
+  if (mixed) headers["accept-encoding"] = "identity";
   let payload: string | Buffer | undefined;
   if (payloadBody !== undefined) {
     if (Buffer.isBuffer(payloadBody)) payload = payloadBody;
@@ -244,6 +249,37 @@ export async function createProxy(
       responseStatus = upstreamResponse.statusCode || 502;
       responseContentType = headerText(upstreamResponse.headers["content-type"]);
       responseContentEncoding = headerText(upstreamResponse.headers["content-encoding"]);
+      if (mixed) {
+        const chunks: Buffer[] = [];
+        upstreamResponse.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        upstreamResponse.on("error", fail);
+        upstreamResponse.on("end", () => {
+          void (async () => {
+            if (responseStatus < 200 || responseStatus >= 300) throw new Error(`真实接口返回 HTTP ${responseStatus}`);
+            if (req.method === "HEAD" || !/\bjson\b/i.test(responseContentType ?? "")) throw new Error("混合响应需要真实 JSON 响应");
+            let bytes: Buffer = Buffer.concat(chunks);
+            for (const encoding of (responseContentEncoding ?? "identity").split(",").map((v) => v.trim().toLowerCase()).reverse()) {
+              if (encoding === "gzip") bytes = await promisify(gunzip)(bytes);
+              else if (encoding === "deflate") bytes = await promisify(inflate)(bytes);
+              else if (encoding === "br") bytes = await promisify(brotliDecompress)(bytes);
+              else if (encoding !== "identity") throw new Error(`不支持的响应编码：${encoding}`);
+            }
+            const body = JSON.stringify(composeResponse(mixed.responseType as "real-overrides" | "mock-with-real", mixed.responseBody, JSON.parse(bytes.toString("utf8")), mixed.fieldPaths ?? []));
+            await sleep(mixed.delayMs);
+            if (settled || res.raw.destroyed) return;
+            const cleanHeaders = composedHeaders(Object.fromEntries(Object.entries(upstreamResponse.headers)
+              .filter(([key, value]) => value !== undefined && !hop.has(key))
+              .map(([key, value]) => [key, Array.isArray(value) ? value.join(", ") : String(value)])));
+            res.raw.statusCode = mixed.status;
+            for (const [key, value] of Object.entries(cleanHeaders)) res.raw.setHeader(key, value);
+            if (upstreamResponse.headers["set-cookie"]) res.raw.setHeader("set-cookie", upstreamResponse.headers["set-cookie"]);
+            res.raw.end(body);
+            recordOnce("mocked", mixed.status, textLogResponse("application/json; charset=utf-8", body));
+            finish();
+          })().catch(fail);
+        });
+        return;
+      }
       const captureBody = (!responseContentEncoding || responseContentEncoding.toLowerCase() === "identity") && isTextualContentType(responseContentType);
       responseCollector = createResponseCollector(captureBody);
       const tee = captureBody
@@ -294,7 +330,8 @@ export async function createProxy(
       clientSocket?.removeListener("close", onClientDisconnect);
       res.raw.removeListener("close", onClientDisconnect);
     };
-    upstream.on("error", (error) => {
+    const fail = (error: Error) => {
+      if (settled) return;
       const body = { error: "Proxy failed", detail: error.message };
       const serialized = JSON.stringify(body);
       if (streamRequestBody && !res.raw.headersSent && !res.raw.writableEnded && !res.raw.destroyed) {
@@ -309,7 +346,8 @@ export async function createProxy(
         recordOnce("error", responseStatus, responseCollector?.preview(responseContentType, responseContentEncoding) || emptyLogResponse(responseContentType), error.message);
       }
       finish();
-    });
+    };
+    upstream.on("error", fail);
     if (payload !== undefined) upstream.end(payload);
     else if (requestCollector) req.raw.pipe(new Transform({
       transform(chunk: Buffer, _encoding, callback) {

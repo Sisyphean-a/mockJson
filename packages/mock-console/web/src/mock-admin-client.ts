@@ -164,11 +164,13 @@ export class MockAdminClient {
     responseBody?: unknown;
     color?: string;
     activate?: boolean;
+    responseType?: Scenario["responseType"];
+    fieldPaths?: string[];
   }) {
     return this.request<Scenario>(`/__mock_admin/apis/${apiId}/scenarios`, json("POST", input));
   }
 
-  async updateScenario(id: string, input: Partial<Pick<Scenario, "name" | "status" | "delayMs" | "responseBody" | "color">>) {
+  async updateScenario(id: string, input: Partial<Pick<Scenario, "name" | "status" | "delayMs" | "responseBody" | "color" | "responseType" | "fieldPaths">>) {
     return this.request<Scenario>(`/__mock_admin/scenarios/${id}`, json("PATCH", input));
   }
 

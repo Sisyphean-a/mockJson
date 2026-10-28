@@ -84,6 +84,15 @@ export function resolveExtension(
     response: { action: "pass", reason: "unsupported-status" },
   };
 
+  if (selected.scenario.responseType && selected.scenario.responseType !== "mock") return {
+    packageConfig, api: selected.api, scenario: selected.scenario,
+    response: {
+      action: "transform", responseType: selected.scenario.responseType,
+      fieldPaths: selected.scenario.fieldPaths ?? [], status: selected.scenario.status,
+      delayMs: selected.scenario.delayMs, body: JSON.stringify(selected.scenario.responseBody) ?? "null",
+    },
+  };
+
   return {
     packageConfig,
     api: selected.api,

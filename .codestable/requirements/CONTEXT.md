@@ -2,27 +2,29 @@
 
 ## 领域地图
 
-本工作区拥有一个 Mock 控制台上下文，由两个产品包和一个共享契约包组成：`package:mock-console` 提供配置、匹配和 Mock / Proxy 服务；`package:chrome-extension` 提供浏览器页面请求桥接；`package:extension-contract` 只提供扩展与本机服务之间的 resolver 和主动响应交接线协议类型。npm 包边界不改变领域 Package 的含义。
+本工作区拥有一个 Mock 控制台上下文，由两个产品包和一个共享契约包组成：`package:mock-console` 提供配置、匹配和 Mock / Proxy 服务；`package:chrome-extension` 提供浏览器页面请求桥接；`package:extension-contract` 提供扩展与本机服务之间的 resolver、主动响应交接线协议类型及无 IO 的 JSON 字段组合。npm 包边界不改变领域 Package 的含义。
 
 ## 产品主线
 
-本项目是面向多种使用场景的本地 Mock / Proxy 工具，不限定使用者身份或客户端类型。核心价值是：将请求匹配到用户理解的逻辑接口，并在该接口的多个完整响应场景之间快速切换，从而验证或演示不同业务状态。
+本项目是面向多种使用场景的本地 Mock / Proxy 工具，不限定使用者身份或客户端类型。核心价值是：将请求匹配到用户理解的逻辑接口，并在该接口的多个响应场景之间快速切换，从而验证或演示不同业务状态。
 
-核心场景：用户收到一个需要改变返回结果的请求，配置接口匹配条件和多份完整 JSON 响应，切换固定响应场景或配置有序条件分支后再次发起请求，即可得到对应响应。
+核心场景：用户收到一个需要改变返回结果的请求，配置接口匹配条件和多份响应场景（完整 Mock 或字段混合），切换固定响应场景或配置有序条件分支后再次发起请求，即可得到对应响应。
 
-体验不变量：接口之间必须可靠隔离；场景切换必须直接且明确；每个场景保存完整响应；未命中时明确转发真实服务、由浏览器直接放行或报告配置错误。
+体验不变量：接口之间必须可靠隔离；场景切换必须直接且明确；每个场景明确保存响应类型及 JSON 数据；未命中时明确转发真实服务、由浏览器直接放行或报告配置错误。
 
 反目标：不把产品中心扩展为通用抓包分析器、统计 Dashboard、HTTPS MITM、云同步或协作平台；Chrome 扩展也不承诺拦截所有浏览器网络请求。
 
 ## Mock Console 领域规则
 
 - **Package（测试包）**：当前被测试的 APK / 产品版本；同一时间只有一个 `currentPackageId`，并拥有独立的真实服务环境列表、当前选中的 `activeRealServiceId` 和 Logical API 集合。多个浏览器页面和扩展请求共享当前 Package。
-- **RealService（真实服务）**：Package 级的环境配置，保存服务名称和基础地址；同一 Package 可配置测试、生产等多个环境，切换当前服务只改变 Reqable / 本地 Proxy 未命中 Mock 时的转发目标，不复制 Package 或 Mock 配置。
+- **RealService（真实服务）**：Package 级的环境配置，保存服务名称和基础地址；同一 Package 可配置测试、生产等多个环境，切换当前服务只改变 Reqable / 本地 Proxy 未命中 Mock 或混合场景时的真实请求目标，不复制 Package 或 Mock 配置。
 - **Logical API（逻辑接口）**：用户按业务理解的接口，不以 `apiName` 作为名称或主键；按 `priority` 从高到低匹配并在首个命中后停止。
 - **Match Rule（匹配规则）**：支持任意 Header、URL（fullUrl / host / path）与 HTTP Method，接口内按 AND 或 OR 组合；新建 Logical API 默认使用 OR（满足任一条件），可切换为 AND；Header 名称比较不区分大小写；零条规则表示不匹配任何请求，不作为全量兜底。
-- **Scenario（响应场景）**：保存完整且合法的 JSON、HTTP 状态码和 0–30000ms 延迟；接口此前没有场景时，新建的首个场景默认启用，已有场景时新增场景默认不启用；选择场景只切换编辑对象，独立开关负责启用、停用或切换当前响应，固定响应模式下，一个逻辑接口最多启用一个场景；条件分支按引用选择完整场景，查看和编辑不改变响应模式或固定选择。
+- **Scenario（响应场景）**：保存响应类型、合法 JSON、HTTP 状态码和 0–30000ms 延迟；接口此前没有场景时，新建的首个场景默认启用，已有场景时新增场景默认不启用；选择场景只切换编辑对象，独立开关负责启用、停用或切换当前响应，固定响应模式下，一个逻辑接口最多启用一个场景；条件分支按引用选择场景，查看和编辑不改变响应模式或固定选择。
+- **响应场景类型**：类型与固定响应/条件分支的选择方式正交。旧场景缺省为 `mock`（完整 Mock，不访问真实接口）；`real-overrides`（真实响应 + 字段 Mock）以真实 JSON 为底，从场景 JSON 的同路径复制指定字段；`mock-with-real`（Mock 响应 + 真实字段）以场景 JSON 为底，从本次真实 JSON 的同路径复制指定字段。新建和编辑均可设置类型，复制保留类型和字段，不改变既有启用/引用规则。字段使用非空 JSON Pointer 列表，不允许重复或父子重叠；复制值可以是任意 JSON 值。父级必须存在，允许新增对象末级字段；数组仅支持已存在的明确下标，不自动建结构、扩展数组、按 ID 对齐或跨接口取值。配置保存时验证 Mock 一侧可确定的结构，运行时验证真实一侧；特殊键按自有属性处理，不触发原型写入。实现锚点：`packages/extension-contract/src/response-fields.ts`、`config-service.ts`、`web/src/components/ScenarioTypeFields.vue`。
+- **混合响应执行**：选中混合场景后发出一次真实请求，会产生真实业务副作用；扩展保留浏览器原始 URL、请求体和凭证，Proxy 使用当前 RealService。仅处理成功（2xx）且可读取的 JSON 响应；真实网络/HTTP/格式/字段错误只使本次请求失败，其他完整 Mock 不受影响，不重试、不静默放行或返回旧 Mock。扩展 fetch 拒绝、XHR 发出 error，Proxy 返回 502 并记录原因。最终使用场景状态码（200–599，排除 204/205/304），场景延迟在真实响应后追加；HEAD、流式和二进制响应不组合。组合需缓冲完整 JSON，不使用日志预览或截断内容；更换 body 后清理失效长度、编码、校验和范围响应头。类型与字段失败不影响 resolver 的健康短路；本地 resolver 自身不可用仍沿用原生放行规则。
 - **扩展响应转场景**：用户在扩展主动选中完整 JSON 响应后，由控制台确认保存到当前测试包，可新建 Logical API 或追加 Scenario。此入口默认只保存，即使是接口的首个场景也不启用；显式“保存并启用”才启用接口并切换固定响应。条件分支接口只允许追加，须由用户在响应规则中引用，不隐式切换模式。新接口以 AND 联合匹配 Method、Host、Path（忽略查询参数），追加不改已有规则、响应选择和场景；不自动切换当前测试包，不重放真实请求，不改变扩展白名单或开关。接口、规则、场景一次原子提交，失败可重试且同一草稿不重复创建；实现见 `server/src/capture-routes.ts`、`config-service.ts` 的 `saveCapturedScenario`、`web/src/use-capture-import.ts`。草稿传输与生命周期见[主动响应交接](../architecture/shared/extension-runtime.md#主动响应交接)。
-- **响应选择（Response Selection）**：每个 Logical API 独立保存固定响应或条件分支模式；旧配置缺省为固定响应。条件分支从上到下判断，首条命中选择目标场景；未命中时，兜底开启返回指定场景，关闭则放行，零分支同样执行未命中动作。已匹配条件分支接口的放行是终局决定，不能继续匹配低优先级接口。接口停用时不执行分支或兜底。
+- **响应选择（Response Selection）**：每个 Logical API 独立保存固定响应或条件分支模式；旧配置缺省为固定响应。条件分支从上到下判断，首条命中选择目标场景；未命中时，兜底开启返回指定场景，关闭则放行，零分支同样执行未命中动作。已匹配条件分支接口的放行是终局决定，不能继续匹配低优先级接口。接口停用时不执行分支或兜底。选中场景后的执行由其响应类型决定。
 - **分支条件**：只在已匹配接口内部判断请求头和 JSON 请求体，不扩大 Match Rule 的范围。分支内使用 AND / OR，新分支默认 OR，新条件默认 JSON 请求体，既有配置不改写，不嵌套；请求头名称不区分大小写，值为文本；请求体字段使用 JSON Pointer（如 `/user/status`、`/items/0/id`），文本、数字、布尔、null 严格区分。支持等于、不等于、文本包含、存在/不存在和数字大小比较；字段缺失时普通比较均不命中，包括不等于。无效 JSON 或无法读取的请求体使所有请求体条件不命中，不能等同于字段缺失；请求头条件仍可成立。
 - **响应选择草稿与保护**：工作区视图与生效模式分开：固定响应/条件分支分段只切换查看，保留两边草稿，不制造未保存状态或弹窗；只有真实配置变化才标记未保存，切换接口等会丢失草稿时才提供保存/放弃/取消。查看非生效模式时，明确点击“启用”或“保存并启用”才改变运行模式；当前生效模式的配置仍通过保存应用。写入中和失败维持原生效配置，场景 JSON 沿用独立保存。关闭兜底保留其选择；所有保留的分支/兜底引用（含非当前模式和关闭状态）都阻止场景删除，须先解除或替换并保存。分支必须有条件和当前接口的目标场景，开启兜底必须有目标。试算与运行时共用条件判断，只计算当前查看模式下的草稿决定，不发送请求，非生效模式的试算也标记为草稿试算；首命中后的分支显示未执行，编辑后旧结果过期。实现锚点：`packages/mock-console/shared/response-selection.ts`、`server/src/config-service.ts` 的 `saveResponseSelection`、`web/src/use-response-selection.ts`。
 - Package、Logical API 和 Scenario 都可在控制台完成创建、修改和删除；Logical API 可在测试包之间整体移动（保留接口 ID、优先级、规则及响应场景），不自动切换全局当前测试包，目标测试包必须存在且与来源不同；实现见 `packages/mock-console/server/src/config-service.ts` 的 `moveApi`。Logical API 的 Match Rule 也支持新增、编辑和删除，编辑保留原规则 ID；新建 Logical API 默认启用，未完成接口或固定响应模式下没有启用场景的接口不得遮挡其他可用 Mock。
@@ -36,12 +38,12 @@
 
 ## Chrome Extension 领域规则
 
-- 扩展只保存瞬时的请求判定结果、页面域名白名单和 Popup 的启用状态，不保存 Package、Logical API、Match Rule 或 Scenario；所有 Mock 配置和匹配规则仍以 Mock Console 为唯一来源。页面域名白名单保存在 `chrome.storage.local` 的既有 `allowedPageDomains` 键，新安装且未配置时默认包含 `localhost` 和 `127.0.0.1`；已有名单值保留并按页面域名解释，不清空用户配置。域名同时匹配子域名、不区分端口；全局开关和当前标签页开关保存在 `chrome.storage.session`。
+- 扩展只保存瞬时的请求判定结果、页面域名白名单和 Popup 的启用状态，不保存 Package、Logical API、Match Rule 或 Scenario；所有 Mock 配置和匹配规则仍以 Mock Console 为唯一来源。混合场景的最终响应只保留在扩展本地观测中；服务端只记录判定，不伪造最终状态码或响应体。页面域名白名单保存在 `chrome.storage.local` 的既有 `allowedPageDomains` 键，新安装且未配置时默认包含 `localhost` 和 `127.0.0.1`；已有名单值保留并按页面域名解释，不清空用户配置。域名同时匹配子域名、不区分端口；全局开关和当前标签页开关保存在 `chrome.storage.session`。
 - 页面 MAIN world 在自身页面域名命中白名单且 Mock 开关启用时包装 `fetch` 和异步 `XMLHttpRequest` 并发送 resolver 判定；用户还可以对单个标签页显式开启“只记录”，此时同样包装请求 API，但只观测和本地记录，不发送 resolver 请求。两种模式都未开启时，页面（包括非白名单页面）不替换任何请求 API，以免无关页面因函数身份或调用语义变化发生冲突。iframe 按自身页面 URL 独立判断，不继承顶层页面授权；Service Worker 以 Chrome 提供的 `sender.url` 复核页面域名，无来源 URL 时不启用。白名单页面的请求目标域名不参与过滤，可判定跨域 API 请求；通过隔离世界 Content Script 和 Service Worker 请求本机 `POST /__mock_extension/resolve`，监控状态通过启动握手同步，页面不直接访问管理 API。
 - 对已进入 fetch 判定的请求，MAIN world 先构造唯一的 `Request`；未命中、超时或异常放行时必须复用这个对象调用原生 fetch，不能再用原始 `input/init` 重发，以保持一次性上传体（包括 `ReadableStream`）可用。图片/音视频和 `application/octet-stream` 请求直接由原生 fetch 放行；`multipart` 请求按下面的上传判定规则处理。
-- **上传判定**：白名单页面的 fetch `multipart` 请求及异步 XHR 的 FormData / `multipart` 请求，仅以 URL、Method 和页面可见 Header 进入既有 resolver，不读取、解析、复制或传输文件内容，不按文件内容匹配，也不新增开关。XHR 在 `send` 时仅快照 FormData 的字段、顺序和 File 引用，避免页面在等待判定期间修改原表单影响真实上传。命中时返回现有场景 JSON，不发生真实上传；未命中或判定失败时由原生 API 使用发送时的请求体继续上传。日志明确显示“上传请求体未采集”。只 Mock 返回，不模拟 `xhr.upload` 的进度和完成事件；XHR 自动生成的 multipart Header 不补造。场景中的文件地址如需供页面预览，仍须真实可访问。Blob、ArrayBuffer、TypedArray 和 ReadableStream 的独立 XHR 请求体仍直接调用原生 XHR，不进入 resolver。
+- **上传判定**：白名单页面的 fetch `multipart` 请求及异步 XHR 的 FormData / `multipart` 请求，仅以 URL、Method 和页面可见 Header 进入既有 resolver，不读取、解析、复制或传输文件内容，不按文件内容匹配，也不新增开关。XHR 在 `send` 时仅快照 FormData 的字段、顺序和 File 引用，避免页面在等待判定期间修改原表单影响真实上传。完整 Mock 命中时返回场景 JSON，不发生真实上传；混合场景必须真实上传一次后组合 JSON；未命中或判定失败时由原生 API 使用发送时的请求体继续上传。日志明确显示“上传请求体未采集”。只 Mock 返回，不模拟 `xhr.upload` 的进度和完成事件；XHR 自动生成的 multipart Header 不补造。场景中的文件地址如需供页面预览，仍须真实可访问。Blob、ArrayBuffer、TypedArray 和 ReadableStream 的独立 XHR 请求体仍直接调用原生 XHR，不进入 resolver。
 - MAIN world Content Script 必须构建为自包含的普通脚本，不得保留运行时 `import` 或依赖 Vite 共享 chunk；Chrome Manifest 的 `content_scripts` 直接注入该脚本，模块解析失败会使整个拦截器失效。
-- resolver 接收绝对 `http` / `https` URL、Method 和页面脚本可观察的 Header。命中当前 Package 中启用且响应选择决定返回场景的接口时返回状态码、延迟、JSON body 和 `content-type`；Service Worker 的判定等待上限为 1 秒，页面桥接层再保留 200ms 消息往返余量；连续两次 resolver 失败后短路 3 秒，并在当前扩展会话保存健康状态，单个 Service Worker 同时最多处理 32 个 resolver，取消会传播到本机请求并立即放行，未命中、服务不可用或超时扩展调用原生浏览器 API继续真实请求，异常或缺失的桥接结果也必须按放行处理而不能读取未定义的 `action`。
+- resolver 接收绝对 `http` / `https` URL、Method 和页面脚本可观察的 Header。命中当前 Package 中启用且响应选择决定返回场景的接口时，完整 Mock 返回状态码、延迟、JSON body 和 `content-type`，混合场景返回一次性组合指令（协议见 shared:extension-runtime）；Service Worker 的判定等待上限为 1 秒，页面桥接层再保留 200ms 消息往返余量；连续两次 resolver 失败后短路 3 秒，并在当前扩展会话保存健康状态，单个 Service Worker 同时最多处理 32 个 resolver，取消会传播到本机请求并立即放行，未命中、服务不可用或超时扩展调用原生浏览器 API继续真实请求，异常或缺失的桥接结果也必须按放行处理而不能读取未定义的 `action`。
 - Popup 提供页面域名白名单、全局 Mock、当前标签页 Mock、Mock Console 连接状态、“记录本页请求”和打开请求面板的入口；当前页面不命中时显示“不在页面白名单”并禁用标签页 Mock 开关，该开关不能绕过页面授权，但“记录本页请求”仍可对受支持的 http(s) 页面显式开启。白名单为空或全局/当前标签页暂停时恢复原生请求 API，已保存的包装也不再发起 Mock 判定；只记录开启时请求 API 保持观测包装但不进入判定。
 - 扩展模式不使用 Package 的 RealService 配置，因为未命中请求必须由浏览器以原始 URL、Cookie、凭据和 CORS 语义直接发出；当前 Package 仍是全局选择。
 - 扩展 resolver 只允许 loopback 访问，不承担真实请求代理；扩展 resolver 和 Mock Console 服务端日志都不记录真实放行请求的最终响应，放行响应默认由扩展本地请求观测面板保存在浏览器会话中；主动交接响应转场景不经过 resolver 或请求日志。现有 Reqable / Proxy 路径和其日志语义保持不变。
@@ -51,5 +53,5 @@
 ## 运行规则
 
 - 正式运行时 Mock Console 服务使用 `22333`，开发热更新页面使用 `22334`；扩展默认连接 `127.0.0.1:22333`，Popup 通过 loopback status 接口显示服务是否在线和是否存在当前 Package。
-- npm workspace 目录为 `packages/mock-console`、`packages/chrome-extension` 和 `packages/extension-contract`。控制台构建产物位于 `packages/mock-console/dist`，扩展构建产物位于 `packages/chrome-extension/dist`；共享契约包只提供源码类型，不生成独立运行产物。
+- npm workspace 目录为 `packages/mock-console`、`packages/chrome-extension` 和 `packages/extension-contract`。控制台构建产物位于 `packages/mock-console/dist`，扩展构建产物位于 `packages/chrome-extension/dist`；共享契约包提供源码类型及可内联的纯 JSON 函数，不生成独立运行产物。
 - 代表性代码锚点：`packages/extension-contract/src/index.ts`、`packages/mock-console/shared/types.ts`、`packages/mock-console/server/src/validation.ts`、`packages/mock-console/server/src/matcher.ts`、`packages/mock-console/server/src/runtime-resolver.ts`、`packages/mock-console/server/src/proxy.ts`、`packages/mock-console/server/src/extension-routes.ts`、`packages/chrome-extension/src/content-main.ts`。

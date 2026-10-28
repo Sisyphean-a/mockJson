@@ -1,4 +1,5 @@
 import type { PersistedPackageConfig, PersistedState } from "../../shared/types.js";
+import { validateMockFields } from "@mock-json/extension-contract/response-fields";
 import { validateSelection } from "../../shared/response-selection.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -85,6 +86,8 @@ function isValidRule(value: unknown) {
 
 function isValidScenario(value: unknown) {
   if (!isRecord(value)) return false;
+  try { validateScenarioResponse(value.responseType, value.fieldPaths, value.status, value.responseBody); }
+  catch { return false; }
   return (
     isUuidLike(value.id) &&
     typeof value.name === "string" &&
@@ -99,6 +102,12 @@ function isValidScenario(value: unknown) {
     "responseBody" in value &&
     (value.color === undefined || ["blue", "green", "yellow", "red", "gray"].includes(String(value.color)))
   );
+}
+
+export function validateScenarioResponse(type: unknown, paths: unknown, status: unknown, mock: unknown) {
+  validateMockFields(type, paths, mock);
+  if (type !== undefined && type !== "mock" && (typeof status !== "number" || status < 200 || [204, 205, 304].includes(status)))
+    throw new Error("混合响应需要可携带 JSON 的 200–599 状态码（不支持 204、205、304）");
 }
 
 export function parseJsonBody(value: unknown) {

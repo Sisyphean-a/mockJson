@@ -6,11 +6,12 @@ import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import type { ExtensionRuntimeRequest } from "@mock-json/extension-contract";
 
 const source = readFileSync(new URL("./content-main.ts", import.meta.url), "utf8");
-const compiledSource = transpileModule(source, {
+const fieldsSource = readFileSync(new URL("../../extension-contract/src/response-fields.ts", import.meta.url), "utf8");
+const compiledSource = transpileModule(fieldsSource.replace(/^export /gm, "") + "\n" + source.replace(/^import .*response-fields.*$/m, ""), {
   compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 },
 }).outputText.replace(/\nexport \{\};?\s*$/, "\n");
 
-function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock" | "invalid", options: { mockBody?: string; nativeResponse?: () => Promise<Response>; now?: () => number } = {}) {
+function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock" | "invalid", options: { mockBody?: string; nativeResponse?: () => Promise<Response>; now?: () => number; decision?: unknown } = {}) {
   const forwarded: Request[] = [];
   const posted: ExtensionRuntimeRequest[] = [];
   const trafficMessages: Array<{ type: string; id?: string; entry?: any; decision?: string; response?: any; body?: string; bodyTruncated?: boolean; error?: { name: string; message: string } }> = [];
@@ -30,9 +31,17 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock" 
     sentBodies: unknown[] = [];
     send(body?: unknown) { this.sentBodies.push(body); }
     setRequestHeader(_name: string, _value: string) {}
-    abort() {}
+    aborted = false;
+    abort() { this.aborted = true; }
     addEventListener(type: string, listener: EventListener, options?: boolean | AddEventListenerOptions) {
       this.listeners.push({ type, listener, options });
+    }
+    dispatch(type: string) {
+      for (const item of [...this.listeners].filter((item) => item.type === type)) {
+        if (typeof item.options === "object" && item.options.signal?.aborted) continue;
+        if (typeof item.options === "object" && item.options.once) this.removeEventListener(type, item.listener);
+        item.listener.call(this, new Event(type));
+      }
     }
     removeEventListener(type: string, listener: EventListener) {
       this.listeners = this.listeners.filter((item) => !(item.type === type && item.listener === listener));
@@ -74,9 +83,9 @@ function createContentScriptHarness(mode: "pass" | "throw" | "timeout" | "mock" 
               channel: "__mock_console_extension_v1",
               type: "resolve-result",
               id: message.id,
-              result: mode === "invalid" ? undefined : mode === "mock"
+              result: options.decision ?? (mode === "invalid" ? undefined : mode === "mock"
                 ? { action: "mock", status: 200, delayMs: 0, body: options.mockBody ?? "{}", headers: { "content-type": "application/json" } }
-                : { action: "pass" },
+                : { action: "pass" }),
             },
           });
         }
@@ -142,8 +151,8 @@ async function runForwardedFetch(
   return harness.forwarded[0];
 }
 
-test("MAIN world content script stays self-contained", () => {
-  assert.doesNotMatch(source, /^import(?!\s+type\b)/m);
+test("MAIN world 只引入可内联的纯 JSON 组合函数，构建阶段核验无运行时 import", () => {
+  assert.doesNotMatch(source.replace(/^import .*response-fields.*$/m, ""), /^import(?!\s+type\b)/m);
   assert.doesNotMatch(source, /^export\b/m);
 });
 
@@ -694,6 +703,154 @@ test("已结束 XHR 的旧 loadend 不再读取原生响应或重复上报", () 
   Object.defineProperty(target, "responseText", { get() { throw new Error("旧响应已不可读"); } });
   assert.doesNotThrow(() => finish(new Event("loadend")));
   assert.equal(harness.trafficMessages.filter((m) => m.type === "traffic-finish").length, 1);
+});
+
+const mixedDecision = (type = "mock-with-real", fieldPaths = ["/data/imageUrl"]) => ({
+  action: "transform", responseType: type, fieldPaths, status: 201, delayMs: 0,
+  body: JSON.stringify({ data: { imageUrl: "expired", status: "MOCK" } }),
+});
+const realJson = { data: { imageUrl: "fresh", status: "REAL", extra: true } };
+
+test("fetch 两类混合响应保留未选字段，只发一次原始请求并移除失效头", async () => {
+  for (const type of ["real-overrides", "mock-with-real"]) {
+    const harness = createContentScriptHarness("mock", {
+      decision: mixedDecision(type, type === "real-overrides" ? ["/data/status"] : ["/data/imageUrl"]),
+      nativeResponse: async () => new Response(JSON.stringify(realJson), { headers: { "content-type": "application/json", etag: "old", "content-length": "999", "content-encoding": "gzip" } }),
+    });
+    enableCapture(harness);
+    const response = await harness.fakeWindow.fetch(new Request("https://upload.test/api", { method: "POST", body: "one-shot", credentials: "include" }));
+    assert.equal(response.status, 201);
+    assert.deepEqual(await response.json(), type === "real-overrides" ? { data: { ...realJson.data, status: "MOCK" } } : { data: { imageUrl: "fresh", status: "MOCK" } });
+    assert.equal(response.headers.get("etag"), null);
+    assert.equal(response.headers.get("content-length"), null);
+    assert.equal(response.headers.get("content-encoding"), null);
+    assert.equal(harness.forwarded.length, 1);
+    assert.equal(harness.forwarded[0].credentials, "include");
+    assert.equal(await harness.forwarded[0].text(), "one-shot");
+    assert.equal(harness.trafficMessages.filter(m => m.type === "traffic-finish").length, 1);
+  }
+});
+
+test("fetch 混合的网络、HTTP、JSON 和缺失字段错误均失败且不重发", async () => {
+  for (const fail of ["network", "http", "json", "missing"]) {
+    const harness = createContentScriptHarness("mock", {
+      decision: mixedDecision(),
+      nativeResponse: async () => {
+        if (fail === "network") throw new Error("network failed");
+        return new Response(fail === "json" ? "bad" : "{}", { status: fail === "http" ? 503 : 200, headers: { "content-type": "application/json" } });
+      },
+    });
+    enableCapture(harness);
+    await assert.rejects(harness.fakeWindow.fetch("https://upload.test/api"));
+    assert.equal(harness.forwarded.length, 1);
+    assert.ok(harness.trafficMessages.find(m => m.type === "traffic-finish")?.error);
+  }
+});
+
+test("XHR 两类混合响应、JSON responseType、凭证和请求体保持一致", async () => {
+  for (const type of ["real-overrides", "mock-with-real"]) {
+    const harness = createContentScriptHarness("mock", { decision: mixedDecision(type, type === "real-overrides" ? ["/data/status"] : ["/data/imageUrl"]) });
+    enableCapture(harness);
+    const xhr = new harness.fakeWindow.XMLHttpRequest();
+    xhr.open("POST", "https://upload.test/api");
+    xhr.withCredentials = true;
+    xhr.responseType = "json";
+    const events: string[] = [];
+    for (const name of ["load", "error", "loadend"]) xhr.addEventListener(name, () => events.push(name));
+    xhr.send("one-shot");
+    await flushTraffic();
+    const target = harness.nativeXhrInstances[0] as any;
+    assert.equal(target.withCredentials, true);
+    assert.deepEqual(target.sentBodies, ["one-shot"]);
+    Object.assign(target, { status: 200, responseText: JSON.stringify(realJson), getAllResponseHeaders: () => "content-type: application/json\r\netag: old\r\ncontent-length: 999" });
+    for (const { listener } of [...target.listeners].filter(item => item.type === "load")) listener(new Event("load"));
+    await flushTraffic();
+    assert.equal(xhr.status, 201);
+    assert.deepEqual(JSON.parse(JSON.stringify(xhr.response)), type === "real-overrides" ? { data: { ...realJson.data, status: "MOCK" } } : { data: { imageUrl: "fresh", status: "MOCK" } });
+    assert.equal(xhr.getResponseHeader("etag"), null);
+    assert.deepEqual(events, ["load", "loadend"]);
+    assert.equal(target.sentBodies.length, 1);
+  }
+});
+
+test("XHR 混合失败只报告 error，取消、超时和重新 open 会中止旧真实请求", async () => {
+  for (const action of ["error", "missing", "abort", "timeout", "reopen"]) {
+    const harness = createContentScriptHarness("mock", { decision: mixedDecision() });
+    enableCapture(harness);
+    const xhr = new harness.fakeWindow.XMLHttpRequest();
+    xhr.open("POST", "https://upload.test/api");
+    if (action === "timeout") xhr.timeout = 30;
+    const events: string[] = [];
+    for (const name of ["load", "error", "abort", "timeout", "loadend"]) xhr.addEventListener(name, () => events.push(name));
+    xhr.send("once");
+    await flushTraffic();
+    const target = harness.nativeXhrInstances[0] as any;
+    if (action === "abort") xhr.abort();
+    else if (action === "reopen") xhr.open("GET", "https://upload.test/other");
+    else if (action !== "timeout") {
+      Object.assign(target, { status: 200, responseText: "{}", getAllResponseHeaders: () => "content-type: application/json" });
+      for (const { listener } of [...target.listeners].filter(item => item.type === (action === "missing" ? "load" : "error"))) listener(new Event(action === "missing" ? "load" : "error"));
+    }
+    await new Promise(resolve => setTimeout(resolve, action === "timeout" ? 40 : 10));
+    assert.equal(target.sentBodies.length, 1);
+    if (["abort", "timeout", "reopen"].includes(action)) assert.equal(target.aborted, true);
+    assert.equal(events.includes("load"), false);
+    if (action === "error" || action === "missing") assert.deepEqual(events, ["error", "loadend"]);
+    if (action === "timeout") assert.deepEqual(events, ["timeout", "loadend"]);
+    assert.equal(harness.trafficMessages.filter(m => m.type === "traffic-finish").length, 1);
+  }
+});
+
+test("同一 XHR 从放行切换混合，不提前暴露原响应或重复调用原生监听器", async () => {
+  const options: { decision: unknown } = { decision: { action: "pass" } };
+  const harness = createContentScriptHarness("pass", options);
+  enableCapture(harness);
+  const xhr = new harness.fakeWindow.XMLHttpRequest();
+  xhr.open("GET", "https://upload.test/api");
+  xhr.send();
+  await flushTraffic();
+  let handlers = 0, listeners = 0;
+  xhr.onload = () => handlers++;
+  xhr.addEventListener("load", () => listeners++);
+  const target = harness.nativeXhrInstances[0] as any;
+  target.onload(new Event("load"));
+  for (const { listener } of [...target.listeners].filter(item => item.type === "load")) listener(new Event("load"));
+  assert.equal(handlers, 1); assert.equal(listeners, 1);
+  options.decision = mixedDecision();
+  xhr.open("GET", "https://upload.test/api");
+  xhr.send();
+  await flushTraffic();
+  assert.equal(target.onload, null);
+  Object.assign(target, { status: 200, responseText: JSON.stringify(realJson), getAllResponseHeaders: () => "content-type: application/json" });
+  for (const { listener } of [...target.listeners].filter(item => item.type === "load")) listener(new Event("load"));
+  assert.equal(handlers, 1); assert.equal(listeners, 1);
+  await flushTraffic();
+  assert.equal(handlers, 2); assert.equal(listeners, 2);
+  assert.equal(JSON.parse(xhr.responseText).data.imageUrl, "fresh");
+});
+
+test("XHR 放行转混合时 once 和 AbortSignal 监听器不会复活", async () => {
+  const options: { decision: unknown } = { decision: { action: "pass" } };
+  const harness = createContentScriptHarness("pass", options);
+  enableCapture(harness);
+  const xhr = new harness.fakeWindow.XMLHttpRequest();
+  xhr.open("GET", "https://upload.test/api"); xhr.send();
+  await flushTraffic();
+  let once = 0, aborted = 0;
+  const controller = new AbortController();
+  xhr.addEventListener("load", () => once++, { once: true });
+  xhr.addEventListener("load", () => aborted++, { signal: controller.signal });
+  controller.abort();
+  const target = harness.nativeXhrInstances[0] as any;
+  target.dispatch("load");
+  assert.equal(once, 1); assert.equal(aborted, 0);
+  options.decision = mixedDecision();
+  xhr.open("GET", "https://upload.test/api"); xhr.send();
+  await flushTraffic();
+  Object.assign(target, { status: 200, responseText: JSON.stringify(realJson), getAllResponseHeaders: () => "content-type: application/json" });
+  target.dispatch("load");
+  await flushTraffic();
+  assert.equal(once, 1); assert.equal(aborted, 0);
 });
 
 test("观测上报失败不会改变 fetch 的响应或真实网络失败", async () => {

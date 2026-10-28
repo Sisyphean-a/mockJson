@@ -1,4 +1,5 @@
 import { computed, ref } from "vue";
+import type { ScenarioResponseType } from "../../shared/types";
 
 export function useConsoleForms() {
   const draft = ref("");
@@ -19,6 +20,11 @@ export function useConsoleForms() {
   const apiEditName = ref("");
   const apiPriority = ref(0);
   const sceneName = ref("");
+  const sceneResponseType = ref<ScenarioResponseType>("mock");
+  const sceneFieldPaths = ref("");
+  const sceneInitialBody = ref("{}");
+  const sceneFormError = ref("");
+  const sceneSaving = ref(false);
   const editSceneName = ref("");
   const editSceneStatus = ref(200);
   const editSceneDelay = ref(0);
@@ -55,7 +61,7 @@ export function useConsoleForms() {
 
   return {
     draft, jsonError, expanded, draftDirty, showApi, showScene, showPackage, showPackageForm, showRealServiceForm, showRealServices, showMoveApi, movingApiId, destinationPackageId, sceneEditMode,
-    apiName, apiEditName, apiPriority, sceneName, editSceneName, editSceneStatus,
+    apiName, apiEditName, apiPriority, sceneName, sceneResponseType, sceneFieldPaths, sceneInitialBody, sceneFormError, sceneSaving, editSceneName, editSceneStatus,
     editSceneDelay, editSceneColor, packageName, editingPackageId, realServiceName, realServiceEditId, targetUrl,
     ruleSource, ruleField, ruleOperator, ruleValue, editingRuleId, addingRule,
     operators, urlFields, methodFields, ruleHint,
