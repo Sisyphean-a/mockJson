@@ -111,11 +111,6 @@ export class RequestContextMenu {
     this.root.setAttribute("aria-busy", String(this.loading || this.busy));
     const entry = this.entry;
     if (!entry) return;
-    let path = entry.request.url;
-    try { path = new URL(path).pathname; } catch { /* Rule: 原样显示无效 URL，读取配置时再明确报错。 */ }
-    const title = node("div", "context-title", `${entry.request.method} ${path}`);
-    title.title = entry.request.url;
-    this.root.append(title);
     if (this.busy) this.root.append(node("div", "context-status", `正在保存「${this.api?.name ?? "接口"}」…`));
     else if (this.loading) this.root.append(node("div", "context-status", "正在读取 Mock 配置…"));
     else if (this.error) {
@@ -166,7 +161,8 @@ export class RequestContextMenu {
 
   private renderCommon(entry: TrafficEntry) {
     this.root.append(node("div", "context-divider"));
-    this.root.append(this.button("保存此响应为新场景…", () => { this.close(); void this.actions.save(entry); }, captureUnavailableReason(entry)));
+    if (entry.decision !== "mock")
+      this.root.append(this.button("保存此响应为新场景…", () => { this.close(); void this.actions.save(entry); }, captureUnavailableReason(entry)));
     const packageId = this.info?.package?.id, apiId = this.api?.id;
     this.root.append(this.button(apiId ? "打开接口配置" : "打开控制台", () => {
       this.close();

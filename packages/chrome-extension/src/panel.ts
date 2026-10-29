@@ -396,12 +396,14 @@ function detailBar(entry: TrafficEntry) {
   const bar = el("div", "detail-bar");
   bar.append(tabButton("请求", "request"), tabButton("响应", "response"));
   const actions = el("div", "detail-actions");
-  const saveMock = actionButton(handingOff ? "发送中…" : "保存为 Mock 场景", () => { void saveToConsole(entry); });
-  const reason = captureUnavailableReason(entry);
-  saveMock.disabled = handingOff || Boolean(reason);
-  saveMock.title = reason || "将此响应带到 22333 控制台，确认后保存；不会自动启用";
-  saveMock.classList.add("mock-action");
-  actions.append(saveMock);
+  if (entry.decision !== "mock") {
+    const saveMock = actionButton(handingOff ? "发送中…" : "保存为 Mock 场景", () => { void saveToConsole(entry); });
+    const reason = captureUnavailableReason(entry);
+    saveMock.disabled = handingOff || Boolean(reason);
+    saveMock.title = reason || "将此响应带到 22333 控制台，确认后保存；不会自动启用";
+    saveMock.classList.add("mock-action");
+    actions.append(saveMock);
+  }
   actions.append(actionButton("打开控制台", () => {
     void chrome.tabs.create({ url: DEFAULT_RUNTIME_URL }).catch(() => showToast("无法打开控制台，请访问 127.0.0.1:22333"));
   }));

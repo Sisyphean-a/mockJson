@@ -164,7 +164,7 @@ test("右键选中请求、按需读取配置，选择场景仅更新当前测�
   openRowMenu(h); await tick();
   assert.equal(h.elements.get("detail")!.hidden, false);
   assert.equal(h.menu.hidden, false);
-  assert.equal(h.menu.querySelectorAll("*").some(node => node.className === "context-scope"), false);
+  assert.equal(h.menu.querySelectorAll("*").some(node => node.className === "context-scope" || node.className === "context-title"), false);
   assert.deepEqual(h.controlRequests[0].body, { url: menuEntry.request.url, method: "POST", headers: menuEntry.request.headers });
   menuItem(h.menu, "切换响应场景 ›").click();
   assert.equal(menuItem(h.menu, "成功").getAttribute("aria-checked"), "true");
@@ -172,6 +172,28 @@ test("右键选中请求、按需读取配置，选择场景仅更新当前测�
   assert.deepEqual(h.controlRequests[1].body, { packageId: "p", apiId: "a", revision: "a".repeat(64), action: "scenario", scenarioId: "two" });
   assert.equal(h.menu.hidden, true);
   assert.match(h.elements.get("toast")!.textContent, /场景已切换/);
+});
+
+test("Mock 响应不提供再次保存入口，放行和只记录响应保留入口", async () => {
+  for (const decision of ["mock", "pass", "capture"] as const) {
+    const h = createPanelHarness();
+    openRowMenu(h, { ...menuEntry, decision }); await tick();
+    const available = decision !== "mock";
+    assert.equal(Boolean(menuItem(h.menu, "保存此响应为新场景…")), available);
+    assert.equal(Boolean(menuItem(h.elements.get("detail")!, "保存为 Mock 场景")), available);
+    assert.equal(h.capturesSent.length, 0);
+    assert.ok(menuItem(h.menu, "复制响应"));
+  }
+});
+
+test("请求更新为 Mock 后移除详情保存入口，不影响其他操作", () => {
+  const h = createPanelHarness();
+  h.messageListener({ type: "snapshot", captureTab: true, entries: [{ ...menuEntry, decision: "pass" }] });
+  h.elements.get("rows")!.children[0].listeners.click();
+  assert.ok(menuItem(h.elements.get("detail")!, "保存为 Mock 场景"));
+  h.messageListener({ type: "entry", entry: menuEntry });
+  assert.equal(menuItem(h.elements.get("detail")!, "保存为 Mock 场景"), undefined);
+  assert.ok(menuItem(h.elements.get("detail")!, "复制响应"));
 });
 
 test("菜单只显示一个 Mock 切换项，按当前状态执行启用或停用", async () => {
@@ -225,7 +247,7 @@ test("右键操作忙碌时防止重复提交，冲突后须明确重新读取�
 test("关闭菜单忽略晚到结果；键盘可打开菜单和返回请求，未配置时可交接响应", async () => {
   const h = createPanelHarness(); let release = () => {};
   h.control.inspectWait = () => new Promise<void>(resolve => { release = resolve; });
-  openRowMenu(h);
+  openRowMenu(h, { ...menuEntry, decision: "pass" });
   h.menu.listeners.keydown({ key: "Escape", preventDefault() {}, stopPropagation() {} });
   release(); await tick();
   assert.equal(h.menu.hidden, true); assert.equal(h.menu.children.length, 0);
