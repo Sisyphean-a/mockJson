@@ -69,6 +69,7 @@ export type LogicalApi = {
   id: string;
   name: string;
   enabled: boolean;
+  passthrough?: boolean;
   priority: number;
   matchMode: "AND" | "OR";
   matchRules: MatchRule[];

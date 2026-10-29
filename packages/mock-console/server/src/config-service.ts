@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { ExtensionCaptureInput } from "@mock-json/extension-contract";
+import { apiControlRevision, controlledApi, inspectApiControls } from "./api-control.js";
+import type { ExtensionControlCommand, ExtensionControlRequest, ExtensionCaptureInput } from "@mock-json/extension-contract";
 import { scenarioReferences, selectionFor, validateSelection } from "../../shared/response-selection.js";
 import type {
   LogicalApi,
@@ -30,6 +31,7 @@ export interface StateRepository {
 
 export class NotFoundError extends Error {}
 export class InvalidCaptureError extends Error {}
+export class InvalidControlError extends Error {}
 
 export class MockConfigService {
   private state: State | null = null;
@@ -213,6 +215,43 @@ export class MockConfigService {
     });
   }
 
+  inspectRequestControls(request: ExtensionControlRequest) {
+    return inspectApiControls(this.getState(), request);
+  }
+
+  async applyRequestControl(input: ExtensionControlCommand) {
+    return this.enqueue(async () => {
+      const state = this.getState();
+      if (input.packageId !== state.currentPackageId)
+        throw Object.assign(new Error("当前测试包已切换，请重新读取配置"), { statusCode: 409 });
+      const pkg = state.packages.find((p) => p.id === input.packageId);
+      const api = pkg?.apis.find((a) => a.id === input.apiId);
+      if (!api || apiControlRevision(api) !== input.revision)
+        throw Object.assign(new Error("接口配置已变化，请重新读取后操作"), { statusCode: 409 });
+      const candidate = structuredClone(state);
+      const target = candidate.packages.find((p) => p.id === input.packageId)!.apis.find((a) => a.id === input.apiId)!;
+      if (input.action === "pass") target.passthrough = true;
+      else if (input.action === "mock") {
+        const reason = controlledApi(api).mockUnavailableReason;
+        if (reason) throw new InvalidControlError(reason);
+        target.passthrough = false;
+      } else if (input.action === "scenario") {
+        const scenario = target.scenarios.find((s) => s.id === input.scenarioId);
+        if (!scenario || scenario.status < 200 || scenario.status > 599) throw new InvalidControlError("响应场景不存在或浏览器不支持其状态码");
+        target.activeScenarioId = scenario.id;
+        if (target.responseSelection) target.responseSelection.mode = "fixed";
+        target.passthrough = false;
+      } else throw new InvalidControlError("未知的接口操作");
+      target.enabled = true;
+      // Guarantee: 先写候选配置再发布；作用于当前测试包，不改变匹配规则、优先级和条件分支草稿。
+      const serialized = JSON.stringify(candidate, null, 2);
+      await this.repository.write(candidate, serialized);
+      this.state = candidate;
+      this.persistedSnapshot = serialized;
+      return controlledApi(target);
+    });
+  }
+
   async updateApi(id: string, input: {
     name?: unknown;
     enabled?: unknown;
@@ -229,6 +268,7 @@ export class MockConfigService {
       if (input.enabled !== undefined) {
         if (typeof input.enabled !== "boolean") throw new Error("enabled 必须是布尔值");
         api.enabled = input.enabled;
+        if (api.passthrough) api.passthrough = false;
       }
       if (input.priority !== undefined) {
         if (!Number.isInteger(input.priority) || Number(input.priority) < 0)
@@ -258,10 +298,12 @@ export class MockConfigService {
       const target = candidate.packages.flatMap((p) => p.apis).find((a) => a.id === id)!;
       target.responseSelection = selection;
       target.activeScenarioId = activeId as string | null;
+      if (target.passthrough) target.passthrough = false;
       const serialized = JSON.stringify(candidate, null, 2);
       await this.repository.write(candidate, serialized);
       api.responseSelection = selection;
       api.activeScenarioId = target.activeScenarioId;
+      if (api.passthrough) api.passthrough = false;
       this.persistedSnapshot = serialized;
       return api;
     });
@@ -314,7 +356,10 @@ export class MockConfigService {
       if (input.responseType !== undefined) scenario.responseType = input.responseType as Scenario["responseType"];
       if (input.fieldPaths !== undefined) scenario.fieldPaths = input.fieldPaths as string[];
       api.scenarios.push(scenario);
-      if (shouldActivate) api.activeScenarioId = scenario.id;
+      if (shouldActivate) {
+        api.activeScenarioId = scenario.id;
+        if (api.passthrough) api.passthrough = false;
+      }
       await this.save();
       return scenario;
     });
@@ -361,7 +406,7 @@ export class MockConfigService {
         pkg.apis.push(api);
       }
       api.scenarios.push(scene);
-      if (input.activate) { api.enabled = true; api.activeScenarioId = scene.id; }
+      if (input.activate) { api.enabled = true; api.activeScenarioId = scene.id; if (api.passthrough) api.passthrough = false; }
       // Guarantee: 接口、规则、场景一起提交；写盘成功前不改变正在生效的配置。
       const serialized = JSON.stringify(candidate, null, 2);
       await this.repository.write(candidate, serialized);
@@ -417,6 +462,7 @@ export class MockConfigService {
       const api = this.requireApi(apiId).api;
       if (!api.scenarios.some((item) => item.id === scenarioId)) throw new NotFoundError("Scenario not found");
       api.activeScenarioId = scenarioId;
+      if (api.passthrough) api.passthrough = false;
       await this.save();
       return { success: true, activeScenarioId: scenarioId };
     });

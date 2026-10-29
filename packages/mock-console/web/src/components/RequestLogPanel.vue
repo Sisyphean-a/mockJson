@@ -66,6 +66,7 @@ const passReasonLabels: Record<NonNullable<RequestLog["passReason"]>, string> = 
   disabled: "扩展已暂停",
   "invalid-request": "请求无效",
   "unsupported-status": "状态码暂不支持",
+  "api-passthrough": "接口已设为放行",
 };
 
 function outcomeLabel(outcome: RequestLog["outcome"]) {

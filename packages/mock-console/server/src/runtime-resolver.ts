@@ -33,13 +33,19 @@ export function activeScenario(api: ActiveApi) {
   return api.scenarios.find((scenario) => scenario.id === api.activeScenarioId);
 }
 
+export function matchingApis(apis: LogicalApi[] | undefined, context: MatchContext) {
+  return apis ? rankedApis(apis).filter((api) => matchApi(api, context)) : [];
+}
+
 export function selectMatchingApi(apis: LogicalApi[] | undefined, context: MatchContext, request: SelectionRequest = { headers: context.headers }) {
   if (!apis) return undefined;
   for (const api of rankedApis(apis)) {
     if (api.enabled === false) continue;
     const selection = selectionFor(api);
-    if (selection.mode === "fixed" && !activeScenario(api)) continue;
+    if (!api.passthrough && selection.mode === "fixed" && !activeScenario(api)) continue;
     if (!matchApi(api, context)) continue;
+    // Rule: 显式放行是终局决定，不再落到其他接口，也不执行响应条件。
+    if (api.passthrough) return { api, scenario: undefined };
     const result = evaluateSelection(selection, api.activeScenarioId, request);
     return { api, scenario: api.scenarios.find((s) => s.id === result.scenarioId) };
   }
@@ -75,7 +81,7 @@ export function resolveExtension(
     packageConfig,
     api: selected.api,
     scenario: undefined,
-    response: { action: "pass", reason: "unmatched" },
+    response: { action: "pass", reason: selected.api.passthrough ? "api-passthrough" : "unmatched" },
   };
   if (selected.scenario.status < 200) return {
     packageConfig,

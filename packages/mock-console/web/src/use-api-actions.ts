@@ -76,9 +76,10 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
 
   async function toggle(api: Api) {
     try {
-      const saved = await model.runAdminRequest(() => client.updateApi(api.id, { enabled: !api.enabled }));
+      const saved = await model.runAdminRequest(() => client.updateApi(api.id, { enabled: Boolean(api.passthrough) || !api.enabled }));
       model.replaceApi(saved);
-      notify(saved.enabled ? "Mock 已开启" : "已关闭 Mock，将转发真实服务");
+      api.passthrough = saved.passthrough;
+      notify(saved.enabled && !saved.passthrough ? "Mock 已开启" : "已关闭 Mock，将转发真实服务");
     } catch (error) { notify(message(error)); }
   }
 

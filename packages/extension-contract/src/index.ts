@@ -9,7 +9,7 @@ export type ExtensionCaptureInput = {
 
 export type ExtensionCaptureTicket = { id: string; expiresAt: number };
 
-export type ExtensionPassReason = "unmatched" | "disabled" | "invalid-request" | "unsupported-status";
+export type ExtensionPassReason = "unmatched" | "disabled" | "invalid-request" | "unsupported-status" | "api-passthrough";
 
 export type ExtensionRuntimeRequest = {
   url: string;
@@ -20,6 +20,32 @@ export type ExtensionRuntimeRequest = {
   /** 请求体不可用时，响应分支的请求体条件不命中，请求头条件仍正常判定。 */
   bodyUnavailable?: "too-large" | "unavailable" | "upload";
 };
+
+export type ExtensionControlRequest = Pick<ExtensionRuntimeRequest, "url" | "method" | "headers">;
+
+export type ExtensionControlledApi = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  passthrough: boolean;
+  revision: string;
+  mode: "fixed" | "conditional";
+  activeScenarioId: string | null;
+  mockUnavailableReason: string;
+  scenarios: { id: string; name: string; status: number; responseType: ScenarioResponseType }[];
+};
+
+export type ExtensionControlInspection = {
+  package: { id: string; name: string } | null;
+  matchedApiId: string | null;
+  apis: ExtensionControlledApi[];
+};
+
+export type ExtensionControlCommand = {
+  packageId: string;
+  apiId: string;
+  revision: string;
+} & ({ action: "mock" | "pass" } | { action: "scenario"; scenarioId: string });
 
 export type ExtensionRuntimeResponse =
   | {

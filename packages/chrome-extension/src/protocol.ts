@@ -248,7 +248,7 @@ function isTrafficError(value: unknown): value is { name: string; message: strin
 }
 
 function isPassReason(value: unknown): value is ExtensionPassReason {
-  return value === "unmatched" || value === "disabled" || value === "invalid-request" || value === "unsupported-status";
+  return value === "unmatched" || value === "disabled" || value === "invalid-request" || value === "unsupported-status" || value === "api-passthrough";
 }
 
 export function isRuntimeResponse(value: unknown): value is ExtensionRuntimeResponse {

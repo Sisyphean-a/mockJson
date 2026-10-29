@@ -63,7 +63,7 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
     if (responseActions.responseEditorMode.value !== "fixed") return;
     if (responseActions.responseDirty.value || api.responseSelection?.mode === "conditional") {
       const draft = responseActions.responseDraft.value;
-      draft.activeScenarioId = draft.activeScenarioId === scene.id ? null : scene.id;
+      draft.activeScenarioId = draft.activeScenarioId === scene.id && !api.passthrough ? null : scene.id;
     } else await scenarioActions.toggleScene(scene);
   }
 
@@ -110,7 +110,17 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
 
   onMounted(() => {
     window.addEventListener("beforeunload", handleBeforeUnload);
-    void retryLoad().then(() => capture.readLocation(window.location.hash));
+    void retryLoad().then(() => {
+      const hash = new URLSearchParams(window.location.hash.slice(1));
+      const apiId = hash.get("api");
+      if (!apiId) return capture.readLocation(window.location.hash);
+      if (hash.get("package") !== model.pkg.value?.id) { notice("当前测试包已变化，请确认顶部测试包"); return; }
+      const target = model.pkg.value.apis.find((a) => a.id === apiId);
+      if (!target) { notice("接口已被删除或移至其他测试包"); return; }
+      model.selectApi(target);
+      requestLogs.showWorkspace();
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    });
   });
   onBeforeUnmount(() => window.removeEventListener("beforeunload", handleBeforeUnload));
 

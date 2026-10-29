@@ -89,6 +89,7 @@ export function useResponseSelection(client: MockAdminClient, model: ReturnType<
       if (current) {
         current.responseSelection = saved.responseSelection;
         current.activeScenarioId = saved.activeScenarioId;
+        current.passthrough = saved.passthrough;
       }
       responseDraft.value.selection.mode = draft.selection.mode;
       baseline.value = signature(draft);

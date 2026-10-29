@@ -53,6 +53,7 @@ function isValidApi(value: unknown) {
     isUuidLike(value.id) &&
     typeof value.name === "string" &&
     typeof value.enabled === "boolean" &&
+    (value.passthrough === undefined || typeof value.passthrough === "boolean") &&
     Number.isInteger(value.priority) &&
     (value.matchMode === "AND" || value.matchMode === "OR") &&
     Array.isArray(value.matchRules) &&

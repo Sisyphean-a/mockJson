@@ -34,6 +34,14 @@
 - 控制台通过 `GET /__mock_admin/captures/:id` 读取，通过 `POST /__mock_admin/captures/:id/save` 确认；同一草稿的并发保存与成功后重试返回同一结果，保存失败保留可重试草稿。保存业务语义唯一见[扩展响应转场景规则](../../requirements/CONTEXT.md#mock-console-领域规则)。
 - 交接和确认接口均限制 loopback，显式拒绝非本机网页 Origin；允许 Chrome 扩展和本机控制台来源，POST 必须为 application/json，响应 no-store。捕获数据与配置仍由 Mock Console 拥有，扩展不读写配置副本。
 
+## 接口快捷操作
+
+- 面板按需向 `POST /__mock_extension/controls/inspect` 发送 URL、Method、Header；服务端复用匹配器和接口排序，仅返回当前 Package、候选接口、当前命中 ID、场景名称/类型/状态码及版本，不返回 JSON body，不执行 resolver 日志或真实请求。
+- `POST /__mock_extension/controls/apply` 接收 `packageId/apiId/revision` 和 `mock/pass/scenario` 声明式动作。版本为完整 API 配置的 SHA-256；变更队列内再次核对当前 Package、接口归属和版本，冲突返回 409，参数错误返回 400。先持久化候选快照再发布；失败不更新生效配置，客户端不自动重试不确定的写入。
+- 两个端点要求 loopback、可信本机或 Chrome 扩展 Origin、application/json，响应不缓存。扩展仍只使用原有本机 host 权限；基础观测不依赖这些端点。
+- 用户已确认这是当前测试包的全局配置入口，而非标签页覆盖。业务行为唯一见[接口显式放行、面板接口快捷操作](../../requirements/CONTEXT.md)。显式放行通过 resolver 的 `pass(api-passthrough)` 传递，观测和日志保留该原因。
+- `passthrough` 是兼容旧配置的可选字段。回退到旧代码时须先处理显式放行配置：旧运行时会忽略此字段，不能依赖旧版本继续执行该放行语义。
+
 ## 所有者
 
 - `package:extension-contract`：DTO、响应类型和放行原因的类型定义，以及无 IO 的 JSON 字段组合与校验。

@@ -8,6 +8,7 @@ import {
 } from "./protocol.js";
 
 import { captureUnavailableReason, handoffCapture } from "./capture-handoff.js";
+import { RequestContextMenu } from "./panel-context-menu.js";
 
 type DetailTab = "request" | "response";
 
@@ -44,6 +45,14 @@ let detailScrollTop = 0;
 let timelineStart = 0;
 let timelineSpan = 1;
 let handingOff = false;
+const requestMenu = new RequestContextMenu({
+  save: saveToConsole,
+  openConsole: async (url) => { await chrome.tabs.create({ url }); },
+  copy: copyText,
+  curl: toCurl,
+  notice: showToast,
+});
+listScroll.addEventListener("wheel", requestMenu.close, { passive: true });
 
 captureButton.addEventListener("click", () => {
   captureTab = !captureTab;
@@ -58,6 +67,7 @@ pauseButton.addEventListener("click", () => {
   if (!paused) renderList(false);
 });
 clearButton.addEventListener("click", () => {
+  requestMenu.close();
   // Flow: 先清本地列表，再通知后台；端口断开时保留 pendingClear，重连后补发。
   clearBarrier = Date.now();
   pendingClear = true;
@@ -69,16 +79,19 @@ clearButton.addEventListener("click", () => {
   showToast("已清空当前标签页的请求");
 });
 searchInput.addEventListener("input", () => {
+  requestMenu.close();
   search = searchInput.value.trim().toLowerCase();
   renderList(false);
   listScroll.scrollTop = 0;
 });
 filterSelect.addEventListener("change", () => {
+  requestMenu.close();
   decisionFilter = filterSelect.value;
   renderList(false);
   listScroll.scrollTop = 0;
 });
 window.addEventListener("beforeunload", () => {
+  requestMenu.destroy();
   window.clearTimeout(reconnectTimer);
   window.clearInterval?.(heartbeatTimer);
   port?.disconnect();
@@ -264,7 +277,8 @@ function renderList(keepScroll: boolean) {
   updateTimelineRange(visible);
   const shouldStick = !keepScroll || isNearBottom();
   rows.replaceChildren();
-  for (const entry of visible) rows.append(renderRow(entry));
+  const focusKey = visible.some((entry) => keyOf(entry) === selectedKey) ? selectedKey : visible[0] && keyOf(visible[0]);
+  for (const entry of visible) rows.append(renderRow(entry, keyOf(entry) === focusKey));
   renderSummary();
   renderEmpty(visible.length);
   if (shouldStick) listScroll.scrollTop = listScroll.scrollHeight;
@@ -293,14 +307,39 @@ function renderEmpty(visibleCount?: number) {
     : "没有符合筛选条件的请求。";
 }
 
-function renderRow(entry: TrafficEntry) {
+function selectEntry(entry: TrafficEntry) {
+  selectedKey = keyOf(entry);
+  detailScrollTop = 0;
+  renderList(true);
+  renderDetail();
+}
+
+function renderRow(entry: TrafficEntry, focusable: boolean) {
   const row = document.createElement("tr");
+  row.tabIndex = focusable ? 0 : -1;
+  row.setAttribute("aria-haspopup", "menu");
   if (keyOf(entry) === selectedKey) row.className = "selected";
-  row.addEventListener("click", () => {
-    selectedKey = keyOf(entry);
-    detailScrollTop = 0;
-    renderList(true);
-    renderDetail();
+  const focusSelected = () => rows.querySelector<HTMLTableRowElement>("tr.selected")?.focus({ preventScroll: true });
+  const openMenu = (x: number, y: number) => {
+    selectEntry(entry);
+    requestMenu.open(entry, x, y, focusSelected);
+  };
+  row.addEventListener("click", () => { requestMenu.close(); selectEntry(entry); focusSelected(); });
+  row.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    openMenu(event.clientX, event.clientY);
+  });
+  row.addEventListener("keydown", (event) => {
+    if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+      event.preventDefault();
+      const rect = row.getBoundingClientRect();
+      openMenu(rect.left + 20, rect.bottom);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      const visible = visibleEntries();
+      const index = visible.findIndex((item) => keyOf(item) === keyOf(entry));
+      const next = visible[index + (event.key === "ArrowDown" ? 1 : -1)];
+      if (next) { event.preventDefault(); selectEntry(next); focusSelected(); }
+    }
   });
 
   row.append(
@@ -607,6 +646,7 @@ function passReasonLabel(reason: string) {
   if (reason === "disabled") return "已暂停或未授权";
   if (reason === "invalid-request") return "判定无效";
   if (reason === "unsupported-status") return "状态码不支持";
+  if (reason === "api-passthrough") return "接口已设为放行";
   return reason;
 }
 

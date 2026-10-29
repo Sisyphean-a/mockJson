@@ -4,9 +4,9 @@
 
 - **workspace**：`mockJson`，Node.js 单仓库、npm workspaces。
 - **package:mock-console**：`packages/mock-console/`，本地 Mock / Proxy 控制台，负责配置、匹配、resolver、Proxy、日志和 Vue 管理页面。详见 [`packages/mock-console.md`](./packages/mock-console.md)。
-- **package:chrome-extension**：`packages/chrome-extension/`，Chrome Manifest V3 扩展，负责页面请求桥接、白名单、开关、原生放行，以及 DevTools / 独立页共用的本地请求观测面板。详见 [`packages/chrome-extension.md`](./packages/chrome-extension.md)。
-- **package:extension-contract**：`packages/extension-contract/`，提供扩展与本机服务之间的 resolver、主动响应交接 TypeScript 线协议类型及无 IO 的 JSON 字段组合。详见 [`packages/extension-contract.md`](./packages/extension-contract.md)。
-- **shared:extension-runtime**：两个产品包共同遵守的 resolver 调用、Mock / transform / pass、放行和主动响应交接语义。详见 [`shared/extension-runtime.md`](./shared/extension-runtime.md)。
+- **package:chrome-extension**：`packages/chrome-extension/`，Chrome Manifest V3 扩展，负责页面请求桥接、白名单、开关、原生放行，以及 DevTools / 独立页共用的本地请求观测面板和主动接口快捷操作。详见 [`packages/chrome-extension.md`](./packages/chrome-extension.md)。
+- **package:extension-contract**：`packages/extension-contract/`，提供扩展与本机服务之间的 resolver、主动响应交接、接口快捷操作 TypeScript 线协议类型及无 IO 的 JSON 字段组合。详见 [`packages/extension-contract.md`](./packages/extension-contract.md)。
+- **shared:extension-runtime**：两个产品包共同遵守的 resolver 调用、Mock / transform / pass、放行、主动响应交接和接口快捷操作语义。详见 [`shared/extension-runtime.md`](./shared/extension-runtime.md)。
 
 ## 包边界与依赖方向
 

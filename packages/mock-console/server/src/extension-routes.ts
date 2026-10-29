@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ExtensionRuntimeRequest } from "@mock-json/extension-contract";
 import type { RequestLogOutcome } from "../../shared/types.js";
 import { MockConfigService } from "./config-service.js";
@@ -20,7 +20,7 @@ export function registerExtensionRoutes(app: FastifyInstance, service: MockConfi
   app.post("/__mock_extension/resolve", async (req, reply) => {
     const startedAt = Date.now();
     try {
-      const request = parseRequest(req);
+      const request = parseRuntimeRequest(req.body);
       const resolution = resolveExtension(service.getState(), request);
       recordExtensionDecision(logs, request, resolution, startedAt);
       return resolution.response;
@@ -79,8 +79,8 @@ function recordExtensionDecision(
   });
 }
 
-function parseRequest(req: FastifyRequest): ExtensionRuntimeRequest {
-  const value = parseBody(req.body);
+export function parseRuntimeRequest(body: unknown): ExtensionRuntimeRequest {
+  const value = parseBody(body);
   if (!isRecord(value)) throw new Error("请求描述必须是对象");
 
   const url = typeof value.url === "string" ? value.url.trim() : "";

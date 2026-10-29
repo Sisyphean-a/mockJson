@@ -11,7 +11,7 @@
 - `content-bridge.ts` 运行在隔离世界，只负责页面与 Service Worker 的消息桥接、traffic 消息转发和取消传播。
 - `service-worker.ts` 负责页面白名单、Mock 与只记录状态、本机 resolver 请求、超时、并发和健康短路；从 Chrome 提供的消息来源 URL 复核 frame 授权，并装配 Chrome 消息、面板端口与会话存储。
 - `traffic-store.ts` 的 `TabTrafficStore` 拥有按标签页/frame 合并记录、排序裁剪、会话恢复、防抖串行写回及清空/关闭时的旧读失效。存储与更新通知由 worker 注入，面板端口和开关仍归 worker；容量与采集边界见[请求观测面板规则](../../requirements/CONTEXT.md#chrome-extension-领域规则)。
-- `panel.ts` + `public/panel.html` 是同一份面板 UI：既通过 `devtools.ts` 注册为 DevTools 顶部标签，也可作为独立扩展页打开；顶部工具栏只保留筛选、记录、暂停和清空，请求列表按发起时间展示，选中后底部用「请求 / 响应」tab 查看详情。本地观测不依赖 Mock Console；“保存为 Mock 场景”由 `capture-handoff.ts` 主动交接选中响应并打开控制台确认，不直接修改 Mock 配置，见[主动响应交接](../shared/extension-runtime.md#主动响应交接)。
+- `panel.ts` + `public/panel.html` 是同一份面板 UI：既通过 `devtools.ts` 注册为 DevTools 顶部标签，也可作为独立扩展页打开；顶部工具栏只保留筛选、记录、暂停和清空，请求列表按发起时间展示，选中后底部用「请求 / 响应」tab 查看详情。本地观测不依赖 Mock Console；“保存为 Mock 场景”由 `capture-handoff.ts` 主动交接选中响应并打开控制台确认，见[主动响应交接](../shared/extension-runtime.md#主动响应交接)。`panel-context-menu.ts` 拥有请求行菜单的焦点、异步加载和提交生命周期，`request-controls.ts` 通过[接口快捷操作协议](../shared/extension-runtime.md#接口快捷操作)请求控制台查询/修改；扩展不在本地持久化这些配置。
 - `popup.ts` 只负责扩展开关、白名单、连接状态、“记录本页请求”和打开请求面板，不读取 Mock Package、Logical API 或 Scenario。
 - 不直接导入 `package:mock-console` 的源码；跨包 resolver、响应交接 DTO 和无 IO 的字段组合只通过 [`package:extension-contract`](./extension-contract.md) 引用。traffic 消息和面板 DTO 属于扩展内部 `protocol.ts`，不进入共享契约。
 
@@ -25,6 +25,7 @@
 | traffic | `packages/chrome-extension/src/traffic-store.ts` | 请求记录生命周期与会话副本 |
 | devtools | `packages/chrome-extension/src/devtools.ts`、`public/devtools.html` | 注册 DevTools「接口面板」标签并传入被检查标签页 |
 | panel | `packages/chrome-extension/src/panel.ts`、`public/panel.html` | DevTools 面板与独立页共用的请求列表、详情和复制 cURL |
+| controls | `packages/chrome-extension/src/panel-context-menu.ts`、`request-controls.ts` | 请求行右键/键盘菜单与当前测试包配置快捷操作 |
 | handoff | `packages/chrome-extension/src/capture-handoff.ts` | 完整 JSON 响应校验与用户主动交接 |
 | popup | `packages/chrome-extension/src/popup.ts` | Popup 交互、只记录开关和面板入口 |
 | protocol | `packages/chrome-extension/src/protocol.ts` | 扩展内部消息类型、traffic DTO 和校验 |
@@ -34,8 +35,8 @@
 
 - 依赖 [`package:extension-contract`](./extension-contract.md) 的类型契约及 `/response-fields` 纯 JSON 函数；组合实现须被内联进 MAIN world，构建仍核验其自包含性。
 - 运行时只访问本机 `http://127.0.0.1:22333/__mock_extension/*`，不访问 Mock Console 的内部模块。
-- traffic 面板不访问 resolver；Mock Console 离线时仍能记录放行请求。
-- 不保存或复制 Mock 配置；配置和匹配规则的唯一来源仍是 `package:mock-console`。
+- traffic 面板不访问 resolver；Mock Console 离线时仍能记录放行请求。只有配置快捷操作和主动响应交接依赖服务，菜单关闭即释放查询摘要。
+- 不持久化 Mock 配置或创建扩展侧覆盖层；配置和匹配规则的唯一来源仍是 `package:mock-console`。
 
 ## 外部契约
 

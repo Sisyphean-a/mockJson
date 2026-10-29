@@ -2,7 +2,7 @@
 
 ## 领域地图
 
-本工作区拥有一个 Mock 控制台上下文，由两个产品包和一个共享契约包组成：`package:mock-console` 提供配置、匹配和 Mock / Proxy 服务；`package:chrome-extension` 提供浏览器页面请求桥接；`package:extension-contract` 提供扩展与本机服务之间的 resolver、主动响应交接线协议类型及无 IO 的 JSON 字段组合。npm 包边界不改变领域 Package 的含义。
+本工作区拥有一个 Mock 控制台上下文，由两个产品包和一个共享契约包组成：`package:mock-console` 提供配置、匹配和 Mock / Proxy 服务；`package:chrome-extension` 提供浏览器页面请求桥接；`package:extension-contract` 提供扩展与本机服务之间的 resolver、主动响应交接、接口快捷操作线协议类型及无 IO 的 JSON 字段组合。npm 包边界不改变领域 Package 的含义。
 
 ## 产品主线
 
@@ -24,6 +24,7 @@
 - **响应场景类型**：类型与固定响应/条件分支的选择方式正交。旧场景缺省为 `mock`（完整 Mock，不访问真实接口）；`real-overrides`（真实响应 + 字段 Mock）以真实 JSON 为底，从场景 JSON 的同路径复制指定字段；`mock-with-real`（Mock 响应 + 真实字段）以场景 JSON 为底，从本次真实 JSON 的同路径复制指定字段。新建和编辑均可设置类型，复制保留类型和字段，不改变既有启用/引用规则。字段使用非空 JSON Pointer 列表，不允许重复或父子重叠；复制值可以是任意 JSON 值。父级必须存在，允许新增对象末级字段；数组仅支持已存在的明确下标，不自动建结构、扩展数组、按 ID 对齐或跨接口取值。配置保存时验证 Mock 一侧可确定的结构，运行时验证真实一侧；特殊键按自有属性处理，不触发原型写入。实现锚点：`packages/extension-contract/src/response-fields.ts`、`config-service.ts`、`web/src/components/ScenarioTypeFields.vue`。
 - **混合响应执行**：选中混合场景后发出一次真实请求，会产生真实业务副作用；扩展保留浏览器原始 URL、请求体和凭证，Proxy 使用当前 RealService。仅处理成功（2xx）且可读取的 JSON 响应；真实网络/HTTP/格式/字段错误只使本次请求失败，其他完整 Mock 不受影响，不重试、不静默放行或返回旧 Mock。扩展 fetch 拒绝、XHR 发出 error，Proxy 返回 502 并记录原因。最终使用场景状态码（200–599，排除 204/205/304），场景延迟在真实响应后追加；HEAD、流式和二进制响应不组合。组合需缓冲完整 JSON，不使用日志预览或截断内容；更换 body 后清理失效长度、编码、校验和范围响应头。类型与字段失败不影响 resolver 的健康短路；本地 resolver 自身不可用仍沿用原生放行规则。
 - **扩展响应转场景**：用户在扩展主动选中完整 JSON 响应后，由控制台确认保存到当前测试包，可新建 Logical API 或追加 Scenario。此入口默认只保存，即使是接口的首个场景也不启用；显式“保存并启用”才启用接口并切换固定响应。条件分支接口只允许追加，须由用户在响应规则中引用，不隐式切换模式。新接口以 AND 联合匹配 Method、Host、Path（忽略查询参数），追加不改已有规则、响应选择和场景；不自动切换当前测试包，不重放真实请求，不改变扩展白名单或开关。接口、规则、场景一次原子提交，失败可重试且同一草稿不重复创建；实现见 `server/src/capture-routes.ts`、`config-service.ts` 的 `saveCapturedScenario`、`web/src/use-capture-import.ts`。草稿传输与生命周期见[主动响应交接](../architecture/shared/extension-runtime.md#主动响应交接)。
+- **接口显式放行**：Logical API 可保存可选布尔 `passthrough`（旧配置缺省为 false）。启用且匹配的显式放行接口直接终止本次 Mock 判定，不执行场景/条件，也不继续尝试低优先级接口；扩展走原生请求，Proxy 转发当前真实服务；Proxy 未配置真实服务时明确返回 502 和放行配置错误，不当成未命中或返回其他 Mock。它不同于 `enabled=false` 的跳过接口语义。放行保留匹配规则、优先级、固定选择、条件分支和所有场景；控制台开启/停用接口、启用场景或明确保存响应选择时解除放行，单纯编辑 JSON 或接口名称不解除。配置归当前 Package，所有接入共用，不产生标签页私有覆盖。实现锚点：`server/src/config-service.ts` 的 `applyRequestControl`、`runtime-resolver.ts`、`proxy.ts`。
 - **响应选择（Response Selection）**：每个 Logical API 独立保存固定响应或条件分支模式；旧配置缺省为固定响应。条件分支从上到下判断，首条命中选择目标场景；未命中时，兜底开启返回指定场景，关闭则放行，零分支同样执行未命中动作。已匹配条件分支接口的放行是终局决定，不能继续匹配低优先级接口。接口停用时不执行分支或兜底。选中场景后的执行由其响应类型决定。
 - **分支条件**：只在已匹配接口内部判断请求头和 JSON 请求体，不扩大 Match Rule 的范围。分支内使用 AND / OR，新分支默认 OR，新条件默认 JSON 请求体，既有配置不改写，不嵌套；请求头名称不区分大小写，值为文本；请求体字段使用 JSON Pointer（如 `/user/status`、`/items/0/id`），文本、数字、布尔、null 严格区分。支持等于、不等于、文本包含、存在/不存在和数字大小比较；字段缺失时普通比较均不命中，包括不等于。无效 JSON 或无法读取的请求体使所有请求体条件不命中，不能等同于字段缺失；请求头条件仍可成立。
 - **响应选择草稿与保护**：工作区视图与生效模式分开：固定响应/条件分支分段只切换查看，保留两边草稿，不制造未保存状态或弹窗；只有真实配置变化才标记未保存，切换接口等会丢失草稿时才提供保存/放弃/取消。查看非生效模式时，明确点击“启用”或“保存并启用”才改变运行模式；当前生效模式的配置仍通过保存应用。写入中和失败维持原生效配置，场景 JSON 沿用独立保存。关闭兜底保留其选择；所有保留的分支/兜底引用（含非当前模式和关闭状态）都阻止场景删除，须先解除或替换并保存。分支必须有条件和当前接口的目标场景，开启兜底必须有目标。试算与运行时共用条件判断，只计算当前查看模式下的草稿决定，不发送请求，非生效模式的试算也标记为草稿试算；首命中后的分支显示未执行，编辑后旧结果过期。实现锚点：`packages/mock-console/shared/response-selection.ts`、`server/src/config-service.ts` 的 `saveResponseSelection`、`web/src/use-response-selection.ts`。
@@ -47,6 +48,7 @@
 - Popup 提供页面域名白名单、全局 Mock、当前标签页 Mock、Mock Console 连接状态、“记录本页请求”和打开请求面板的入口；当前页面不命中时显示“不在页面白名单”并禁用标签页 Mock 开关，该开关不能绕过页面授权，但“记录本页请求”仍可对受支持的 http(s) 页面显式开启。白名单为空或全局/当前标签页暂停时恢复原生请求 API，已保存的包装也不再发起 Mock 判定；只记录开启时请求 API 保持观测包装但不进入判定。
 - 扩展模式不使用 Package 的 RealService 配置，因为未命中请求必须由浏览器以原始 URL、Cookie、凭据和 CORS 语义直接发出；当前 Package 仍是全局选择。
 - 扩展 resolver 只允许 loopback 访问，不承担真实请求代理；扩展 resolver 和 Mock Console 服务端日志都不记录真实放行请求的最终响应，放行响应默认由扩展本地请求观测面板保存在浏览器会话中；主动交接响应转场景不经过 resolver 或请求日志。现有 Reqable / Proxy 路径和其日志语义保持不变。
+- **面板接口快捷操作**：右键请求行或 Shift+F10 可读取当前测试包中匹配该请求的接口摘要，多个匹配时明确选择目标；支持启用接口 Mock、显式放行、切换已有场景和打开对应控制台配置。动作更新 Mock Console 唯一配置，对当前测试包后续请求全局生效（包括 Proxy），不重放请求、不更改历史记录标识，也不改变扩展白名单或全局/本页 Mock 开关。选择场景明确切为固定响应但保留条件草稿；启用 Mock 恢复现有选择方式。打开菜单只主动发送 URL、Method 和匹配所需的 Header 原值，不传输请求体/响应体，不增加 resolver 日志；关闭即释放配置摘要。未配置接口时通过既有响应交接流程确认创建，不自动保存；服务不可用时观测和复制仍可用。写入须绑定测试包、接口和最新版本，目标变更或写入失败明确报告且不自动重试，协议与原子发布见[接口快捷操作](../architecture/shared/extension-runtime.md#接口快捷操作)。
 - **请求观测面板**：面板注册为 DevTools 顶部标签，也可作为独立扩展页打开；请求头和响应头直接显示原值，不按字段替换内容，也不提供显示/隐藏值的开关。原值本就可由浏览器开发工具和 cURL 获取，不将本地显示开关当作访问保护；实现锚点：`packages/chrome-extension/src/panel.ts` 的 `headerTable`、`detailBar`。两者按标签页展示 `fetch` / 异步 XHR 的请求详情和发起顺序，不依赖后端，Mock Console 离线时仍可记录放行请求。记录来源是 Mock 判定或用户显式开启的“只记录”；顺序按发起时间而非推断调用因果。单条请求体/响应体预览上限 64 KiB，上传体、二进制、流式（`text/event-stream`）和不透明响应不采集内容（二进制请求仍保留 URL、方法、状态和响应头）；每标签页内存保留最近 500 条，`chrome.storage.session` 保留最近 200 条且单字段预览 4 KiB。静态资源、导航、Worker / Service Worker、WebSocket 和重定向中间跳不出现在面板中，面板不承诺替代 DevTools Network。
 - 扩展 MVP 支持白名单页面请求中的 JSON、200–599 状态码和异步请求；非白名单页面、1xx 场景、同步 XHR、导航/资源加载、Worker / Service Worker 请求、WebSocket、流式或二进制 Mock 不由扩展接管。浏览器自动补充且页面不可观察的 Header 不保证可用于扩展匹配。
 

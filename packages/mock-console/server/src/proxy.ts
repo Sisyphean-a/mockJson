@@ -127,7 +127,7 @@ export async function createProxy(
   let selected = selectMatchingApi(p?.apis, context);
   let bufferedBody: Buffer | undefined;
   // Rule: 仅已匹配接口需要请求体条件时读取文本原文；放行复用同一份字节，上传流保持直通。
-  if (streamRequestBody && readableBody && selected?.api.responseSelection?.mode === "conditional" &&
+  if (streamRequestBody && readableBody && !selected?.api.passthrough && selected?.api.responseSelection?.mode === "conditional" &&
       selected.api.responseSelection.branches.some((b) => b.conditions.some((c) => c.source === "body"))) {
     const chunks: Buffer[] = [];
     for await (const chunk of req.raw) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -194,9 +194,9 @@ export async function createProxy(
       if (requestCollector) req.raw.on("data", (chunk: Buffer) => requestCollector.collect(chunk));
       await consumeRequestBody(req);
     }
-    const body = { error: mixed ? "混合响应需要当前 Package 配置真实服务" : "未命中 Mock，且当前 Package 未配置真实服务" };
+    const body = { error: mixed ? "混合响应需要当前 Package 配置真实服务" : selected?.api.passthrough ? "接口已设为放行，但当前 Package 未配置真实服务" : "未命中 Mock，且当前 Package 未配置真实服务" };
     const serialized = JSON.stringify(body);
-    record(mixed ? "error" : "unmatched", 502, textLogResponse("application/json; charset=utf-8", serialized));
+    record(mixed || selected?.api.passthrough ? "error" : "unmatched", 502, textLogResponse("application/json; charset=utf-8", serialized));
     return streamRequestBody
       ? sendRaw(res, 502, "application/json; charset=utf-8", serialized)
       : res.code(502).send(body);

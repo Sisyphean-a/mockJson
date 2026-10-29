@@ -88,7 +88,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
       catch { throw new Error("JSON 格式有误，请修正后再创建"); }
       const created = await model.runAdminRequest(() => client.createScenario(api.id, { name: forms.sceneName.value, responseBody, ...fields }));
       api.scenarios.push(created);
-      if (isFirstScene) api.activeScenarioId = created.id;
+      if (isFirstScene) { api.activeScenarioId = created.id; api.passthrough = false; }
       forms.sceneName.value = "";
       forms.showScene.value = false;
       model.sceneId.value = created.id;
@@ -167,7 +167,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
   async function toggleScene(scene: Scene) {
     const api = model.api.value;
     if (!api) return;
-    const isActive = model.activeSceneId.value === scene.id;
+    const isActive = model.activeSceneId.value === scene.id && !api.passthrough;
     if (!isActive && model.sceneId.value === scene.id && forms.draftDirty.value) {
       notify("请先修正 JSON 或等待自动保存完成");
       return;
@@ -181,6 +181,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
       } else {
         await model.runAdminRequest(() => client.activateScenario(api.id, scene.id));
         api.activeScenarioId = scene.id;
+        api.passthrough = false;
         model.sceneId.value = scene.id;
         notify("场景已启用");
       }

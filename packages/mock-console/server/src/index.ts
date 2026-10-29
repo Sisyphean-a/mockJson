@@ -9,6 +9,7 @@ import { resolveStateFile } from "./state-path.js";
 import { MockConfigService } from "./config-service.js";
 import { registerAdminRoutes } from "./admin-routes.js";
 import { registerExtensionRoutes } from "./extension-routes.js";
+import { registerExtensionControlRoutes } from "./extension-control-routes.js";
 import { registerCaptureRoutes } from "./capture-routes.js";
 import { RequestLogStore } from "./request-logs.js";
 
@@ -62,6 +63,7 @@ if (hasDist)
 registerAdminRoutes(app, config, requestLogs);
 registerExtensionRoutes(app, config, requestLogs);
 registerCaptureRoutes(app, config);
+registerExtensionControlRoutes(app, config);
 
 app.setNotFoundHandler((req, reply) => {
   if (req.url.startsWith("/__mock_admin/")) return reply.code(404).send({ error: "管理接口不存在" });

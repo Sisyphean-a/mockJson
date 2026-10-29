@@ -6,7 +6,7 @@
 
 - `packages/mock-console`：Fastify Mock / Proxy 服务和 Vue 管理页面，拥有 Mock 配置、匹配和运行日志。
 - `packages/chrome-extension`：Chrome Manifest V3 扩展，不保存 Mock 配置，只负责页面请求桥接。
-- `packages/extension-contract`：扩展与本机服务共用的 resolver、响应交接 TypeScript 线协议类型，以及无 IO 的 JSON 字段组合函数。
+- `packages/extension-contract`：扩展与本机服务共用的 resolver、响应交接、接口快捷操作 TypeScript 线协议类型，以及无 IO 的 JSON 字段组合函数。
 
 ## 启动 Mock Console
 
@@ -113,6 +113,23 @@ packages/chrome-extension/dist
 - 放行请求的响应体通过 `Response.clone()` 读取，不会改变页面拿到的响应；单条请求体/响应体预览上限 64 KB，超出显示为截断。上传体（multipart / FormData）、流式（`text/event-stream`）和不透明响应不采集内容；二进制请求仍记录 URL、方法、状态和响应头，但不读取内容。
 - 日常记录只保存在扩展的 `chrome.storage.session` 和 Service Worker 内存中，不自动发送到 Mock Console，不需要后端；Mock Console 离线时仍能记录放行请求。每个标签页内存保留最近 500 条，会话存储保留最近 200 条。
 - 面板不覆盖静态资源、导航、Worker / Service Worker、WebSocket 和重定向中间跳，也不推断请求之间的调用因果；它定位为接口级观测面板，不承诺完整替代 DevTools Network。
+
+### 右键快捷操作
+
+在请求行右键，或选中请求后按 Shift+F10：
+
+- **启用 / 停用 Mock**：只显示当前状态对应的一个操作。启用时恢复原来的固定响应或条件分支；停用时保留配置和场景，后续请求走真实接口，不继续匹配低优先级 Mock。Proxy 仍需配置当前真实服务环境。
+- **切换响应场景**：选择已有场景后启用固定响应；原条件分支保留。
+- **打开接口配置**：定位到控制台当前测试包内的接口；测试包变化时不会自动切换全局测试包。
+- **保存此响应为新场景…**及复制 URL、cURL、响应内容。
+
+菜单修改的是**当前测试包的全局配置**，影响所有页面和 Reqable / Proxy 的后续请求；不重放历史请求，不改变历史记录标识，也不自动开启扩展或修改白名单。浏览器是否拦截仍取决于扩展的全局/本页开关和页面白名单。已打开的控制台刷新后可看到最新配置。
+
+多个接口匹配时先选择要修改的逻辑接口，原匹配优先级保持不变。没有配置时可将完整 JSON 响应带到控制台确认创建；不能把缺失或截断内容直接当成 Mock 场景。服务离线不影响本地观测和复制，配置操作会提示启动服务。
+
+右键配置查询只在打开菜单时发送 URL、Method 和匹配所需 Header，不发送请求体、响应体，也不重放请求。配置变化导致菜单过期时，请点击“重新读取配置”后再操作；写入失败不会自动重试。
+
+升级后重启 Mock Console、重新加载扩展，并重新打开接口面板和刷新控制台。旧版本不识别新增的显式放行标记，回退前请先在新版本中处理放行配置。
 
 ### 将选中的响应保存为 Mock 场景
 

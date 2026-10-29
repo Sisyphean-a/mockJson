@@ -5,6 +5,8 @@ import { Script } from "node:vm";
 import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import * as protocol from "./protocol.js";
 import * as handoff from "./capture-handoff.js";
+import * as controls from "./request-controls.js";
+import type { ExtensionControlInspection } from "@mock-json/extension-contract";
 
 const source = readFileSync(new URL("./panel.ts", import.meta.url), "utf8");
 const html = readFileSync(new URL("../public/panel.html", import.meta.url), "utf8");
@@ -21,7 +23,11 @@ class FakeElement {
   value = "";
   type = "";
   style: Record<string, string> = {};
-  listeners: Record<string, () => void> = {};
+  listeners: Record<string, (...args: any[]) => void> = {};
+  attributes: Record<string, string> = {};
+  parentElement?: FakeElement;
+  tabIndex = -1;
+  onFocus = () => {};
   scrollTop = 0;
   clientHeight = 600;
   scrollHeight = 600;
@@ -32,16 +38,29 @@ class FakeElement {
   }
 
   append(...nodes: FakeElement[]) {
-    this.children.push(...nodes);
+    for (const node of nodes) { node.parentElement = this; this.children.push(node); }
   }
 
   replaceChildren(...nodes: FakeElement[]) {
-    this.children = nodes;
+    for (const node of this.children) node.parentElement = undefined;
+    this.children = []; this.append(...nodes);
   }
 
-  addEventListener(type: string, listener: () => void) {
-    this.listeners[type] = listener;
+  addEventListener(type: string, listener: (...args: any[]) => void) { this.listeners[type] = listener; }
+  removeEventListener(type: string) { delete this.listeners[type]; }
+  setAttribute(name: string, value: string) { this.attributes[name] = value; }
+  getAttribute(name: string) { return this.attributes[name] ?? null; }
+  focus() { this.onFocus(); }
+  click() { this.listeners.click?.(); }
+  contains(node: FakeElement | null): boolean { return this === node || this.children.some(c => c.contains(node)); }
+  remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(c => c !== this); }
+  getBoundingClientRect() { return { left: 0, top: 0, bottom: 20, right: 320, width: 320, height: 400 }; }
+  querySelectorAll(selector: string): FakeElement[] {
+    return this.children.flatMap(child => [child, ...child.querySelectorAll("*")]).filter(child =>
+      selector === "*" || (selector.startsWith("button") && child.tagName === "button" && !child.disabled) ||
+      (selector === "tr.selected" && child.tagName === "tr" && child.className === "selected"));
   }
+  querySelector(selector: string) { return this.querySelectorAll(selector)[0] ?? null; }
 }
 
 function createPanelHarness(failHandoff = false) {
@@ -49,6 +68,37 @@ function createPanelHarness(failHandoff = false) {
   const copiedTexts: string[] = [];
   const capturesSent: unknown[] = [];
   const elements = new Map<string, FakeElement>();
+  const control = {
+    inspection: { package: { id: "p", name: "当前包" }, matchedApiId: "a", apis: [{ id: "a", name: "用户接口", enabled: true, passthrough: false, revision: "a".repeat(64), mode: "fixed", activeScenarioId: "one", mockUnavailableReason: "", scenarios: [{ id: "one", name: "成功", status: 200, responseType: "mock" }, { id: "two", name: "失败", status: 400, responseType: "mock" }] }] } as ExtensionControlInspection,
+    error: "", inspectWait: undefined as (() => Promise<void>) | undefined, applyWait: undefined as (() => Promise<void>) | undefined,
+  };
+  const controlRequests: { url: string; body: any }[] = [];
+  const controlSend: typeof fetch = async (url, init) => {
+    const body = JSON.parse(String(init?.body)); controlRequests.push({ url: String(url), body });
+    if (String(url).endsWith("/inspect")) { await control.inspectWait?.(); return Response.json(control.inspection); }
+    await control.applyWait?.();
+    if (control.error) return Response.json({ error: control.error }, { status: 409 });
+    const api = control.inspection.apis.find(a => a.id === body.apiId)!;
+    api.enabled = true; api.passthrough = body.action === "pass";
+    if (body.action === "scenario") { api.activeScenarioId = body.scenarioId; api.mode = "fixed"; }
+    return Response.json(api);
+  };
+  const document = {
+    body: new FakeElement("body"), activeElement: undefined as FakeElement | undefined,
+    getElementById(id: string) { return elements.get(id); },
+    createElement(tag: string) { const element = new FakeElement(tag); element.onFocus = () => { document.activeElement = element; }; return element; },
+    addEventListener() {}, removeEventListener() {},
+  };
+  const window = { location: { search: "?tabId=1" }, innerWidth: 1024, innerHeight: 768, addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout };
+  const menuExports = {};
+  const menuSource = readFileSync(new URL("./panel-context-menu.ts", import.meta.url), "utf8");
+  new Script(transpileModule(menuSource, { compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 } }).outputText).runInNewContext({
+    exports: menuExports, require(name: string) {
+      if (name === "./capture-handoff.js") return handoff;
+      assert.equal(name, "./request-controls.js");
+      return { ...controls, inspectRequestControls: (entry: protocol.TrafficEntry, signal: AbortSignal) => controls.inspectRequestControls(entry, signal, controlSend), applyRequestControl: (command: Parameters<typeof controls.applyRequestControl>[0]) => controls.applyRequestControl(command, controlSend) };
+    }, document, window, URL, AbortController, Error,
+  });
   for (const match of html.matchAll(/id="([^"]+)"/g)) elements.set(match[1], new FakeElement("div"));
   let messageListener: ((message: unknown) => void) | undefined;
   const posted: unknown[] = [];
@@ -74,19 +124,11 @@ function createPanelHarness(failHandoff = false) {
           return Response.json({ id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", expiresAt: Date.now() + 10000 }, { status: 201 });
         }),
       };
+      if (name === "./panel-context-menu.js") return menuExports;
       assert.equal(name, "./protocol.js");
       return protocol;
     },
-    document: {
-      getElementById(id: string) { return elements.get(id); },
-      createElement(tag: string) { return new FakeElement(tag); },
-    },
-    window: {
-      location: { search: "?tabId=1" },
-      addEventListener() {},
-      setTimeout,
-      clearTimeout,
-    },
+    document, window,
     chrome: {
       tabs: { async create({ url }: { url: string }) { openedUrls.push(url); return {}; } },
       runtime: {
@@ -105,8 +147,108 @@ function createPanelHarness(failHandoff = false) {
     clearTimeout,
   });
   assert.ok(messageListener);
-  return { elements, posted, messageListener, openedUrls, capturesSent, copiedTexts };
+  return { elements, posted, messageListener, openedUrls, capturesSent, copiedTexts, control, controlRequests, document, menu: document.body.children[0] };
 }
+
+const menuEntry: protocol.TrafficEntry = { id: "menu", tabId: 1, frameId: 0, pageUrl: "https://app.test", source: "fetch", decision: "mock", startedAt: 1, endedAt: 2, request: { url: "https://api.test/users", method: "POST", headers: { apiName: "users" }, body: "private request" }, response: { status: 200, headers: {}, body: '{"ok":true}' } };
+const tick = () => new Promise(resolve => setImmediate(resolve));
+const menuItem = (root: FakeElement, text: string) => root.querySelectorAll("*").find(element => element.textContent === text)!;
+function openRowMenu(h: ReturnType<typeof createPanelHarness>, entry = menuEntry) {
+  h.messageListener({ type: "snapshot", captureTab: true, entries: [entry] });
+  h.elements.get("rows")!.children[0].listeners.contextmenu({ preventDefault() {}, clientX: 900, clientY: 700 });
+}
+
+test("右键选中请求、按需读取配置，选择场景仅更新当前测试包，不重放请求", async () => {
+  const h = createPanelHarness();
+  assert.equal(h.controlRequests.length, 0);
+  openRowMenu(h); await tick();
+  assert.equal(h.elements.get("detail")!.hidden, false);
+  assert.equal(h.menu.hidden, false);
+  assert.equal(h.menu.querySelectorAll("*").some(node => node.className === "context-scope"), false);
+  assert.deepEqual(h.controlRequests[0].body, { url: menuEntry.request.url, method: "POST", headers: menuEntry.request.headers });
+  menuItem(h.menu, "切换响应场景 ›").click();
+  assert.equal(menuItem(h.menu, "成功").getAttribute("aria-checked"), "true");
+  menuItem(h.menu, "失败").click(); await tick();
+  assert.deepEqual(h.controlRequests[1].body, { packageId: "p", apiId: "a", revision: "a".repeat(64), action: "scenario", scenarioId: "two" });
+  assert.equal(h.menu.hidden, true);
+  assert.match(h.elements.get("toast")!.textContent, /场景已切换/);
+});
+
+test("菜单只显示一个 Mock 切换项，按当前状态执行启用或停用", async () => {
+  for (const [enabled, passthrough, label, action] of [
+    [true, false, "停用 Mock", "pass"],
+    [true, true, "启用 Mock", "mock"],
+    [false, false, "启用 Mock", "mock"],
+  ] as const) {
+    const h = createPanelHarness();
+    Object.assign(h.control.inspection.apis[0], { enabled, passthrough });
+    openRowMenu(h); await tick();
+    const toggles = h.menu.querySelectorAll("*").filter(node => ["启用 Mock", "停用 Mock", "放行此接口"].includes(node.textContent));
+    assert.deepEqual(toggles.map(node => node.textContent), [label]);
+    toggles[0].click(); await tick();
+    assert.equal(h.controlRequests[1].body.action, action);
+  }
+});
+
+test("当前 Mock 无有效场景时仍可停用，未启用时保留场景缺失提示", async () => {
+  const h = createPanelHarness();
+  h.control.inspection.apis[0].mockUnavailableReason = "请先选择一个浏览器支持的响应场景";
+  openRowMenu(h); await tick();
+  assert.equal(menuItem(h.menu, "停用 Mock").disabled, false);
+  h.control.inspection.apis[0].passthrough = true;
+  openRowMenu(h); await tick();
+  assert.equal(menuItem(h.menu, "启用 Mock").disabled, true);
+  assert.match(menuItem(h.menu, "启用 Mock").title, /选择/);
+});
+
+test("右键操作忙碌时防止重复提交，冲突后须明确重新读取配置", async () => {
+  const h = createPanelHarness();
+  let release = () => {};
+  try {
+    h.control.applyWait = () => new Promise<void>(resolve => { release = resolve; });
+    h.control.error = "当前测试包已切换，请重新读取配置";
+    openRowMenu(h); await tick();
+    const toggle = menuItem(h.menu, "停用 Mock"); toggle.click(); toggle.click(); await tick();
+    assert.equal(h.controlRequests.filter(r => r.url.endsWith("/apply")).length, 1);
+    assert.equal(h.menu.getAttribute("aria-busy"), "true");
+    h.menu.listeners.keydown({ key: "Escape", preventDefault() {}, stopPropagation() {} });
+    assert.equal(h.menu.hidden, false);
+    release(); await tick();
+    assert.equal(menuItem(h.menu, "停用 Mock"), undefined);
+    assert.match(menuItem(h.menu, h.control.error).textContent, /测试包已切换/);
+    h.control.error = "";
+    menuItem(h.menu, "重新读取配置").click(); await tick();
+    assert.ok(menuItem(h.menu, "停用 Mock"));
+  } finally { release(); }
+});
+
+test("关闭菜单忽略晚到结果；键盘可打开菜单和返回请求，未配置时可交接响应", async () => {
+  const h = createPanelHarness(); let release = () => {};
+  h.control.inspectWait = () => new Promise<void>(resolve => { release = resolve; });
+  openRowMenu(h);
+  h.menu.listeners.keydown({ key: "Escape", preventDefault() {}, stopPropagation() {} });
+  release(); await tick();
+  assert.equal(h.menu.hidden, true); assert.equal(h.menu.children.length, 0);
+  h.control.inspectWait = undefined;
+  h.control.inspection.apis = []; h.control.inspection.matchedApiId = null;
+  const row = h.elements.get("rows")!.children[0];
+  row.listeners.keydown({ key: "F10", shiftKey: true, preventDefault() {} }); await tick();
+  assert.equal(h.menu.hidden, false);
+  assert.ok(menuItem(h.menu, "此请求尚未配置 Mock 接口"));
+  menuItem(h.menu, "保存此响应为新场景…").click(); await tick();
+  assert.equal(h.capturesSent.length, 1);
+  assert.match(h.openedUrls[0], /#capture=/);
+});
+
+test("多接口匹配要求明确选目标，菜单内容安全显示且条件分支切换有提示", async () => {
+  const h = createPanelHarness();
+  h.control.inspection.apis.push({ ...h.control.inspection.apis[0], id: "b", name: "<script>unsafe</script>", mode: "conditional" });
+  openRowMenu(h); await tick();
+  assert.equal(menuItem(h.menu, "停用 Mock"), undefined);
+  menuItem(h.menu, "<script>unsafe</script> ›").click();
+  menuItem(h.menu, "切换响应场景 ›").click();
+  assert.ok(menuItem(h.menu, "选择场景后切换为固定响应，保留原条件分支"));
+});
 
 test("面板页面元素完整，快照可渲染列表和详情", () => {
   const harness = createPanelHarness();

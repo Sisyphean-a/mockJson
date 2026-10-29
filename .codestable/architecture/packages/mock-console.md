@@ -19,6 +19,7 @@
 | server/bootstrap | `packages/mock-console/server/src/index.ts` | Fastify、CORS、静态页面、端口和组合根 |
 | server/config | `config-service.ts` | 串行配置变更、失败恢复和持久化协调 |
 | server/routes | `admin-routes.ts`、`extension-routes.ts` | 管理 API 与扩展 resolver 的 HTTP 转换 |
+| server/controls | `extension-control-routes.ts`、`api-control.ts`、`config-service.ts` 的 `applyRequestControl` | 面板配置摘要、乐观版本校验和原子提交；见[接口快捷操作](../shared/extension-runtime.md#接口快捷操作) |
 | server/capture | `capture-routes.ts`、`config-service.ts` 的 `saveCapturedScenario` | 主动响应草稿、确认保存和原子配置提交；协议见[主动响应交接](../shared/extension-runtime.md#主动响应交接) |
 | server/runtime | `runtime-resolver.ts` | 按当前 Package、接口优先级和响应选择生成 Mock / transform / pass 判定 |
 | server/proxy | `proxy.ts` | Reqable / 本地 Proxy 请求匹配、Mock 返回和真实转发 |
@@ -38,3 +39,4 @@
 - 响应选择保存：`PUT /__mock_admin/apis/:id/response-selection`，原子保存当前接口的模式、固定选择、分支与兜底；场景内容仍使用原独立接口。
 - 扩展 resolver：`POST /__mock_extension/resolve`，未命中返回 pass，命中返回一次性完整 Mock 或 transform 判定；transform 不让 resolver 执行真实请求。
 - Chrome 扩展模式不使用 Package 的 RealService 配置；真实放行请求由浏览器自己发出。
+- 面板配置快捷操作：`POST /__mock_extension/controls/inspect` 和 `/apply`，只允许可信本机 Origin 和 JSON；业务语义见[接口显式放行与面板快捷操作](../../requirements/CONTEXT.md)。控制台可显示并恢复显式放行；`/#api=<id>&package=<id>` 只定位当前测试包内接口，不切换全局测试包。
