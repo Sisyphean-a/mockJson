@@ -37,8 +37,22 @@ class FakeElement {
     this.tagName = tagName;
   }
 
-  append(...nodes: FakeElement[]) {
-    for (const node of nodes) { node.parentElement = this; this.children.push(node); }
+  append(...nodes: (FakeElement | string)[]) {
+    for (const node of nodes) {
+      if (typeof node === "string") {
+        const text = new FakeElement("#text");
+        text.textContent = node;
+        this.append(text);
+        continue;
+      }
+      // Flow: 源码使用 DocumentFragment 批量插入，测试假 DOM 需要展平其子节点。
+      if (node.tagName === "#fragment") {
+        this.append(...node.children);
+        continue;
+      }
+      node.parentElement = this;
+      this.children.push(node);
+    }
   }
 
   replaceChildren(...nodes: FakeElement[]) {
@@ -87,6 +101,7 @@ function createPanelHarness(failHandoff = false) {
     body: new FakeElement("body"), activeElement: undefined as FakeElement | undefined,
     getElementById(id: string) { return elements.get(id); },
     createElement(tag: string) { const element = new FakeElement(tag); element.onFocus = () => { document.activeElement = element; }; return element; },
+    createDocumentFragment() { return new FakeElement("#fragment"); },
     addEventListener() {}, removeEventListener() {},
   };
   const window = { location: { search: "?tabId=1" }, innerWidth: 1024, innerHeight: 768, addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout };
@@ -347,6 +362,34 @@ test("请求和响应头直接显示原值，复制 cURL 保留请求内容", as
   assert.ok(curl.includes(entry.request.url));
   for (const [name, value] of Object.entries(entry.request.headers)) assert.ok(curl.includes(`${name}: ${value}`));
   assert.ok(curl.includes(entry.request.body!));
+});
+
+test("JSON 响应体按控制台配色高亮，非 JSON 保持原文", () => {
+  function find(root: FakeElement, className: string): FakeElement | undefined {
+    if (root.className === className) return root;
+    for (const child of root.children) { const found = find(child, className); if (found) return found; }
+  }
+  const h = createPanelHarness();
+  const entry: protocol.TrafficEntry = {
+    id: "json", tabId: 1, frameId: 0, pageUrl: "https://app.test/", source: "fetch", decision: "pass",
+    startedAt: 1000, endedAt: 1100,
+    request: { method: "GET", url: "https://api.test/users", headers: {} },
+    response: { status: 200, headers: {}, body: '{"ok":true,"count":12,"name":"x","none":null}' },
+  };
+  h.messageListener({ type: "snapshot", captureTab: true, entries: [entry] });
+  h.elements.get("rows")!.children[0].listeners.click();
+  const body = find(h.elements.get("detail")!, "body")!;
+  assert.deepEqual(
+    body.querySelectorAll("*").filter((node) => node.className.startsWith("json-")).map((node) => [node.className, node.textContent]),
+    [["json-bool", "true"], ["json-number", "12"], ["json-string", "\"x\""], ["json-null", "null"]],
+  );
+  // Rule: 属性名沿用正文色，不生成高亮节点。
+  assert.equal(body.querySelectorAll("*").find((node) => node.textContent === "\"ok\"")?.className, "");
+
+  h.messageListener({ type: "entry", entry: { ...entry, response: { status: 200, headers: {}, body: "plain text" } } });
+  const plain = find(h.elements.get("detail")!, "body")!;
+  assert.equal(plain.textContent, "plain text");
+  assert.equal(plain.children.length, 0);
 });
 
 test("面板过滤和清空消息不会抛错", () => {

@@ -422,6 +422,12 @@ body {
   word-break: break-word;
 }
 
+/* Rule: 与 22333 控制台 JSON 编辑器（CodeMirror 默认高亮）使用同一套配色。 */
+.body .json-string { color: #aa1111; }
+.body .json-number { color: #116644; }
+.body .json-bool { color: #221199; }
+.body .json-null { color: #770088; }
+
 .muted { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .error-text { margin: 0 0 8px; color: var(--red); font: 11px/1.5 var(--mono); white-space: pre-wrap; }
 

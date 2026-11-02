@@ -495,7 +495,9 @@ function bodyContent(holder: TrafficBodyInfo, emptyText: string) {
   if (holder.body === undefined) return el("p", "muted", emptyText);
   const panel = el("div", "body-panel");
   if (holder.bodyTruncated) panel.append(el("p", "muted", "已截断，仅显示前 64 KB。"));
-  panel.append(el("pre", "body", prettyBody(holder.body)));
+  const body = el("pre", "body");
+  appendBody(body, holder.body);
+  panel.append(body);
   return panel;
 }
 
@@ -700,15 +702,47 @@ function unavailableText(reason: NonNullable<TrafficBodyInfo["bodyUnavailable"]>
   return "内容不可读取（跨域限制或流已被使用）。";
 }
 
+// Flow: JSON 先整段格式化，再按 22333 控制台编辑器的配色标记；其他内容保持原文。
+function appendBody(target: HTMLElement, body: string) {
+  const pretty = prettyBody(body);
+  if (!pretty.isJson) {
+    target.textContent = body;
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  let last = 0;
+  for (const match of pretty.text.matchAll(JSON_TOKEN)) {
+    const start = match.index ?? 0;
+    if (start > last) fragment.append(pretty.text.slice(last, start));
+    const token = match[0];
+    const end = start + token.length;
+    if (token.startsWith("\"")) {
+      // Rule: 属性名沿用正文色，与控制台一致，只有字符串值参与高亮。
+      fragment.append(pretty.text[end] === ":" ? pretty.text.slice(start, end) : el("span", "json-string", token));
+    } else if (token === "true" || token === "false") {
+      fragment.append(el("span", "json-bool", token));
+    } else if (token === "null") {
+      fragment.append(el("span", "json-null", token));
+    } else {
+      fragment.append(el("span", "json-number", token));
+    }
+    last = end;
+  }
+  if (last < pretty.text.length) fragment.append(pretty.text.slice(last));
+  target.append(fragment);
+}
+
 function prettyBody(body: string) {
   const trimmed = body.trim();
-  if (trimmed === "" || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) return body;
+  if (trimmed === "" || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) return { text: body, isJson: false };
   try {
-    return JSON.stringify(JSON.parse(trimmed), null, 2);
+    return { text: JSON.stringify(JSON.parse(trimmed), null, 2), isJson: true };
   } catch {
-    return body;
+    return { text: body, isJson: false };
   }
 }
+
+const JSON_TOKEN = /"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null/g;
 
 function toCurl(entry: TrafficEntry) {
   const parts = [`curl '${shellQuote(entry.request.url)}'`];
