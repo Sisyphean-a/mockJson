@@ -75,6 +75,8 @@ export type LogicalApi = {
   name: string;
   enabled: boolean;
   passthrough?: boolean;
+  // Rule: 归档只影响侧栏可见性，不参与匹配、优先级与响应选择；旧配置缺省为未归档。
+  archived?: boolean;
   groupId?: string | null;
   priority: number;
   matchMode: "AND" | "OR";

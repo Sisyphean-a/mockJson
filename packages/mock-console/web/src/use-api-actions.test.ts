@@ -37,3 +37,39 @@ test("控制台恢复已放行接口时发送启用动作，成功同步放行�
     assert.deepEqual(model.api.value!.scenarios[0].responseBody, { ok: true });
   } finally { scope.stop(); }
 });
+
+test("归档开关只写 archived 标记，失败回滚且不改动接口其它字段", async () => {
+  const state: State = { currentPackageId: "p", packages: [{ id: "p", name: "p", realServices: [], activeRealServiceId: null, apiGroups: [], apis: [{
+    id: "a", name: "接口", enabled: true, priority: 0, matchMode: "AND", matchRules: [], activeScenarioId: null, scenarios: [],
+  }] }] };
+  const writes: unknown[] = [];
+  let fail = true;
+  const transport: AdminTransport = { async send(_url, init) {
+    if (init.method !== "PATCH") return Response.json(state);
+    const body = JSON.parse(String(init.body)) as { archived?: boolean };
+    writes.push(body);
+    if (fail) return Response.json({ error: "保存失败" }, { status: 500 });
+    return Response.json({ ...state.packages[0].apis[0], ...body });
+  } };
+  const scope = effectScope();
+  try {
+    const client = new MockAdminClient(createRuntimeEndpoints({ protocol: "http:", port: "22333" }), transport);
+    const model = scope.run(() => useMockState(client))!;
+    await model.load();
+    const forms = scope.run(() => useConsoleForms())!;
+    const actions = scope.run(() => useApiActions(client, model, forms, () => {}, () => true))!;
+    const api = model.pkg.value!.apis[0];
+
+    await actions.toggleApiArchived(api);
+    assert.equal(api.archived, undefined);
+
+    fail = false;
+    await actions.toggleApiArchived(api);
+    assert.equal(api.archived, true);
+    assert.equal(api.enabled, true);
+
+    await actions.toggleApiArchived(api);
+    assert.equal(api.archived, false);
+    assert.deepEqual(writes, [{ archived: true }, { archived: true }, { archived: false }]);
+  } finally { scope.stop(); }
+});

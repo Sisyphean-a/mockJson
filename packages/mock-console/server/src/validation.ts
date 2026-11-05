@@ -60,6 +60,7 @@ function isValidApi(value: unknown) {
     typeof value.name === "string" &&
     typeof value.enabled === "boolean" &&
     (value.passthrough === undefined || typeof value.passthrough === "boolean") &&
+    (value.archived === undefined || typeof value.archived === "boolean") &&
     (value.groupId === undefined || value.groupId === null || isUuidLike(value.groupId)) &&
     Number.isInteger(value.priority) &&
     (value.matchMode === "AND" || value.matchMode === "OR") &&

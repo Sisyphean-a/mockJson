@@ -20,6 +20,7 @@ export function orderApisAfterGroupDrop(
     buckets.get(key)!.push(api);
   }
   // Guarantee: 跨组拖拽时扁平数组可能已被源列表事件移出该接口，成员对象以拖拽结果为准。
-  buckets.set(target, dropped);
+  // Guarantee: 拖拽列表可能不含被隐藏的归档成员，它们保留在目标分组末尾，不因排序丢失。
+  buckets.set(target, [...dropped, ...(buckets.get(target) ?? [])]);
   return [...groupIds, null].flatMap((key) => buckets.get(key)!);
 }

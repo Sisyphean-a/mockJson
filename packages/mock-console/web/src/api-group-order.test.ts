@@ -55,3 +55,11 @@ test("源列表先移出扁平数组时，目标列表仍按拖拽结果恢复�
   const apis = [api("a2", "g1"), api("b1", "g2")];
   assert.deepEqual(ids(orderApisAfterGroupDrop(apis, groups, "g2", [apis[1], moved])), ["a2", "b1", "a1"]);
 });
+
+test("被隐藏的归档接口不会因组内拖拽丢失", () => {
+  const archived = api("a3", "g1");
+  archived.archived = true;
+
+  const apis = [api("a1", "g1"), archived, api("a2", "g1")];
+  assert.deepEqual(ids(orderApisAfterGroupDrop(apis, groups, "g1", [apis[0], apis[2]])), ["a1", "a2", "a3"]);
+});

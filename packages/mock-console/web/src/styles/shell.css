@@ -298,14 +298,14 @@ aside {
   color: var(--ink-strong);
 }
 
-.icon-btn.primary {
+.icon-btn.accent {
   border-color: var(--accent-line);
   background: var(--accent-soft);
   color: var(--accent);
   font-size: 17px;
 }
 
-.icon-btn.primary:hover {
+.icon-btn.accent:hover {
   border-color: #a8bdea;
   background: #e2ebff;
   color: var(--accent-strong);
@@ -494,6 +494,10 @@ aside {
   display: none;
 }
 
+.group-items.has-hidden:empty::after {
+  content: "已归档的接口已隐藏";
+}
+
 .group-items:empty::after {
   content: "拖拽接口到此处";
   display: flex;
@@ -546,6 +550,14 @@ aside {
 
 .api-item.is-off .api-name {
   color: var(--ink-muted);
+}
+
+.api-item.is-archived {
+  opacity: 0.5;
+}
+
+.api-item.is-archived:hover {
+  opacity: 1;
 }
 
 .drag-handle {
@@ -651,6 +663,29 @@ aside {
   color: var(--ink-muted);
   text-align: center;
   line-height: 1.8;
+}
+
+.side-icon {
+  display: block;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-btn.archive-toggle[aria-pressed="true"] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.icon-btn.archive-toggle[aria-pressed="true"]:hover {
+  background: #e2ebff;
+  color: var(--accent-strong);
 }
 
 .side-foot {

@@ -83,6 +83,21 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     } catch (error) { notify(message(error)); }
   }
 
+  // Rule: 归档只是侧栏隐藏标记；接口仍按原优先级参与匹配，取消归档即可恢复显示。
+  async function toggleApiArchived(api: Api) {
+    const next = !api.archived;
+    const previous = api.archived;
+    api.archived = next;
+    try {
+      const saved = await model.runAdminRequest(() => client.updateApi(api.id, { archived: next }));
+      model.replaceApi(saved);
+      notify(next ? "接口已归档" : "已取消归档");
+    } catch (error) {
+      api.archived = previous;
+      notify(message(error));
+    }
+  }
+
   function openRuleCreate() {
     forms.editingRuleId.value = null;
     forms.ruleSource.value = "header";
@@ -186,6 +201,7 @@ export function useApiActions(client: MockAdminClient, model: Model, forms: Form
     openMoveApi,
     moveApi,
     toggle,
+    toggleApiArchived,
     openRuleCreate,
     openRuleEdit,
     cancelRuleEdit,

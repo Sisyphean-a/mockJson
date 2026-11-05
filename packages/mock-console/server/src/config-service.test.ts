@@ -293,3 +293,20 @@ test("读取时归一分组：补齐缺失列表并把孤儿归属回退未分�
   assert.deepEqual(modern.apiGroups.map((group) => group.id), ["settlement"]);
   assert.equal(modern.apis[0].groupId, null);
 });
+
+test("接口归档只写显示标记，非法值被拒绝", async () => {
+  const repository = new MemoryRepository();
+  const service = new MockConfigService(repository);
+  await service.initialize();
+  const packageConfig = await service.createPackage({ name: "测试包" });
+  const api = await service.createApi(packageConfig.id, { name: "接口" });
+
+  await assert.rejects(() => service.updateApi(api.id, { archived: "yes" }), /archived 必须是布尔值/);
+  const archived = await service.updateApi(api.id, { archived: true });
+  assert.equal(archived.archived, true);
+  assert.equal(archived.enabled, true);
+  assert.equal(service.getState().packages[0].apis[0].archived, true);
+
+  const restored = await service.updateApi(api.id, { archived: false });
+  assert.equal(restored.archived, false);
+});

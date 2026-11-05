@@ -12,26 +12,41 @@ const { controller: c, openContextMenu } = defineProps<{ controller: ApiSidebarC
 type DragDataset = { dataset?: Record<string, string | undefined> };
 type DragDatasetEvent = { item?: DragDataset; to?: DragDataset };
 
-type GroupView = { key: string; id: string | null; name: string; apis: Api[] };
+type GroupView = { key: string; id: string | null; name: string; apis: Api[]; archived: number };
 
 const UNGROUPED_KEY = "";
 
 // Rule: 接口展示顺序 = apiGroups 顺序 → 各组内 apis 数组顺序；扁平 apis 数组仍是持久化的唯一顺序来源，分组不参与匹配。
 // Rule: 所有接口都已分组时隐藏“未分组”区；拖拽期间临时显示，作为放回未分组的落点。
 const draggingApi = ref(false);
+// Rule: 归档接口默认不出现在侧栏；展示时降低对比度，和普通接口区分。
+const showArchived = ref(false);
+const visibleApi = (api: Api) => showArchived.value || !api.archived;
+const archivedCount = computed(() => (c.pkg.value?.apis ?? []).filter((api) => api.archived).length);
+const flatView = computed(() => (c.pkg.value?.apis ?? []).filter(visibleApi));
+const searchResults = computed(() => c.filtered.value.filter(visibleApi));
+
 const groupViews = computed<GroupView[]>(() => {
   const pkg = c.pkg.value;
   const buckets = new Map<string, Api[]>();
   for (const group of pkg?.apiGroups ?? []) buckets.set(group.id, []);
   const ungrouped: Api[] = [];
+  const archivedByGroup = new Map<string, number>();
   for (const api of pkg?.apis ?? []) {
-    const bucket = (api.groupId && buckets.has(api.groupId) ? buckets.get(api.groupId) : ungrouped) as Api[];
-    bucket.push(api);
+    const key = api.groupId && buckets.has(api.groupId) ? api.groupId : UNGROUPED_KEY;
+    if (!visibleApi(api)) {
+      // Guarantee: 隐藏的归档成员仍计入分组，避免分组看起来像空组。
+      archivedByGroup.set(key, (archivedByGroup.get(key) ?? 0) + 1);
+      continue;
+    }
+    (key === UNGROUPED_KEY ? ungrouped : buckets.get(key)!).push(api);
   }
-  const views: GroupView[] = (pkg?.apiGroups ?? []).map((group) => ({ key: group.id, id: group.id, name: group.name, apis: buckets.get(group.id)! }));
+  const views: GroupView[] = (pkg?.apiGroups ?? []).map((group) => ({
+    key: group.id, id: group.id, name: group.name, apis: buckets.get(group.id)!, archived: archivedByGroup.get(group.id) ?? 0,
+  }));
   // Rule: 只有已建分组时才出现“未分组”区，未分组区始终排在全部分组之后。
   if (views.length && (ungrouped.length || draggingApi.value))
-    views.push({ key: UNGROUPED_KEY, id: null, name: "未分组", apis: ungrouped });
+    views.push({ key: UNGROUPED_KEY, id: null, name: "未分组", apis: ungrouped, archived: archivedByGroup.get(UNGROUPED_KEY) ?? 0 });
   return views;
 });
 
@@ -104,6 +119,15 @@ function onGroupModel(groupId: string | null, apis: Api[]) {
   current.apis.splice(0, current.apis.length, ...next);
 }
 
+// Rule: 平铺列表只渲染可见接口，拖拽结果按新顺序写回，被隐藏的归档接口保留在末尾。
+function onFlatModel(apis: Api[]) {
+  const current = c.pkg.value;
+  if (!current) return;
+  const shown = new Set(apis.map((api) => api.id));
+  const hidden = current.apis.filter((api) => !shown.has(api.id));
+  current.apis.splice(0, current.apis.length, ...apis, ...hidden);
+}
+
 function onGroupDragStart() {
   groupsBeforeDrag = c.pkg.value?.apiGroups.map((group) => group.id) ?? null;
 }
@@ -157,19 +181,23 @@ function openGroupContextFromKeyboard(event: KeyboardEvent, group: ApiGroup) {
     <div class="side-title" @contextmenu.stop>
       <span>逻辑接口</span>
       <div class="side-title-actions">
-        <button class="icon-btn" :disabled="!c.pkg.value" aria-label="新建接口分组" title="新建接口分组" @click="c.openApiGroupCreate">▤</button>
-        <button class="icon-btn primary" aria-label="新建逻辑接口" title="新建逻辑接口" @click="c.openApiCreate">＋</button>
+        <button v-if="archivedCount" class="icon-btn archive-toggle" :aria-pressed="showArchived" :aria-label="showArchived ? '隐藏归档' : '展示归档'" :title="showArchived ? '隐藏归档' : '展示归档'" @click="showArchived = !showArchived">
+          <svg v-if="showArchived" class="side-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="4" rx="1.5" /><path d="M5 8v10.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V8" /><path d="M12 10.5v6m-2.5-2.5L12 16.5l2.5-2.5" /></svg>
+          <svg v-else class="side-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="4" rx="1.5" /><path d="M5 8v10.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V8" /><path d="M12 16.5v-6m-2.5 2.5L12 10.5l2.5 2.5" /></svg>
+        </button>
+        <button class="icon-btn" :disabled="!c.pkg.value" aria-label="新建接口分组" title="新建接口分组" @click="c.openApiGroupCreate"><svg class="side-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="11" height="11" rx="2" /><rect x="10" y="10" width="11" height="11" rx="2" /></svg></button>
+        <button class="icon-btn accent" aria-label="新建逻辑接口" title="新建逻辑接口" @click="c.openApiCreate">＋</button>
       </div>
     </div>
     <div class="api-region" @contextmenu.prevent="openContextMenu($event, { type: 'api-area' })">
       <div class="search" @contextmenu.stop><span aria-hidden="true">⌕</span><input v-model="c.search.value" aria-label="搜索接口" placeholder="搜索接口..." /></div>
 
       <div v-if="c.search.value.trim()" class="api-list">
-        <div v-for="item in c.filtered.value" :key="item.id" :class="['api-item', { active: item.id === c.selectedId.value, 'is-off': !item.enabled }]" @contextmenu.stop.prevent="openContextMenu($event, { type: 'api', item })" @keydown="openApiContextFromKeyboard($event, item)">
+        <div v-for="item in searchResults" :key="item.id" :class="['api-item', { active: item.id === c.selectedId.value, 'is-off': !item.enabled, 'is-archived': item.archived }]" @contextmenu.stop.prevent="openContextMenu($event, { type: 'api', item })" @keydown="openApiContextFromKeyboard($event, item)">
           <button class="api-select" aria-haspopup="menu" :aria-current="item.id === c.selectedId.value ? 'true' : undefined" @click="c.selectApi(item)"><span class="api-name" :title="item.name">{{ item.name }}</span></button>
           <button :class="['toggle', 'compact-toggle', { checked: item.enabled && !item.passthrough }]" :aria-label="item.enabled && !item.passthrough ? `停用接口 ${item.name}` : `启用接口 ${item.name}`" :aria-pressed="item.enabled && !item.passthrough" @click="c.toggle(item)"><i aria-hidden="true"></i></button>
         </div>
-        <div v-if="c.filtered.value.length" class="sort-hint">清除搜索后可拖拽排序</div>
+        <div v-if="searchResults.length" class="sort-hint">清除搜索后可拖拽排序</div>
       </div>
 
       <div v-else-if="orderedGroupViews.length" class="api-scroll">
@@ -184,7 +212,7 @@ function openGroupContextFromKeyboard(event: KeyboardEvent, group: ApiGroup) {
             <VueDraggable
               :model-value="view.apis"
               class="group-items"
-              :class="{ collapsed: collapsedGroups[view.key] }"
+              :class="{ collapsed: collapsedGroups[view.key], 'has-hidden': !view.apis.length && view.archived > 0 }"
               :data-group-id="view.key"
               :group="itemGroupOptions"
               handle=".drag-handle"
@@ -193,7 +221,7 @@ function openGroupContextFromKeyboard(event: KeyboardEvent, group: ApiGroup) {
               @start="onApiDragStart"
               @end="onApiDragEnd"
             >
-              <div v-for="item in view.apis" :key="item.id" :data-api-id="item.id" :class="['api-item', { active: item.id === c.selectedId.value, 'is-off': !item.enabled }]" @contextmenu.stop.prevent="openContextMenu($event, { type: 'api', item })" @keydown="openApiContextFromKeyboard($event, item)">
+              <div v-for="item in view.apis" :key="item.id" :data-api-id="item.id" :class="['api-item', { active: item.id === c.selectedId.value, 'is-off': !item.enabled, 'is-archived': item.archived }]" @contextmenu.stop.prevent="openContextMenu($event, { type: 'api', item })" @keydown="openApiContextFromKeyboard($event, item)">
                 <span class="drag-handle" aria-hidden="true" title="长按拖拽排序">⠿</span>
                 <button class="api-select" aria-haspopup="menu" :aria-current="item.id === c.selectedId.value ? 'true' : undefined" @click="c.selectApi(item)"><span class="api-name" :title="item.name">{{ item.name }}</span></button>
                 <button :class="['toggle', 'compact-toggle', { checked: item.enabled && !item.passthrough }]" :aria-label="item.enabled && !item.passthrough ? `停用接口 ${item.name}` : `启用接口 ${item.name}`" :aria-pressed="item.enabled && !item.passthrough" @click="c.toggle(item)"><i aria-hidden="true"></i></button>
@@ -220,7 +248,7 @@ function openGroupContextFromKeyboard(event: KeyboardEvent, group: ApiGroup) {
             @start="onApiDragStart"
             @end="onApiDragEnd"
           >
-            <div v-for="item in ungroupedView.apis" :key="item.id" :data-api-id="item.id" :class="['api-item', { active: item.id === c.selectedId.value, 'is-off': !item.enabled }]" @contextmenu.stop.prevent="openContextMenu($event, { type: 'api', item })" @keydown="openApiContextFromKeyboard($event, item)">
+            <div v-for="item in ungroupedView.apis" :key="item.id" :data-api-id="item.id" :class="['api-item', { active: item.id === c.selectedId.value, 'is-off': !item.enabled, 'is-archived': item.archived }]" @contextmenu.stop.prevent="openContextMenu($event, { type: 'api', item })" @keydown="openApiContextFromKeyboard($event, item)">
               <span class="drag-handle" aria-hidden="true" title="长按拖拽排序">⠿</span>
               <button class="api-select" aria-haspopup="menu" :aria-current="item.id === c.selectedId.value ? 'true' : undefined" @click="c.selectApi(item)"><span class="api-name" :title="item.name">{{ item.name }}</span></button>
               <button :class="['toggle', 'compact-toggle', { checked: item.enabled && !item.passthrough }]" :aria-label="item.enabled && !item.passthrough ? `停用接口 ${item.name}` : `启用接口 ${item.name}`" :aria-pressed="item.enabled && !item.passthrough" @click="c.toggle(item)"><i aria-hidden="true"></i></button>
@@ -230,15 +258,16 @@ function openGroupContextFromKeyboard(event: KeyboardEvent, group: ApiGroup) {
       </div>
 
       <VueDraggable
-        v-else-if="c.pkg.value && c.pkg.value.apis.length"
-        v-model="c.pkg.value.apis"
+        v-else-if="c.pkg.value && flatView.length"
+        :model-value="flatView"
         class="api-list"
         handle=".drag-handle"
         v-bind="sortableOptions"
+        @update:model-value="onFlatModel"
         @start="onApiDragStart"
         @end="onApiDragEnd"
       >
-        <div v-for="item in c.pkg.value.apis" :key="item.id" :data-api-id="item.id" :class="['api-item', { active: item.id === c.selectedId.value, 'is-off': !item.enabled }]" @contextmenu.stop.prevent="openContextMenu($event, { type: 'api', item })" @keydown="openApiContextFromKeyboard($event, item)">
+        <div v-for="item in flatView" :key="item.id" :data-api-id="item.id" :class="['api-item', { active: item.id === c.selectedId.value, 'is-off': !item.enabled, 'is-archived': item.archived }]" @contextmenu.stop.prevent="openContextMenu($event, { type: 'api', item })" @keydown="openApiContextFromKeyboard($event, item)">
           <span class="drag-handle" aria-hidden="true" title="长按拖拽排序">⠿</span>
           <button class="api-select" aria-haspopup="menu" :aria-current="item.id === c.selectedId.value ? 'true' : undefined" @click="c.selectApi(item)"><span class="api-name" :title="item.name">{{ item.name }}</span></button>
           <button :class="['toggle', 'compact-toggle', { checked: item.enabled && !item.passthrough }]" :aria-label="item.enabled && !item.passthrough ? `停用接口 ${item.name}` : `启用接口 ${item.name}`" :aria-pressed="item.enabled && !item.passthrough" @click="c.toggle(item)"><i aria-hidden="true"></i></button>
@@ -246,11 +275,12 @@ function openGroupContextFromKeyboard(event: KeyboardEvent, group: ApiGroup) {
       </VueDraggable>
       <div v-else class="api-list"></div>
 
-      <div v-if="c.pkg.value && c.search.value.trim() && !c.filtered.value.length" class="empty-side">
+      <div v-if="c.pkg.value && c.search.value.trim() && !searchResults.length" class="empty-side">
         没有找到匹配的接口<br /><button class="secondary" @click="c.search.value = ''">清除搜索</button>
       </div>
-      <div v-else-if="!c.filtered.value.length" class="empty-side">
-        {{ c.pkg.value ? "还没有接口" : "还没有测试包" }}<br /><button class="secondary" @click="c.openApiCreate">{{ c.pkg.value ? "创建第一个接口" : "创建测试包" }}</button>
+      <div v-else-if="!flatView.length" class="empty-side">
+        <template v-if="archivedCount">全部接口都已归档<br /><button class="secondary" @click="showArchived = true">展示归档</button></template>
+        <template v-else>{{ c.pkg.value ? "还没有接口" : "还没有测试包" }}<br /><button class="secondary" @click="c.openApiCreate">{{ c.pkg.value ? "创建第一个接口" : "创建测试包" }}</button></template>
       </div>
     </div>
     <div class="side-foot" @contextmenu.stop>

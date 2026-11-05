@@ -154,7 +154,7 @@ export class MockAdminClient {
     return this.request<{ success: true }>(`/__mock_admin/api-groups/${id}`, { method: "DELETE" });
   }
 
-  async updateApi(id: string, input: Partial<Pick<LogicalApi, "name" | "enabled" | "priority" | "matchMode" | "matchRules" | "groupId">>) {
+  async updateApi(id: string, input: Partial<Pick<LogicalApi, "name" | "enabled" | "priority" | "matchMode" | "matchRules" | "archived" | "groupId">>) {
     return this.request<LogicalApi>(`/__mock_admin/apis/${id}`, json("PATCH", input));
   }
 

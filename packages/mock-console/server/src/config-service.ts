@@ -300,6 +300,7 @@ export class MockConfigService {
     priority?: unknown;
     matchMode?: unknown;
     matchRules?: unknown;
+    archived?: unknown;
     groupId?: unknown;
   }) {
     return this.enqueue(async () => {
@@ -323,6 +324,10 @@ export class MockConfigService {
         api.matchMode = input.matchMode;
       }
       if (input.matchRules !== undefined) api.matchRules = validateMatchRules(input.matchRules) as MatchRule[];
+      if (input.archived !== undefined) {
+        if (typeof input.archived !== "boolean") throw new Error("archived 必须是布尔值");
+        api.archived = input.archived;
+      }
       if (input.groupId !== undefined) {
         // Rule: null 表示移出分组，分组 ID 必须属于接口所在测试包；分组只影响侧栏分类，不改匹配。
         if (input.groupId === null) api.groupId = null;

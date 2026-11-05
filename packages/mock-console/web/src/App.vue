@@ -38,6 +38,7 @@ function menuFor(target: ContextTarget): { title: string; items: ContextMenuItem
         { label: "编辑接口", action: () => editApi(target.item) },
         { label: target.item.enabled && !target.item.passthrough ? "停用 Mock" : "启用 Mock", action: () => c.toggle(target.item) },
         { label: "新建响应场景", action: () => createSceneForApi(target.item) },
+        { label: target.item.archived ? "取消归档" : "归档", action: () => c.toggleApiArchived(target.item) },
         { label: "切换包", disabled: c.state.value.packages.length < 2, action: () => c.openMoveApi(target.item) },
         { label: "删除接口", separator: true, danger: true, action: () => c.deleteApiTarget(target.item) },
       ],
