@@ -14,7 +14,7 @@ const matchingRules = (): State["packages"][number]["apis"][number]["matchRules"
 function createState(rules: State["packages"][number]["apis"][number]["matchRules"]): State {
   return {
     currentPackageId: "pkg",
-    packages: [{ id: "pkg", name: "测试包", realServices: [], activeRealServiceId: null, apis: [{
+    packages: [{ id: "pkg", name: "测试包", realServices: [], activeRealServiceId: null, apiGroups: [], apis: [{
       id: "api", name: "测试接口", enabled: true, priority: 10, matchMode: "AND", matchRules: rules,
       activeScenarioId: "ok", scenarios: [{ id: "ok", name: "命中", status: 200, delayMs: 0, responseBody: { matched: true } }],
     }] }],

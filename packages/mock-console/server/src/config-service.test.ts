@@ -204,3 +204,92 @@ test("持久化失败时恢复变更前的配置", async () => {
   await assert.rejects(() => service.updatePackage(created.id, { name: "不应保存" }), /write failed/);
   assert.equal(service.getState().packages[0].name, "稳定配置");
 });
+
+test("接口分组支持创建、改名、排序与删除，删除只解除归属", async () => {
+  const repository = new MemoryRepository();
+  const service = new MockConfigService(repository);
+  await service.initialize();
+  const packageConfig = await service.createPackage({ name: "测试包" });
+  const first = await service.createApi(packageConfig.id, { name: "接口一" });
+  const second = await service.createApi(packageConfig.id, { name: "接口二" });
+
+  const blankName = "  ";
+  await assert.rejects(() => service.createApiGroup(packageConfig.id, { name: blankName }), /不能为空/);
+  const settlement = await service.createApiGroup(packageConfig.id, { name: "结算" });
+  const loans = await service.createApiGroup(packageConfig.id, { name: "借款" });
+  assert.deepEqual(service.getState().packages[0].apiGroups.map((group) => group.name), ["结算", "借款"]);
+
+  const renamed = await service.updateApiGroup(settlement.id, { name: "结算相关" });
+  assert.equal(renamed.name, "结算相关");
+  await service.updateApi(first.id, { groupId: settlement.id });
+  await service.updateApi(second.id, { groupId: loans.id });
+
+  await service.reorderApiGroups(packageConfig.id, { ids: [loans.id, settlement.id] });
+  assert.deepEqual(service.getState().packages[0].apiGroups.map((group) => group.id), [loans.id, settlement.id]);
+
+  repository.failWrites = true;
+  await assert.rejects(
+    () => service.reorderApiGroups(packageConfig.id, { ids: [settlement.id, loans.id] }),
+    /write failed/,
+  );
+  repository.failWrites = false;
+
+  await service.deleteApiGroup(settlement.id);
+  const state = service.getState();
+  assert.deepEqual(state.packages[0].apiGroups.map((group) => group.id), [loans.id]);
+  assert.deepEqual(state.packages[0].apis.map((api) => api.groupId), [null, loans.id]);
+  assert.deepEqual(state.packages[0].apis.map((api) => api.name), ["接口一", "接口二"]);
+});
+
+test("接口分组的归属校验拒绝未知分组，接口换包后回到未分组", async () => {
+  const repository = new MemoryRepository();
+  const service = new MockConfigService(repository);
+  await service.initialize();
+  const source = await service.createPackage({ name: "来源" });
+  const destination = await service.createPackage({ name: "目标" });
+  const api = await service.createApi(source.id, { name: "接口" });
+  const group = await service.createApiGroup(source.id, { name: "来源分组" });
+
+  await assert.rejects(() => service.updateApi(api.id, { groupId: "missing-group" }), /接口分组不存在/);
+  await assert.rejects(() => service.updateApi(api.id, { groupId: 42 }), /接口分组不存在/);
+  const updated = await service.updateApi(api.id, { groupId: group.id });
+  assert.equal(updated.groupId, group.id);
+
+  const cleared = await service.updateApi(api.id, { groupId: null });
+  assert.equal(cleared.groupId, null);
+  await service.updateApi(api.id, { groupId: group.id });
+
+  await service.moveApi(api.id, { packageId: destination.id });
+  assert.equal(service.getState().packages[1].apis[0].groupId, null);
+  assert.equal(service.getState().packages[0].apiGroups.length, 1);
+});
+
+test("读取时归一分组：补齐缺失列表并把孤儿归属回退未分组", async () => {
+  const persisted: PersistedState = {
+    currentPackageId: "legacy-package",
+    packages: [{
+      id: "legacy-package",
+      name: "旧包",
+      targetBaseUrl: "https://legacy.example.com",
+      apis: [{
+        id: "legacy-api", name: "旧接口", enabled: true, groupId: "missing-group",
+        priority: 0, matchMode: "OR", matchRules: [], activeScenarioId: null, scenarios: [],
+      }],
+    }, {
+      id: "modern-package", name: "新包", realServices: [], activeRealServiceId: null,
+      apiGroups: [{ id: "settlement", name: "结算" }],
+      apis: [{
+        id: "modern-api", name: "新接口", enabled: true, groupId: "undefined-group",
+        priority: 0, matchMode: "OR", matchRules: [], activeScenarioId: null, scenarios: [],
+      }],
+    }],
+  };
+  const service = new MockConfigService({ async read() { return structuredClone(persisted); }, async write() {} });
+  await service.initialize();
+
+  const [legacy, modern] = service.getPackages();
+  assert.deepEqual(legacy.apiGroups, []);
+  assert.equal(legacy.apis[0].groupId, null);
+  assert.deepEqual(modern.apiGroups.map((group) => group.id), ["settlement"]);
+  assert.equal(modern.apis[0].groupId, null);
+});

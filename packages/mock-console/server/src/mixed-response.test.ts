@@ -15,7 +15,7 @@ import { RequestLogStore } from "./request-logs.js";
 const mock = { data: { name: "Mock", imageUrl: "expired", status: "APPROVED" } };
 const real = { data: { name: "Real", imageUrl: "fresh-signed-url", status: "PENDING", extra: 1 } };
 function state(type?: ScenarioResponseType, fieldPaths = ["/data/imageUrl"]): State {
-  return { currentPackageId: "pkg", packages: [{ id: "pkg", name: "测试包", realServices: [], activeRealServiceId: null,
+  return { currentPackageId: "pkg", packages: [{ id: "pkg", name: "测试包", realServices: [], activeRealServiceId: null, apiGroups: [],
     apis: [{ id: "api", name: "接口", enabled: true, priority: 0, matchMode: "AND",
       matchRules: [{ id: "r", source: "url", field: "path", operator: "equals", value: "/api" }], activeScenarioId: "s",
       scenarios: [{ id: "s", name: "场景", status: 201, delayMs: 0, responseBody: structuredClone(mock), ...(type ? { responseType: type, fieldPaths } : {}) }] }] }] };

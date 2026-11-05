@@ -59,7 +59,7 @@ function api(id: string, priority: number): LogicalApi {
 test("resolver 按分支选择，未命中放行不串到较低优先级接口；旧配置不变", () => {
   const high = api("high", 20); const low = api("low", 10);
   high.responseSelection = selection(); high.responseSelection.fallback.enabled = false;
-  const state: State = { currentPackageId: "p", packages: [{ id: "p", name: "p", realServices: [], activeRealServiceId: null, apis: [high, low] }] };
+  const state: State = { currentPackageId: "p", packages: [{ id: "p", name: "p", realServices: [], activeRealServiceId: null, apiGroups: [], apis: [high, low] }] };
   const req = { url: "https://example.com/test", method: "POST", headers: {}, body: '{"user":{"state":true}}' };
   const hit = resolveExtensionRequest(state, req);
   assert.equal(hit.action, "mock"); if (hit.action === "mock") assert.equal(hit.body, '{"id":"yes"}');

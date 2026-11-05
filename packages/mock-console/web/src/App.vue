@@ -44,9 +44,22 @@ function menuFor(target: ContextTarget): { title: string; items: ContextMenuItem
     };
   }
 
+  if (target.type === "api-group") {
+    return {
+      title: target.item.name,
+      items: [
+        { label: "编辑分组", action: () => c.openApiGroupEdit(target.item) },
+        { label: "删除分组", separator: true, danger: true, action: () => c.deleteApiGroupTarget(target.item) },
+      ],
+    };
+  }
+
   if (target.type === "api-area") {
     const items: ContextMenuItem[] = c.pkg.value
-      ? [{ label: "新建逻辑接口", action: () => c.openApiCreate() }]
+      ? [
+          { label: "新建逻辑接口", action: () => c.openApiCreate() },
+          { label: "新建接口分组", action: () => c.openApiGroupCreate() },
+        ]
       : [{ label: "新建测试包", action: () => c.openPackage() }];
     if (c.search.value.trim()) {
       items.push({ label: "清除接口搜索", separator: true, action: () => { c.search.value = ""; } });

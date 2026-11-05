@@ -16,7 +16,7 @@ function createState(): State {
     packages: [{
       id: "pkg",
       name: "测试包",
-      realServices: [{ id: "real", name: "测试环境", baseUrl: "https://real.example.com" }],
+      realServices: [{ id: "real", name: "测试环境", baseUrl: "https://real.example.com" }], apiGroups: [],
       activeRealServiceId: "real",
       apis: [{
         id: "api",

@@ -4,11 +4,11 @@ import type { ConsoleController } from "../console-controller";
 import ScenarioTypeFields from "./ScenarioTypeFields.vue";
 import JsonEditor from "./JsonEditor.vue";
 
-type ConsoleModalsController = Pick<ConsoleController, "showApi" | "showScene" | "showPackage" | "showPackageForm" | "showRealServices" | "showRealServiceForm" | "showMoveApi" | "movingApiId" | "destinationPackageId" | "state" | "sceneEditMode" | "editingPackageId" | "apiEditName" | "apiName" | "apiPriority" | "packageName" | "realServiceName" | "realServiceEditId" | "targetUrl" | "sceneName" | "sceneResponseType" | "sceneFieldPaths" | "sceneInitialBody" | "sceneFormError" | "sceneSaving" | "api" | "editSceneName" | "editSceneStatus" | "editSceneDelay" | "editSceneColor" | "pkg" | "openPackage" | "deletePackage" | "savePackage" | "saveApi" | "createApi" | "openNewRealService" | "openRealServiceEdit" | "selectRealService" | "saveRealService" | "deleteRealService" | "moveApi" | "saveScene" | "createScene" | "leavePrompt" | "resolveResponseLeave" | "responseSaving" | "responseError">;
+type ConsoleModalsController = Pick<ConsoleController, "showApi" | "showApiGroup" | "showApiGroupDelete" | "apiGroupDeleteTarget" | "apiGroupDeleteCount" | "confirmApiGroupDelete" | "cancelApiGroupDelete" | "editingApiGroupId" | "apiGroupName" | "saveApiGroup" | "showScene" | "showPackage" | "showPackageForm" | "showRealServices" | "showRealServiceForm" | "showMoveApi" | "movingApiId" | "destinationPackageId" | "state" | "sceneEditMode" | "editingPackageId" | "apiEditName" | "apiName" | "apiPriority" | "packageName" | "realServiceName" | "realServiceEditId" | "targetUrl" | "sceneName" | "sceneResponseType" | "sceneFieldPaths" | "sceneInitialBody" | "sceneFormError" | "sceneSaving" | "api" | "editSceneName" | "editSceneStatus" | "editSceneDelay" | "editSceneColor" | "pkg" | "openPackage" | "deletePackage" | "savePackage" | "saveApi" | "createApi" | "openNewRealService" | "openRealServiceEdit" | "selectRealService" | "saveRealService" | "deleteRealService" | "moveApi" | "saveScene" | "createScene" | "leavePrompt" | "resolveResponseLeave" | "responseSaving" | "responseError">;
 const { controller: c } = defineProps<{ controller: ConsoleModalsController }>();
 const modalRef = ref<HTMLElement | null>(null);
 const modalTrigger = ref<HTMLElement | null>(null);
-const modalOpen = computed(() => c.leavePrompt.value || c.showApi.value || c.showScene.value || c.showPackage.value || c.showRealServices.value || c.showMoveApi.value);
+const modalOpen = computed(() => c.leavePrompt.value || c.showApi.value || c.showApiGroup.value || c.showApiGroupDelete.value || c.showScene.value || c.showPackage.value || c.showRealServices.value || c.showMoveApi.value);
 const movingApi = computed(() => c.pkg.value?.apis.find((item) => item.id === c.movingApiId.value));
 const sceneDialog = computed(() => c.showScene.value && !c.leavePrompt.value);
 
@@ -16,6 +16,8 @@ function closeModal() {
   if (sceneDialog.value && c.sceneSaving.value) return;
   if (c.leavePrompt.value) { void c.resolveResponseLeave("cancel"); return; }
   c.showApi.value = false;
+  c.showApiGroup.value = false;
+  c.cancelApiGroupDelete();
   c.showScene.value = false;
   c.showPackage.value = false;
   c.showRealServices.value = false;
@@ -91,10 +93,13 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
   <div v-if="modalOpen" class="modal-backdrop">
     <div ref="modalRef" :class="['modal', { 'real-services-modal': c.showRealServices.value, 'scene-create-modal': sceneDialog && !c.sceneEditMode.value, 'scene-settings-modal': sceneDialog && c.sceneEditMode.value }]" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-description" tabindex="-1">
       <button class="close" aria-label="关闭" :disabled="sceneDialog && c.sceneSaving.value" @click="closeModal">×</button>
-      <h2 id="modal-title">{{ c.leavePrompt.value ? "响应选择尚未保存" : c.showMoveApi.value ? "切换包" : c.showRealServices.value ? "管理转发环境" : c.showPackage.value ? "管理测试包" : c.showApi.value ? (c.apiEditName.value ? "编辑逻辑接口" : "新建逻辑接口") : c.sceneEditMode.value ? "编辑响应场景" : "新建响应场景" }}</h2>
+      <h2 id="modal-title">{{ c.showApiGroupDelete.value ? "删除接口分组" : c.leavePrompt.value ? "响应选择尚未保存" : c.showMoveApi.value ? "切换包" : c.showRealServices.value ? "管理转发环境" : c.showPackage.value ? "管理测试包" : c.showApiGroup.value ? (c.editingApiGroupId.value ? "编辑接口分组" : "新建接口分组") : c.showApi.value ? (c.apiEditName.value ? "编辑逻辑接口" : "新建逻辑接口") : c.sceneEditMode.value ? "编辑响应场景" : "新建响应场景" }}</h2>
       <p v-if="sceneDialog" id="modal-description" class="scene-dialog-context">{{ c.api.value?.name }}</p>
-      <p v-else id="modal-description">{{ c.leavePrompt.value ? "保存后生效，或放弃本轮响应模式与分支改动；取消则继续编辑。场景 JSON 仍独立保存。" : c.showMoveApi.value ? `将「${movingApi?.name || '接口'}」及其规则、响应场景移至其他测试包。当前运行测试包不会切换。` : c.showRealServices.value ? `仅管理「${c.pkg.value?.name || '当前测试包'}」的真实转发地址（未命中与混合响应使用）。` : c.showPackage.value ? "测试包各自拥有独立的接口与转发环境。" : c.showApi.value ? "用业务名称和优先级标识一个可切换的接口。" : "" }}</p>
-      <template v-if="c.leavePrompt.value">
+      <p v-else id="modal-description">{{ c.showApiGroupDelete.value ? `分组「${c.apiGroupDeleteTarget.value?.name || ""}」中的 ${c.apiGroupDeleteCount.value} 个接口会移到「未分组」，接口、规则和场景都不会删除。` : c.leavePrompt.value ? "保存后生效，或放弃本轮响应模式与分支改动；取消则继续编辑。场景 JSON 仍独立保存。" : c.showMoveApi.value ? `将「${movingApi?.name || '接口'}」及其规则、响应场景移至其他测试包。当前运行测试包不会切换。` : c.showRealServices.value ? `仅管理「${c.pkg.value?.name || '当前测试包'}」的真实转发地址（未命中与混合响应使用）。` : c.showPackage.value ? "测试包各自拥有独立的接口与转发环境。" : c.showApiGroup.value ? "分组只在侧栏归拢接口，不影响优先级与匹配。" : c.showApi.value ? "用业务名称和优先级标识一个可切换的接口。" : "" }}</p>
+      <template v-if="c.showApiGroupDelete.value">
+          <div class="modal-footer"><button class="secondary" autofocus @click="c.cancelApiGroupDelete()">取消</button><button class="secondary danger" @click="c.confirmApiGroupDelete()">删除分组</button></div>
+        </template>
+        <template v-else-if="c.leavePrompt.value">
         <p v-if="c.responseError.value" class="response-error" role="alert">{{ c.responseError.value }}</p>
         <div class="modal-footer"><button class="secondary" :disabled="c.responseSaving.value" @click="c.resolveResponseLeave('cancel')">取消</button><button class="secondary" :disabled="c.responseSaving.value" @click="c.resolveResponseLeave('discard')">放弃修改</button><button class="primary" :disabled="c.responseSaving.value" @click="c.resolveResponseLeave('save')">{{ c.responseSaving.value ? '保存中…' : '保存并继续' }}</button></div>
       </template>
@@ -149,6 +154,11 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           <input id="package-name" v-model="c.packageName.value" autofocus placeholder="例如：Android 测试包" @keyup.enter="c.savePackage" />
           <div class="modal-footer"><button class="secondary" @click="c.showPackageForm.value = false">取消</button><button class="primary" @click="c.savePackage">{{ c.editingPackageId.value ? "保存修改" : "创建测试包" }}</button></div>
         </div>
+      </template>
+      <template v-else-if="c.showApiGroup.value">
+        <label class="form-label" for="api-group-name">分组名称</label>
+        <input id="api-group-name" v-model="c.apiGroupName.value" autofocus placeholder="例如：结算相关" @keyup.enter="c.saveApiGroup" />
+        <button class="primary full" @click="c.saveApiGroup">保存</button>
       </template>
       <template v-else-if="c.showApi.value">
         <label class="form-label" for="api-name">接口名称</label>

@@ -7,7 +7,7 @@ import { createProxy, hasRequestBody } from "./proxy.js";
 import type { State } from "../../shared/types.js";
 
 function state(): State {
-  return { currentPackageId: "p", packages: [{ id: "p", name: "p", realServices: [], activeRealServiceId: null, apis: [
+  return { currentPackageId: "p", packages: [{ id: "p", name: "p", realServices: [], activeRealServiceId: null, apiGroups: [], apis: [
     { id: "high", name: "high", enabled: true, priority: 20, matchMode: "AND", matchRules: [{ id: "r", source: "url", field: "path", operator: "equals", value: "/test" }], activeScenarioId: "s", scenarios: [{ id: "s", name: "s", status: 201, delayMs: 0, responseBody: { mock: true } }], responseSelection: { mode: "conditional", branches: [{ id: "b", name: "body", matchMode: "OR", scenarioId: "s", conditions: [{ id: "c", source: "body", field: "/value", operator: "equals", value: 2 }, { id: "h", source: "header", field: "x-mode", operator: "equals", value: "mock" }] }], fallback: { enabled: false, scenarioId: null } } },
     { id: "low", name: "low", enabled: true, priority: 10, matchMode: "AND", matchRules: [{ id: "r", source: "url", field: "path", operator: "equals", value: "/test" }], activeScenarioId: "low-s", scenarios: [{ id: "low-s", name: "low-s", status: 200, delayMs: 0, responseBody: { wrong: true } }] },
   ] }] };

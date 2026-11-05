@@ -20,7 +20,7 @@ test("主配置损坏时恢复有效备份，不用空状态覆盖数据", async
   const file = join(dir, "state.json");
   const backup: State = {
     currentPackageId: "p",
-    packages: [{ id: "p", name: "恢复包", realServices: [], activeRealServiceId: null, apis: [] }],
+    packages: [{ id: "p", name: "恢复包", realServices: [], activeRealServiceId: null, apiGroups: [], apis: [] }],
   };
   await writeFile(file, "{broken");
   await writeFile(file + ".bak", JSON.stringify(backup));

@@ -232,7 +232,8 @@ header {
 
 main {
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  /* Rule: 侧栏随视口取中段宽度，把右侧编辑区的富余空间分给接口列表。 */
+  grid-template-columns: clamp(296px, 21vw, 348px) minmax(0, 1fr);
   flex: 1 1 auto;
   min-height: 0;
   padding: 14px 16px 16px;
@@ -262,28 +263,57 @@ aside {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 2px 11px;
+  gap: 8px;
+  padding: 0 2px 10px;
   color: var(--ink-strong);
   font-size: 14px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
+.side-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .icon-btn {
-  width: var(--hit-size);
-  height: var(--hit-size);
-  border: 1px solid var(--accent-line);
-  border-radius: 8px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 20px;
-  line-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 15px;
+  line-height: 1;
   cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
 .icon-btn:hover {
+  background: var(--surface-muted);
+  color: var(--ink-strong);
+}
+
+.icon-btn.primary {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 17px;
+}
+
+.icon-btn.primary:hover {
   border-color: #a8bdea;
   background: #e2ebff;
+  color: var(--accent-strong);
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .search,
@@ -310,7 +340,7 @@ aside {
   background: transparent;
   outline: 0;
   color: var(--ink);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .api-region {
@@ -320,29 +350,202 @@ aside {
   flex-direction: column;
 }
 
+.api-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 8px;
+  padding-bottom: 6px;
+  /* Rule: 内容与滚动条之间保留间隙，避免开关、计数贴着滚动条。 */
+  padding-right: 5px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.api-scroll,
+.api-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.api-scroll::-webkit-scrollbar,
+.api-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.api-scroll::-webkit-scrollbar-track,
+.api-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.api-scroll::-webkit-scrollbar-thumb,
+.api-list::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--line-strong);
+  background-clip: content-box;
+}
+
+.api-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group-block {
+  border-radius: 8px;
+}
+
+.group-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 4px 0 2px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 94%);
+  backdrop-filter: blur(6px);
+  color: var(--ink-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-header:hover,
+.group-header:focus-visible {
+  color: var(--ink-strong);
+  outline: none;
+}
+
+.group-handle-gap {
+  flex: 0 0 12px;
+  width: 12px;
+}
+
+.group-drag-handle {
+  flex: 0 0 12px;
+  width: 12px;
+  font-size: 12px !important;
+}
+
+.group-chevron {
+  flex: 0 0 10px;
+  width: 10px;
+  height: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-faint);
+  transition: transform 120ms ease;
+}
+
+.group-chevron::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+}
+
+.group-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+
+.group-count {
+  margin-left: auto;
+  padding-left: 6px;
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 6px;
+  margin: 1px 0 3px 5px;
+  padding-left: 7px;
+  border-left: 1px solid var(--line-soft);
+}
+
+.group-items:empty {
+  border-left-color: transparent;
+}
+
+.group-items.collapsed {
+  display: none;
+}
+
+.group-items:empty::after {
+  content: "拖拽接口到此处";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  margin: 2px 0;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--ink-faint);
+  font-size: 10px;
+}
+
 .api-list {
   flex: 1 1 auto;
   min-height: 0;
-  max-height: calc(100dvh - 210px);
+  margin-top: 8px;
+  padding-right: 5px;
+  padding-bottom: 6px;
   overflow: auto;
   overscroll-behavior: contain;
-  margin-top: 10px;
+  scrollbar-gutter: stable;
 }
 
 .api-item {
   width: 100%;
-  min-height: 38px;
-  border-radius: 8px;
+  min-height: 30px;
+  padding: 0 3px 0 0;
+  border-radius: 7px;
   background: transparent;
   color: var(--ink);
-  padding: 3px 6px;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
 }
 
 .api-item:hover {
   background: var(--surface-muted);
+}
+
+.api-item.active {
+  background: var(--surface-active);
+  color: var(--ink-strong);
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.api-item.active .api-name {
+  font-weight: 650;
+}
+
+.api-item.is-off .api-name {
+  color: var(--ink-muted);
 }
 
 .drag-handle {
@@ -350,11 +553,26 @@ aside {
   width: 12px;
   color: var(--ink-faint);
   cursor: grab;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
   text-align: center;
   user-select: none;
   touch-action: none;
+}
+
+.api-item .drag-handle,
+.group-header .group-drag-handle {
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.api-item:hover .drag-handle,
+.api-item:focus-within .drag-handle,
+.group-header:hover .group-drag-handle,
+.group-header:focus-visible .group-drag-handle,
+.drag-ghost .drag-handle,
+.drag-chosen .drag-handle {
+  opacity: 1;
 }
 
 .drag-handle:hover {
@@ -363,6 +581,13 @@ aside {
 
 .drag-handle:active {
   cursor: grabbing;
+}
+
+@media (hover: none) {
+  .api-item .drag-handle,
+  .group-header .group-drag-handle {
+    opacity: 0.5;
+  }
 }
 
 .drag-ghost {
@@ -379,16 +604,9 @@ aside {
 }
 
 .sort-hint {
-  padding: 5px 6px 0 24px;
+  padding: 6px 4px 0;
   color: var(--ink-faint);
-  font-size: 10px;
-}
-
-.api-item.active {
-  background: var(--surface-active);
-  color: var(--accent-strong);
-  font-weight: 600;
-  box-shadow: inset 2px 0 var(--accent);
+  font-size: 11px;
 }
 
 .api-select {
@@ -397,18 +615,34 @@ aside {
   border: 0;
   background: transparent;
   color: inherit;
-  padding: 7px 2px;
+  padding: 6px 0;
   text-align: left;
   cursor: pointer;
 }
 
 .api-name {
   display: block;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px;
+}
+
+.api-item > .compact-toggle {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 15px;
+  padding: 2px;
+  margin-right: 1px;
+}
+
+.api-item > .compact-toggle i {
+  width: 11px;
+  height: 11px;
+}
+
+.api-item > .compact-toggle.checked i {
+  transform: translateX(11px);
 }
 
 .loading-state,
@@ -422,11 +656,11 @@ aside {
 .side-foot {
   margin-top: auto;
   border-top: 1px solid var(--line-soft);
-  padding: 9px 2px 0;
+  padding: 8px 2px 0;
   display: flex;
   align-items: baseline;
-  gap: 7px;
-  font-size: 10px;
+  gap: 6px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -436,7 +670,10 @@ aside {
 }
 
 .side-foot b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--ink-strong);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
 }

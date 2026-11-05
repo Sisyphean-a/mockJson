@@ -3,6 +3,7 @@ import {
   type CaptureDraft,
   type CaptureSaveResult,
   type SaveCaptureInput,
+  type ApiGroup,
   type LogicalApi,
   type MatchRule,
   type PackageConfig,
@@ -16,7 +17,7 @@ import {
 } from "../../shared/types";
 import { createRuntimeEndpoints, type RuntimeEndpoints } from "./runtime-endpoints";
 
-export type { LogicalApi, MatchRule, PackageConfig, RealService, RequestLog, RequestLogsDeltaResponse, RequestLogsResponse, Scenario, State };
+export type { ApiGroup, LogicalApi, MatchRule, PackageConfig, RealService, RequestLog, RequestLogsDeltaResponse, RequestLogsResponse, Scenario, State };
 export type Api = LogicalApi;
 export type Pkg = PackageConfig;
 export type Scene = Scenario;
@@ -137,7 +138,23 @@ export class MockAdminClient {
     return this.request<LogicalApi[]>(`/__mock_admin/packages/${packageId}/apis/order`, json("PUT", { ids }));
   }
 
-  async updateApi(id: string, input: Partial<Pick<LogicalApi, "name" | "enabled" | "priority" | "matchMode" | "matchRules">>) {
+  async createApiGroup(packageId: string, name: string) {
+    return this.request<ApiGroup>(`/__mock_admin/packages/${packageId}/api-groups`, json("POST", { name }));
+  }
+
+  async reorderApiGroups(packageId: string, ids: string[]) {
+    return this.request<ApiGroup[]>(`/__mock_admin/packages/${packageId}/api-groups/order`, json("PUT", { ids }));
+  }
+
+  async updateApiGroup(id: string, name: string) {
+    return this.request<ApiGroup>(`/__mock_admin/api-groups/${id}`, json("PATCH", { name }));
+  }
+
+  async deleteApiGroup(id: string) {
+    return this.request<{ success: true }>(`/__mock_admin/api-groups/${id}`, { method: "DELETE" });
+  }
+
+  async updateApi(id: string, input: Partial<Pick<LogicalApi, "name" | "enabled" | "priority" | "matchMode" | "matchRules" | "groupId">>) {
     return this.request<LogicalApi>(`/__mock_admin/apis/${id}`, json("PATCH", input));
   }
 

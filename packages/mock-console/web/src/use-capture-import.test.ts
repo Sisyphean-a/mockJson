@@ -9,7 +9,7 @@ import type { CaptureSaveResult, State } from "../../shared/types";
 
 function setup() {
   const scope = effectScope();
-  const state: State = { currentPackageId: "p", packages: [{ id: "p", name: "测试包", realServices: [], activeRealServiceId: null, apis: [] }] };
+  const state: State = { currentPackageId: "p", packages: [{ id: "p", name: "测试包", realServices: [], activeRealServiceId: null, apiGroups: [], apis: [] }] };
   const result: CaptureSaveResult = { packageId: "p", apiId: "a", scenarioId: "s", activated: false };
   const posts: unknown[] = [];
   let fail = false, failReveal = false, viewed = 0;

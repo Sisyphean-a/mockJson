@@ -19,7 +19,7 @@
   .environment-control { padding-left: 8px; }
 
   main {
-    grid-template-columns: 246px minmax(0, 1fr);
+    grid-template-columns: clamp(280px, 26vw, 320px) minmax(0, 1fr);
   }
 
   .rule-form {

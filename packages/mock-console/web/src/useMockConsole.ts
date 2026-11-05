@@ -1,6 +1,7 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { MockAdminClient } from "./mock-admin-client";
 import { useApiActions } from "./use-api-actions";
+import { useApiGroupActions } from "./use-api-group-actions";
 import { useConsoleForms } from "./use-console-forms";
 import { useMockState } from "./use-mock-state";
 import { usePackageActions } from "./use-package-actions";
@@ -35,6 +36,7 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
 
   const packageActions = usePackageActions(client, model, forms, notice, leaveCurrentDraft);
   const apiActions = useApiActions(client, model, forms, notice, leaveCurrentDraft);
+  const apiGroupActions = useApiGroupActions(client, model, forms, notice);
   const scenarioActions = useScenarioActions(client, model, forms, notice, leaveCurrentDraft);
 
   function selectApi(item: Parameters<typeof model.selectApi>[0], after?: () => void) {
@@ -136,6 +138,7 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
     retryLoad,
     ...packageActions,
     ...apiActions,
+    ...apiGroupActions,
     ...scenarioActions,
     ...responseActions,
     selectApi,

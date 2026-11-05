@@ -3,6 +3,7 @@ import { apiControlRevision, controlledApi, inspectApiControls } from "./api-con
 import type { ExtensionControlCommand, ExtensionControlRequest, ExtensionCaptureInput } from "@mock-json/extension-contract";
 import { scenarioReferences, selectionFor, validateSelection } from "../../shared/response-selection.js";
 import type {
+  ApiGroup,
   LogicalApi,
   CaptureSaveResult,
   SaveCaptureInput,
@@ -86,6 +87,46 @@ export class MockConfigService {
     });
   }
 
+  async createApiGroup(packageId: string, input: { name?: unknown }) {
+    return this.enqueue(async () => {
+      const packageConfig = this.requirePackage(packageId);
+      const created: ApiGroup = { id: randomUUID(), name: validateName(input.name, "接口分组") };
+      packageConfig.apiGroups = [...packageConfig.apiGroups, created];
+      await this.save();
+      return created;
+    });
+  }
+
+  async updateApiGroup(id: string, input: { name?: unknown }) {
+    return this.enqueue(async () => {
+      const found = this.requireApiGroup(id);
+      const updated: ApiGroup = { ...found.group, name: validateName(input.name, "接口分组") };
+      found.packageConfig.apiGroups = found.packageConfig.apiGroups.map((group) => (group.id === id ? updated : group));
+      await this.save();
+      return updated;
+    });
+  }
+
+  async deleteApiGroup(id: string) {
+    return this.enqueue(async () => {
+      const found = this.requireApiGroup(id);
+      // Rule: 删除分组只解除归属，接口与其场景保留并回到未分组。
+      found.packageConfig.apis = found.packageConfig.apis.map((api) => (api.groupId === id ? { ...api, groupId: null } : api));
+      found.packageConfig.apiGroups = found.packageConfig.apiGroups.filter((group) => group.id !== id);
+      await this.save();
+      return { success: true };
+    });
+  }
+
+  async reorderApiGroups(packageId: string, input: { ids?: unknown }) {
+    return this.enqueue(async () => {
+      const packageConfig = this.requirePackage(packageId);
+      packageConfig.apiGroups = reorderByIds(packageConfig.apiGroups, input.ids, "接口分组");
+      await this.save();
+      return packageConfig.apiGroups;
+    });
+  }
+
   async reorderScenarios(apiId: string, input: { ids?: unknown }) {
     return this.enqueue(async () => {
       const api = this.requireApi(apiId).api;
@@ -115,6 +156,7 @@ export class MockConfigService {
         name: validateName(input.name, "Package"),
         realServices,
         activeRealServiceId: realServices[0]?.id || null,
+        apiGroups: [],
         apis: [],
       };
       state.packages.push(created);
@@ -258,6 +300,7 @@ export class MockConfigService {
     priority?: unknown;
     matchMode?: unknown;
     matchRules?: unknown;
+    groupId?: unknown;
   }) {
     return this.enqueue(async () => {
       const found = this.requireApi(id);
@@ -280,6 +323,13 @@ export class MockConfigService {
         api.matchMode = input.matchMode;
       }
       if (input.matchRules !== undefined) api.matchRules = validateMatchRules(input.matchRules) as MatchRule[];
+      if (input.groupId !== undefined) {
+        // Rule: null 表示移出分组，分组 ID 必须属于接口所在测试包；分组只影响侧栏分类，不改匹配。
+        if (input.groupId === null) api.groupId = null;
+        else if (typeof input.groupId === "string" && found.packageConfig.apiGroups.some((group) => group.id === input.groupId))
+          api.groupId = input.groupId;
+        else throw new Error("接口分组不存在");
+      }
       await this.save();
       return api;
     });
@@ -316,6 +366,8 @@ export class MockConfigService {
       const destination = this.requirePackage(input.packageId);
       if (destination.id === found.packageConfig.id) throw new Error("接口已经在该测试包中");
       found.packageConfig.apis = found.packageConfig.apis.filter((item) => item.id !== id);
+      // Rule: 分组归属随包走，接口换包后回到未分组。
+      found.api.groupId = null;
       destination.apis = [...destination.apis, found.api];
       await this.save();
       return found.api;
@@ -482,6 +534,14 @@ export class MockConfigService {
     return packageConfig;
   }
 
+  private requireApiGroup(id: string) {
+    for (const packageConfig of this.getState().packages) {
+      const group = packageConfig.apiGroups.find((item) => item.id === id);
+      if (group) return { packageConfig, group };
+    }
+    throw new NotFoundError("API group not found");
+  }
+
   private requireApi(id: string) {
     for (const packageConfig of this.getState().packages) {
       const api = packageConfig.apis.find((item) => item.id === id);
@@ -541,23 +601,36 @@ function findActiveRealService(packageConfig: PackageConfig) {
 function normalizePackage(packageConfig: PersistedPackageConfig): PackageConfig {
   if ("realServices" in packageConfig) {
     const active = packageConfig.realServices.find((item) => item.id === packageConfig.activeRealServiceId);
-    return {
+    return normalizeApiGroups({
       ...packageConfig,
       realServices: [...packageConfig.realServices],
       activeRealServiceId: active?.id || packageConfig.realServices[0]?.id || null,
-    };
+    });
   }
 
   // Rule: 旧版单地址配置只在读取时转换，首次保存其他改动时才落成新结构。
   const targetBaseUrl = validTarget(packageConfig.targetBaseUrl);
   const realServices = targetBaseUrl ? [newRealService("默认服务", targetBaseUrl)] : [];
-  return {
+  return normalizeApiGroups({
     id: packageConfig.id,
     name: packageConfig.name,
     realServices,
     activeRealServiceId: realServices[0]?.id || null,
+    apiGroups: [],
     apis: packageConfig.apis,
-  };
+  });
+}
+
+// Guarantee: 分组列表缺失视为零分组；接口引用不存在的分组时回退未分组，不产生孤儿引用。
+function normalizeApiGroups(packageConfig: PackageConfig): PackageConfig {
+  const apiGroups = Array.isArray(packageConfig.apiGroups)
+    ? packageConfig.apiGroups.map((group) => ({ id: group.id, name: group.name }))
+    : [];
+  const knownGroups = new Set(apiGroups.map((group) => group.id));
+  const apis = packageConfig.apis.map((api) =>
+    api.groupId && !knownGroups.has(api.groupId) ? { ...api, groupId: null } : api,
+  );
+  return { ...packageConfig, apiGroups, apis };
 }
 
 function normalizeState(state: PersistedState): State {

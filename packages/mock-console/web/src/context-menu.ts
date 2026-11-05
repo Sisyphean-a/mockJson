@@ -1,7 +1,8 @@
-import type { Api, Scene } from "./mock-admin-client";
+import type { Api, ApiGroup, Scene } from "./mock-admin-client";
 
 export type ContextTarget =
   | { type: "api"; item: Api }
+  | { type: "api-group"; item: ApiGroup }
   | { type: "api-area" }
   | { type: "scene"; item: Scene }
   | { type: "scene-area" };

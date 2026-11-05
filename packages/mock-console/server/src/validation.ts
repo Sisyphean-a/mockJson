@@ -14,10 +14,16 @@ export function isValidState(value: unknown): value is PersistedState {
   return value.packages.every(isValidPackage);
 }
 
+function isValidApiGroup(value: unknown) {
+  return isRecord(value) && isUuidLike(value.id) && typeof value.name === "string";
+}
+
 export function isValidPackage(value: unknown): value is PersistedPackageConfig {
   if (!isRecord(value) || !isUuidLike(value.id) || typeof value.name !== "string" || !Array.isArray(value.apis))
     return false;
   if (!value.apis.every(isValidApi)) return false;
+  if (value.apiGroups !== undefined && (!Array.isArray(value.apiGroups) || !value.apiGroups.every(isValidApiGroup)))
+    return false;
   if (Object.hasOwn(value, "realServices") || Object.hasOwn(value, "activeRealServiceId")) {
     return (
       Array.isArray(value.realServices) &&
@@ -54,6 +60,7 @@ function isValidApi(value: unknown) {
     typeof value.name === "string" &&
     typeof value.enabled === "boolean" &&
     (value.passthrough === undefined || typeof value.passthrough === "boolean") &&
+    (value.groupId === undefined || value.groupId === null || isUuidLike(value.groupId)) &&
     Number.isInteger(value.priority) &&
     (value.matchMode === "AND" || value.matchMode === "OR") &&
     Array.isArray(value.matchRules) &&

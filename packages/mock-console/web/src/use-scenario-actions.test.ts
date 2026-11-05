@@ -10,7 +10,7 @@ import type { State } from "../../shared/types";
 
 async function setup() {
   const scope = effectScope();
-  const state: State = { currentPackageId: "p", packages: [{ id: "p", name: "p", realServices: [], activeRealServiceId: null,
+  const state: State = { currentPackageId: "p", packages: [{ id: "p", name: "p", realServices: [], activeRealServiceId: null, apiGroups: [],
     apis: [{ id: "a", name: "a", enabled: true, priority: 0, matchMode: "AND", matchRules: [], activeScenarioId: null, scenarios: [] }] }] };
   const writes: { url: string; input: any }[] = [];
   const scenes = new Map<string, Record<string, unknown>>();

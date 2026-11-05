@@ -11,7 +11,7 @@ import type { State } from "../../shared/types";
 
 async function setup() {
   const scope = effectScope();
-  const state: State = { currentPackageId: "p", packages: [{ id: "p", name: "p", realServices: [], activeRealServiceId: null, apis: ["a", "b"].map((id) => ({ id, name: id, enabled: true, priority: 10, matchMode: "OR", matchRules: [], activeScenarioId: `${id}-first`, scenarios: [{ id: `${id}-first`, name: "默认", status: 200, delayMs: 0, responseBody: {} }, { id: `${id}-second`, name: "空白", status: 200, delayMs: 0, responseBody: {} }] })) }] };
+  const state: State = { currentPackageId: "p", packages: [{ id: "p", name: "p", realServices: [], activeRealServiceId: null, apiGroups: [], apis: ["a", "b"].map((id) => ({ id, name: id, enabled: true, priority: 10, matchMode: "OR", matchRules: [], activeScenarioId: `${id}-first`, scenarios: [{ id: `${id}-first`, name: "默认", status: 200, delayMs: 0, responseBody: {} }, { id: `${id}-second`, name: "空白", status: 200, delayMs: 0, responseBody: {} }] })) }] };
   let calls = 0, fail = false;
   let delay: (() => Promise<void>) | undefined;
   const transport: AdminTransport = { async send(url, init) {

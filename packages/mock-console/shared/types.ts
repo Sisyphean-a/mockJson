@@ -65,11 +65,17 @@ export type ResponseSelection = {
   fallback: { enabled: boolean; scenarioId: string | null };
 };
 
+export type ApiGroup = {
+  id: string;
+  name: string;
+};
+
 export type LogicalApi = {
   id: string;
   name: string;
   enabled: boolean;
   passthrough?: boolean;
+  groupId?: string | null;
   priority: number;
   matchMode: "AND" | "OR";
   matchRules: MatchRule[];
@@ -89,6 +95,8 @@ export type PackageConfig = {
   name: string;
   realServices: RealService[];
   activeRealServiceId: string | null;
+  // Rule: apiGroups 顺序是分组展示顺序；接口分组只是侧栏分类，不参与运行时匹配。
+  apiGroups: ApiGroup[];
   apis: LogicalApi[];
 };
 

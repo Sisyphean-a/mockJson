@@ -15,12 +15,12 @@ import { isValidState } from "./validation.js";
 const request = { url: "https://business.test/api", method: "POST", headers: { apiName: "profile" } };
 const origin = "chrome-extension://" + "a".repeat(32);
 function initialState(): State {
-  return { currentPackageId: "p", packages: [{ id: "p", name: "当前测试包", realServices: [], activeRealServiceId: null, apis: [{
+  return { currentPackageId: "p", packages: [{ id: "p", name: "当前测试包", realServices: [], activeRealServiceId: null, apiGroups: [], apis: [{
     id: "api", name: "身份资料", enabled: true, priority: 10, matchMode: "AND",
     matchRules: [{ id: "r", source: "header", field: "apiName", operator: "equals", value: "profile" }],
     activeScenarioId: "one", responseSelection: { mode: "conditional", branches: [{ id: "b", name: "成功", matchMode: "AND", conditions: [{ id: "c", source: "header", field: "apiName", operator: "equals", value: "profile" }], scenarioId: "one" }], fallback: { enabled: false, scenarioId: null } },
     scenarios: [{ id: "one", name: "成功", status: 200, delayMs: 0, responseBody: { secretBody: "first" } }, { id: "two", name: "失败", status: 400, delayMs: 0, responseBody: { result: "second" } }, { id: "unsupported", name: "信息响应", status: 101, delayMs: 0, responseBody: {} }],
-  }, { id: "broad", name: "低优先级", enabled: true, priority: 0, matchMode: "OR", matchRules: [{ id: "broad-r", source: "method", field: "method", operator: "equals", value: "POST" }], activeScenarioId: "broad-scene", scenarios: [{ id: "broad-scene", name: "低优先级响应", status: 200, delayMs: 0, responseBody: {} }] }] }, { id: "other", name: "其他测试包", realServices: [], activeRealServiceId: null, apis: [] }] };
+  }, { id: "broad", name: "低优先级", enabled: true, priority: 0, matchMode: "OR", matchRules: [{ id: "broad-r", source: "method", field: "method", operator: "equals", value: "POST" }], activeScenarioId: "broad-scene", scenarios: [{ id: "broad-scene", name: "低优先级响应", status: 200, delayMs: 0, responseBody: {} }] }] }, { id: "other", name: "其他测试包", realServices: [], activeRealServiceId: null, apiGroups: [], apis: [] }] };
 }
 async function setup() {
   let saved = initialState();

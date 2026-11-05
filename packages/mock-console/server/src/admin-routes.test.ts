@@ -163,3 +163,41 @@ test("管理 API 可以读取和清空运行态请求日志", async () => {
   assert.deepEqual(empty.json(), { logs: [] });
   await app.close();
 });
+
+test("管理 API 支持接口分组的创建、改名、排序与删除", async () => {
+  const service = new MockConfigService(new MemoryRepository());
+  await service.initialize();
+  const packageConfig = await service.createPackage({ name: "测试包" });
+  const api = await service.createApi(packageConfig.id, { name: "接口" });
+  const logs = new RequestLogStore();
+  const app = Fastify();
+  registerAdminRoutes(app, service, logs);
+
+  const created = await app.inject({ method: "POST", url: `/__mock_admin/packages/${packageConfig.id}/api-groups`, payload: { name: "结算" } });
+  assert.equal(created.statusCode, 201);
+  const group = created.json();
+
+  const bad = await app.inject({ method: "PATCH", url: `/__mock_admin/api-groups/${group.id}`, payload: { name: "  " } });
+  assert.equal(bad.statusCode, 400);
+
+  const renamed = await app.inject({ method: "PATCH", url: `/__mock_admin/api-groups/${group.id}`, payload: { name: "结算相关" } });
+  assert.equal(renamed.statusCode, 200);
+  assert.equal(renamed.json().name, "结算相关");
+
+  const member = await app.inject({ method: "PATCH", url: `/__mock_admin/apis/${api.id}`, payload: { groupId: group.id } });
+  assert.equal(member.statusCode, 200);
+  const invalidMember = await app.inject({ method: "PATCH", url: `/__mock_admin/apis/${api.id}`, payload: { groupId: "missing" } });
+  assert.equal(invalidMember.statusCode, 400);
+
+  const reordered = await app.inject({ method: "PUT", url: `/__mock_admin/packages/${packageConfig.id}/api-groups/order`, payload: { ids: [group.id] } });
+  assert.equal(reordered.statusCode, 200);
+  assert.deepEqual(reordered.json().map((item: { id: string }) => item.id), [group.id]);
+
+  const badOrder = await app.inject({ method: "PUT", url: `/__mock_admin/packages/${packageConfig.id}/api-groups/order`, payload: { ids: ["missing"] } });
+  assert.equal(badOrder.statusCode, 400);
+
+  const removed = await app.inject({ method: "DELETE", url: `/__mock_admin/api-groups/${group.id}` });
+  assert.equal(removed.statusCode, 200);
+  assert.equal(service.getState().packages[0].apis[0].groupId ?? null, null);
+  await app.close();
+});

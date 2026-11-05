@@ -9,7 +9,7 @@ import { useApiActions } from "./use-api-actions";
 import type { State } from "../../shared/types";
 
 test("控制台恢复已放行接口时发送启用动作，成功同步放行标记，失败保留状态", async () => {
-  const state: State = { currentPackageId: "p", packages: [{ id: "p", name: "p", realServices: [], activeRealServiceId: null, apis: [{
+  const state: State = { currentPackageId: "p", packages: [{ id: "p", name: "p", realServices: [], activeRealServiceId: null, apiGroups: [], apis: [{
     id: "a", name: "接口", enabled: true, passthrough: true, priority: 0, matchMode: "AND", matchRules: [],
     activeScenarioId: "s", scenarios: [{ id: "s", name: "场景", status: 200, delayMs: 0, responseBody: { ok: true } }],
   }] }] };

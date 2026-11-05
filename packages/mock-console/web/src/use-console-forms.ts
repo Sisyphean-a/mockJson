@@ -7,6 +7,11 @@ export function useConsoleForms() {
   const expanded = ref(true);
   const draftDirty = ref(false);
   const showApi = ref(false);
+  const showApiGroup = ref(false);
+  const editingApiGroupId = ref<string | null>(null);
+  const apiGroupName = ref("");
+  const showApiGroupDelete = ref(false);
+  const apiGroupDeleteId = ref<string | null>(null);
   const showScene = ref(false);
   const showPackage = ref(false);
   const showPackageForm = ref(false);
@@ -60,7 +65,7 @@ export function useConsoleForms() {
   });
 
   return {
-    draft, jsonError, expanded, draftDirty, showApi, showScene, showPackage, showPackageForm, showRealServiceForm, showRealServices, showMoveApi, movingApiId, destinationPackageId, sceneEditMode,
+    draft, jsonError, expanded, draftDirty, showApi, showApiGroup, editingApiGroupId, apiGroupName, showApiGroupDelete, apiGroupDeleteId, showScene, showPackage, showPackageForm, showRealServiceForm, showRealServices, showMoveApi, movingApiId, destinationPackageId, sceneEditMode,
     apiName, apiEditName, apiPriority, sceneName, sceneResponseType, sceneFieldPaths, sceneInitialBody, sceneFormError, sceneSaving, editSceneName, editSceneStatus,
     editSceneDelay, editSceneColor, packageName, editingPackageId, realServiceName, realServiceEditId, targetUrl,
     ruleSource, ruleField, ruleOperator, ruleValue, editingRuleId, addingRule,

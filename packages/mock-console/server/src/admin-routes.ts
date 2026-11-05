@@ -114,6 +114,39 @@ export function registerAdminRoutes(
     }
   });
 
+  app.post("/__mock_admin/packages/:packageId/api-groups", async (req, reply) => {
+    try {
+      const group = await service.createApiGroup(routeId(req, "packageId"), body(req));
+      return reply.code(201).send(group);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.put("/__mock_admin/packages/:packageId/api-groups/order", async (req, reply) => {
+    try {
+      return await service.reorderApiGroups(routeId(req, "packageId"), body(req));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.patch("/__mock_admin/api-groups/:id", async (req, reply) => {
+    try {
+      return await service.updateApiGroup(routeId(req, "id"), body(req));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.delete("/__mock_admin/api-groups/:id", async (req, reply) => {
+    try {
+      return await service.deleteApiGroup(routeId(req, "id"));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
   app.patch("/__mock_admin/apis/:id", async (req, reply) => {
     try {
       return await service.updateApi(routeId(req, "id"), body(req));
