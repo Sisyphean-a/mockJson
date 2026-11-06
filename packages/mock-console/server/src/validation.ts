@@ -1,4 +1,4 @@
-import type { PersistedPackageConfig, PersistedState } from "../../shared/types.js";
+import type { GlobalDelay, PersistedPackageConfig, PersistedState } from "../../shared/types.js";
 import { validateMockFields } from "@mock-json/extension-contract/response-fields";
 import { validateSelection } from "../../shared/response-selection.js";
 
@@ -11,7 +11,14 @@ export function isValidState(value: unknown): value is PersistedState {
   if (!isRecord(value) || !Array.isArray(value.packages)) return false;
   if (value.currentPackageId !== null && !isUuidLike(value.currentPackageId))
     return false;
+  if (value.globalDelay !== undefined && !isValidGlobalDelay(value.globalDelay)) return false;
   return value.packages.every(isValidPackage);
+}
+
+function isValidGlobalDelay(value: unknown): value is GlobalDelay {
+  if (!isRecord(value) || (value.mode !== "off" && value.mode !== "fixed" && value.mode !== "random")) return false;
+  const delay = (candidate: unknown) => Number.isInteger(candidate) && Number(candidate) >= 0 && Number(candidate) <= 30000;
+  return delay(value.fixedMs) && delay(value.minMs) && delay(value.maxMs) && Number(value.minMs) <= Number(value.maxMs);
 }
 
 function isValidApiGroup(value: unknown) {

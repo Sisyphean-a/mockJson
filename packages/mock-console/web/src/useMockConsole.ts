@@ -3,6 +3,7 @@ import { MockAdminClient } from "./mock-admin-client";
 import { useApiActions } from "./use-api-actions";
 import { useApiGroupActions } from "./use-api-group-actions";
 import { useConsoleForms } from "./use-console-forms";
+import { useGlobalDelay } from "./use-global-delay";
 import { useMockState } from "./use-mock-state";
 import { usePackageActions } from "./use-package-actions";
 import { useScenarioActions } from "./use-scenario-actions";
@@ -29,6 +30,8 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
   function toggleMatchCollapsed() {
     matchCollapsed.value = !matchCollapsed.value;
   }
+
+  const globalDelay = useGlobalDelay(client, model.state, notice);
 
   function leaveCurrentDraft() {
     return !forms.draftDirty.value || window.confirm("当前 JSON 尚未自动保存完成，确定要离开吗？");
@@ -132,6 +135,7 @@ export function useMockConsole(endpoints: RuntimeEndpoints = createRuntimeEndpoi
     closeCapture,
     ...requestLogs,
     ...forms,
+    ...globalDelay,
     toast,
     matchCollapsed,
     toggleMatchCollapsed,

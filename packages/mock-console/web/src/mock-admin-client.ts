@@ -2,6 +2,7 @@ import {
   MAX_REQUEST_LOGS,
   type CaptureDraft,
   type CaptureSaveResult,
+  type GlobalDelay,
   type SaveCaptureInput,
   type ApiGroup,
   type LogicalApi,
@@ -17,7 +18,7 @@ import {
 } from "../../shared/types";
 import { createRuntimeEndpoints, type RuntimeEndpoints } from "./runtime-endpoints";
 
-export type { ApiGroup, LogicalApi, MatchRule, PackageConfig, RealService, RequestLog, RequestLogsDeltaResponse, RequestLogsResponse, Scenario, State };
+export type { ApiGroup, GlobalDelay, LogicalApi, MatchRule, PackageConfig, RealService, RequestLog, RequestLogsDeltaResponse, RequestLogsResponse, Scenario, State };
 export type Api = LogicalApi;
 export type Pkg = PackageConfig;
 export type Scene = Scenario;
@@ -68,6 +69,10 @@ export class MockAdminClient {
 
   async getState() {
     return this.request<State>("/__mock_admin/state");
+  }
+
+  async updateGlobalDelay(input: GlobalDelay) {
+    return this.request<GlobalDelay>("/__mock_admin/global-delay", json("PUT", input));
   }
 
   async getLogs() {

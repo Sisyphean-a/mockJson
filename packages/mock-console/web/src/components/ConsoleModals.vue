@@ -4,17 +4,18 @@ import type { ConsoleController } from "../console-controller";
 import ScenarioTypeFields from "./ScenarioTypeFields.vue";
 import JsonEditor from "./JsonEditor.vue";
 
-type ConsoleModalsController = Pick<ConsoleController, "showApi" | "showApiGroup" | "showApiGroupDelete" | "apiGroupDeleteTarget" | "apiGroupDeleteCount" | "confirmApiGroupDelete" | "cancelApiGroupDelete" | "editingApiGroupId" | "apiGroupName" | "saveApiGroup" | "showScene" | "showPackage" | "showPackageForm" | "showRealServices" | "showRealServiceForm" | "showMoveApi" | "movingApiId" | "destinationPackageId" | "state" | "sceneEditMode" | "editingPackageId" | "apiEditName" | "apiName" | "apiPriority" | "packageName" | "realServiceName" | "realServiceEditId" | "targetUrl" | "sceneName" | "sceneResponseType" | "sceneFieldPaths" | "sceneInitialBody" | "sceneFormError" | "sceneSaving" | "api" | "editSceneName" | "editSceneStatus" | "editSceneDelay" | "editSceneColor" | "pkg" | "openPackage" | "deletePackage" | "savePackage" | "saveApi" | "createApi" | "openNewRealService" | "openRealServiceEdit" | "selectRealService" | "saveRealService" | "deleteRealService" | "moveApi" | "saveScene" | "createScene" | "leavePrompt" | "resolveResponseLeave" | "responseSaving" | "responseError">;
+type ConsoleModalsController = Pick<ConsoleController, "showGlobalDelay" | "globalDelayDraft" | "globalDelaySaving" | "globalDelayError" | "saveGlobalDelay" | "closeGlobalDelay" | "showApi" | "showApiGroup" | "showApiGroupDelete" | "apiGroupDeleteTarget" | "apiGroupDeleteCount" | "confirmApiGroupDelete" | "cancelApiGroupDelete" | "editingApiGroupId" | "apiGroupName" | "saveApiGroup" | "showScene" | "showPackage" | "showPackageForm" | "showRealServices" | "showRealServiceForm" | "showMoveApi" | "movingApiId" | "destinationPackageId" | "state" | "sceneEditMode" | "editingPackageId" | "apiEditName" | "apiName" | "apiPriority" | "packageName" | "realServiceName" | "realServiceEditId" | "targetUrl" | "sceneName" | "sceneResponseType" | "sceneFieldPaths" | "sceneInitialBody" | "sceneFormError" | "sceneSaving" | "api" | "editSceneName" | "editSceneStatus" | "editSceneDelay" | "editSceneColor" | "pkg" | "openPackage" | "deletePackage" | "savePackage" | "saveApi" | "createApi" | "openNewRealService" | "openRealServiceEdit" | "selectRealService" | "saveRealService" | "deleteRealService" | "moveApi" | "saveScene" | "createScene" | "leavePrompt" | "resolveResponseLeave" | "responseSaving" | "responseError">;
 const { controller: c } = defineProps<{ controller: ConsoleModalsController }>();
 const modalRef = ref<HTMLElement | null>(null);
 const modalTrigger = ref<HTMLElement | null>(null);
-const modalOpen = computed(() => c.leavePrompt.value || c.showApi.value || c.showApiGroup.value || c.showApiGroupDelete.value || c.showScene.value || c.showPackage.value || c.showRealServices.value || c.showMoveApi.value);
+const modalOpen = computed(() => c.leavePrompt.value || c.showGlobalDelay.value || c.showApi.value || c.showApiGroup.value || c.showApiGroupDelete.value || c.showScene.value || c.showPackage.value || c.showRealServices.value || c.showMoveApi.value);
 const movingApi = computed(() => c.pkg.value?.apis.find((item) => item.id === c.movingApiId.value));
 const sceneDialog = computed(() => c.showScene.value && !c.leavePrompt.value);
 
 function closeModal() {
   if (sceneDialog.value && c.sceneSaving.value) return;
   if (c.leavePrompt.value) { void c.resolveResponseLeave("cancel"); return; }
+  c.closeGlobalDelay();
   c.showApi.value = false;
   c.showApiGroup.value = false;
   c.cancelApiGroupDelete();
@@ -91,11 +92,11 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
 <template>
   <!-- Rule: 点击遮罩不关闭弹窗，避免选中文本或拖拽时误关；只通过关闭按钮、取消或 Escape 退出。 -->
   <div v-if="modalOpen" class="modal-backdrop">
-    <div ref="modalRef" :class="['modal', { 'real-services-modal': c.showRealServices.value, 'scene-create-modal': sceneDialog && !c.sceneEditMode.value, 'scene-settings-modal': sceneDialog && c.sceneEditMode.value }]" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-description" tabindex="-1">
-      <button class="close" aria-label="关闭" :disabled="sceneDialog && c.sceneSaving.value" @click="closeModal">×</button>
-      <h2 id="modal-title">{{ c.showApiGroupDelete.value ? "删除接口分组" : c.leavePrompt.value ? "响应选择尚未保存" : c.showMoveApi.value ? "切换包" : c.showRealServices.value ? "管理转发环境" : c.showPackage.value ? "管理测试包" : c.showApiGroup.value ? (c.editingApiGroupId.value ? "编辑接口分组" : "新建接口分组") : c.showApi.value ? (c.apiEditName.value ? "编辑逻辑接口" : "新建逻辑接口") : c.sceneEditMode.value ? "编辑响应场景" : "新建响应场景" }}</h2>
+    <div ref="modalRef" :class="['modal', { 'global-delay-modal': c.showGlobalDelay.value, 'real-services-modal': c.showRealServices.value, 'scene-create-modal': sceneDialog && !c.sceneEditMode.value, 'scene-settings-modal': sceneDialog && c.sceneEditMode.value }]" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-description" tabindex="-1">
+      <button class="close" aria-label="关闭" :disabled="(sceneDialog && c.sceneSaving.value) || (c.showGlobalDelay.value && c.globalDelaySaving.value)" @click="closeModal">×</button>
+      <h2 id="modal-title">{{ c.showApiGroupDelete.value ? "删除接口分组" : c.leavePrompt.value ? "响应选择尚未保存" : c.showGlobalDelay.value ? "全局延迟" : c.showMoveApi.value ? "切换包" : c.showRealServices.value ? "管理转发环境" : c.showPackage.value ? "管理测试包" : c.showApiGroup.value ? (c.editingApiGroupId.value ? "编辑接口分组" : "新建接口分组") : c.showApi.value ? (c.apiEditName.value ? "编辑逻辑接口" : "新建逻辑接口") : c.sceneEditMode.value ? "编辑响应场景" : "新建响应场景" }}</h2>
       <p v-if="sceneDialog" id="modal-description" class="scene-dialog-context">{{ c.api.value?.name }}</p>
-      <p v-else id="modal-description">{{ c.showApiGroupDelete.value ? `分组「${c.apiGroupDeleteTarget.value?.name || ""}」中的 ${c.apiGroupDeleteCount.value} 个接口会移到「未分组」，接口、规则和场景都不会删除。` : c.leavePrompt.value ? "保存后生效，或放弃本轮响应模式与分支改动；取消则继续编辑。场景 JSON 仍独立保存。" : c.showMoveApi.value ? `将「${movingApi?.name || '接口'}」及其规则、响应场景移至其他测试包。当前运行测试包不会切换。` : c.showRealServices.value ? `仅管理「${c.pkg.value?.name || '当前测试包'}」的真实转发地址（未命中与混合响应使用）。` : c.showPackage.value ? "测试包各自拥有独立的接口与转发环境。" : c.showApiGroup.value ? "分组只在侧栏归拢接口，不影响优先级与匹配。" : c.showApi.value ? "用业务名称和优先级标识一个可切换的接口。" : "" }}</p>
+      <p v-else id="modal-description">{{ c.showApiGroupDelete.value ? `分组「${c.apiGroupDeleteTarget.value?.name || ""}」中的 ${c.apiGroupDeleteCount.value} 个接口会移到「未分组」，接口、规则和场景都不会删除。` : c.leavePrompt.value ? "保存后生效，或放弃本轮响应模式与分支改动；取消则继续编辑。场景 JSON 仍独立保存。" : c.showGlobalDelay.value ? "覆盖所有接口与场景的响应延迟，用于检查等待和加载状态。" : c.showMoveApi.value ? `将「${movingApi?.name || '接口'}」及其规则、响应场景移至其他测试包。当前运行测试包不会切换。` : c.showRealServices.value ? `仅管理「${c.pkg.value?.name || '当前测试包'}」的真实转发地址（未命中与混合响应使用）。` : c.showPackage.value ? "测试包各自拥有独立的接口与转发环境。" : c.showApiGroup.value ? "分组只在侧栏归拢接口，不影响优先级与匹配。" : c.showApi.value ? "用业务名称和优先级标识一个可切换的接口。" : "" }}</p>
       <template v-if="c.showApiGroupDelete.value">
           <div class="modal-footer"><button class="secondary" autofocus @click="c.cancelApiGroupDelete()">取消</button><button class="secondary danger" @click="c.confirmApiGroupDelete()">删除分组</button></div>
         </template>
@@ -168,6 +169,60 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
         <input id="api-priority" v-if="c.apiEditName.value" v-model.number="c.apiPriority.value" type="number" min="0" placeholder="优先级" @keyup.enter="c.saveApi" />
         <button class="primary full" @click="c.apiEditName.value ? c.saveApi() : c.createApi()">保存</button>
       </template>
+      <form v-else-if="c.showGlobalDelay.value" class="global-delay-form" @submit.prevent="c.saveGlobalDelay">
+        <fieldset class="delay-modes" :disabled="c.globalDelaySaving.value">
+          <legend class="form-label">延迟方式</legend>
+          <label :class="{ active: c.globalDelayDraft.value.mode === 'off' }">
+            <input v-model="c.globalDelayDraft.value.mode" type="radio" value="off" :autofocus="c.globalDelayDraft.value.mode === 'off'" />
+            <span>关闭</span>
+          </label>
+          <label :class="{ active: c.globalDelayDraft.value.mode === 'fixed' }">
+            <input v-model="c.globalDelayDraft.value.mode" type="radio" value="fixed" :autofocus="c.globalDelayDraft.value.mode === 'fixed'" />
+            <span>固定延迟</span>
+          </label>
+          <label :class="{ active: c.globalDelayDraft.value.mode === 'random' }">
+            <input v-model="c.globalDelayDraft.value.mode" type="radio" value="random" :autofocus="c.globalDelayDraft.value.mode === 'random'" />
+            <span>随机延迟</span>
+          </label>
+        </fieldset>
+
+        <div v-if="c.globalDelayDraft.value.mode === 'fixed'" class="delay-fields">
+          <label class="form-label" for="global-delay-fixed">固定延迟（毫秒）</label>
+          <div class="delay-input">
+            <input id="global-delay-fixed" v-model.number="c.globalDelayDraft.value.fixedMs" type="number" min="0" max="30000" step="50" inputmode="numeric" />
+            <span>ms</span>
+          </div>
+          <div class="delay-presets" aria-label="常用延迟">
+            <button v-for="ms in [200, 500, 1000, 2000]" :key="ms" type="button" :class="{ active: c.globalDelayDraft.value.fixedMs === ms }" @click="c.globalDelayDraft.value.fixedMs = ms">{{ ms }}</button>
+          </div>
+        </div>
+
+        <div v-else-if="c.globalDelayDraft.value.mode === 'random'" class="delay-fields">
+          <span class="form-label">随机范围（毫秒）</span>
+          <div class="delay-range">
+            <input v-model.number="c.globalDelayDraft.value.minMs" aria-label="随机延迟最小值" type="number" min="0" max="30000" inputmode="numeric" />
+            <span>至</span>
+            <input v-model.number="c.globalDelayDraft.value.maxMs" aria-label="随机延迟最大值" type="number" min="0" max="30000" inputmode="numeric" />
+          </div>
+        </div>
+
+        <p v-else class="delay-off-note">关闭时沿用每个接口自己的场景延迟。</p>
+
+        <div class="delay-preview" :class="{ off: c.globalDelayDraft.value.mode === 'off' }">
+          <span>效果预览</span>
+          <strong v-if="c.globalDelayDraft.value.mode === 'fixed'">每次 Mock 响应固定等待 {{ c.globalDelayDraft.value.fixedMs }} ms</strong>
+          <strong v-else-if="c.globalDelayDraft.value.mode === 'random'">每次 Mock 响应在 {{ c.globalDelayDraft.value.minMs }}–{{ c.globalDelayDraft.value.maxMs }} ms 内随机等待</strong>
+          <strong v-else>按各接口场景设置的延迟响应</strong>
+        </div>
+
+        <p class="delay-scope">仅影响 Mock 与混合响应，放行和转发请求不额外等待。</p>
+        <p v-if="c.globalDelayError.value" class="scene-dialog-error" role="alert">{{ c.globalDelayError.value }}</p>
+
+        <div class="modal-footer">
+          <button type="button" class="secondary" :disabled="c.globalDelaySaving.value" @click="c.closeGlobalDelay">取消</button>
+          <button type="submit" class="primary" :disabled="c.globalDelaySaving.value">{{ c.globalDelaySaving.value ? "保存中…" : "保存" }}</button>
+        </div>
+      </form>
       <form v-else class="scene-dialog-form" :aria-busy="c.sceneSaving.value" @submit.prevent="c.saveScene" @invalid.capture="revealInvalidField">
         <div class="scene-dialog-body">
           <fieldset class="scene-settings" :disabled="c.sceneSaving.value">

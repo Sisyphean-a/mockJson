@@ -111,14 +111,33 @@ export type LegacyPackageConfig = {
 
 export type PersistedPackageConfig = PackageConfig | LegacyPackageConfig;
 
+export type GlobalDelayMode = "off" | "fixed" | "random";
+
+// Rule: 全局延迟覆盖所有接口的场景延迟；关闭时恢复各场景自己的延迟。
+export type GlobalDelay = {
+  mode: GlobalDelayMode;
+  fixedMs: number;
+  minMs: number;
+  maxMs: number;
+};
+
+export const DEFAULT_GLOBAL_DELAY: GlobalDelay = {
+  mode: "off",
+  fixedMs: 500,
+  minMs: 200,
+  maxMs: 800,
+};
+
 export type State = {
   currentPackageId: string | null;
   packages: PackageConfig[];
+  globalDelay?: GlobalDelay;
 };
 
 export type PersistedState = {
   currentPackageId: string | null;
   packages: PersistedPackageConfig[];
+  globalDelay?: GlobalDelay;
 };
 
 export const MAX_REQUEST_LOGS = 200;

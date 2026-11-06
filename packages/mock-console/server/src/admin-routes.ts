@@ -10,6 +10,13 @@ export function registerAdminRoutes(
   logs: RequestLogStore,
 ) {
   app.get("/__mock_admin/state", async () => service.getState());
+  app.put("/__mock_admin/global-delay", async (req, reply) => {
+    try {
+      return await service.updateGlobalDelay(body(req));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
   app.get("/__mock_admin/logs", async (req, reply) => {
     const etag = logs.etag();
     reply.header("etag", etag).header("cache-control", "no-cache");

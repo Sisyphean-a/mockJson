@@ -6,7 +6,7 @@ import type { Api, ApiGroup } from "../mock-admin-client";
 import type { OpenContextMenu } from "../context-menu";
 import { orderApisAfterGroupDrop } from "../api-group-order";
 
-type ApiSidebarController = Pick<ConsoleController, "openApiCreate" | "openApiGroupCreate" | "search" | "filtered" | "selectedId" | "pkg" | "toggle" | "selectApi" | "reorderApis" | "reorderApiGroups" | "setApiGroup">;
+type ApiSidebarController = Pick<ConsoleController, "openApiCreate" | "openApiGroupCreate" | "openGlobalDelay" | "globalDelayActive" | "globalDelayLabel" | "globalDelayTitle" | "search" | "filtered" | "selectedId" | "pkg" | "toggle" | "selectApi" | "reorderApis" | "reorderApiGroups" | "setApiGroup">;
 const { controller: c, openContextMenu } = defineProps<{ controller: ApiSidebarController; openContextMenu: OpenContextMenu }>();
 
 type DragDataset = { dataset?: Record<string, string | undefined> };
@@ -181,6 +181,10 @@ function openGroupContextFromKeyboard(event: KeyboardEvent, group: ApiGroup) {
     <div class="side-title" @contextmenu.stop>
       <span>逻辑接口</span>
       <div class="side-title-actions">
+        <button class="icon-btn delay-toggle" :aria-pressed="c.globalDelayActive.value" aria-haspopup="dialog" :aria-label="c.globalDelayTitle.value" :title="`${c.globalDelayTitle.value}（点击设置）`" @click="c.openGlobalDelay">
+          <svg class="side-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5v5l3 2" /></svg>
+          <span v-if="c.globalDelayActive.value" class="delay-value">{{ c.globalDelayLabel.value }}</span>
+        </button>
         <button v-if="archivedCount" class="icon-btn archive-toggle" :aria-pressed="showArchived" :aria-label="showArchived ? '隐藏归档' : '展示归档'" :title="showArchived ? '隐藏归档' : '展示归档'" @click="showArchived = !showArchived">
           <svg v-if="showArchived" class="side-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="4" rx="1.5" /><path d="M5 8v10.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V8" /><path d="M12 10.5v6m-2.5-2.5L12 16.5l2.5-2.5" /></svg>
           <svg v-else class="side-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="4" rx="1.5" /><path d="M5 8v10.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V8" /><path d="M12 16.5v-6m-2.5 2.5L12 10.5l2.5 2.5" /></svg>

@@ -7,6 +7,7 @@ import { composeResponse, composedHeaders } from "@mock-json/extension-contract/
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { PackageConfig, RequestLogOutcome, RequestLogResponse, State } from "../../shared/types.js";
 import { selectMatchingApi } from "./runtime-resolver.js";
+import { effectiveDelayMs } from "./global-delay.js";
 import { emptyLogResponse, logRequestHeaders, MAX_LOG_BODY_BYTES, RequestLogStore, textLogResponse } from "./request-logs.js";
 
 const hop = new Set([
@@ -181,7 +182,7 @@ export async function createProxy(
       if (requestCollector) req.raw.on("data", (chunk: Buffer) => requestCollector.collect(chunk));
       await consumeRequestBody(req);
     }
-    await sleep(scene.delayMs);
+    await sleep(effectiveDelayMs(state.globalDelay, scene.delayMs));
     const body = JSON.stringify(scene.responseBody);
     record("mocked", scene.status, textLogResponse("application/json; charset=utf-8", body || ""));
     return streamRequestBody
@@ -265,7 +266,7 @@ export async function createProxy(
               else if (encoding !== "identity") throw new Error(`不支持的响应编码：${encoding}`);
             }
             const body = JSON.stringify(composeResponse(mixed.responseType as "real-overrides" | "mock-with-real", mixed.responseBody, JSON.parse(bytes.toString("utf8")), mixed.fieldPaths ?? []));
-            await sleep(mixed.delayMs);
+            await sleep(effectiveDelayMs(state.globalDelay, mixed.delayMs));
             if (settled || res.raw.destroyed) return;
             const cleanHeaders = composedHeaders(Object.fromEntries(Object.entries(upstreamResponse.headers)
               .filter(([key, value]) => value !== undefined && !hop.has(key))

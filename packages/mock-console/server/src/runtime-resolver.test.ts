@@ -42,6 +42,18 @@ test("扩展判定复用当前接口和场景", () => {
   });
 });
 
+test("扩展响应的延迟被全局固定延迟覆盖", () => {
+  const state = createState();
+  state.globalDelay = { mode: "fixed", fixedMs: 750, minMs: 200, maxMs: 800 };
+  assert.deepEqual(resolveExtensionRequest(state, request), {
+    action: "mock",
+    status: 201,
+    delayMs: 750,
+    body: JSON.stringify({ matched: true }),
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+});
+
 test("扩展未命中时只返回放行，不使用真实服务配置", () => {
   const state = createState();
   state.packages[0].apis[0].matchRules[0].value = "other";

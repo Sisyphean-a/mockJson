@@ -316,6 +316,31 @@ aside {
   cursor: not-allowed;
 }
 
+.icon-btn.delay-toggle {
+  width: auto;
+  min-width: 26px;
+  padding: 0 4px;
+  gap: 4px;
+}
+
+.icon-btn.delay-toggle[aria-pressed="true"] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.icon-btn.delay-toggle[aria-pressed="true"]:hover {
+  background: #e2ebff;
+  color: var(--accent-strong);
+}
+
+.delay-toggle .delay-value {
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .search,
 .log-search {
   min-height: var(--control-height);

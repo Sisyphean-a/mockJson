@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import { apiControlRevision, controlledApi, inspectApiControls } from "./api-control.js";
 import type { ExtensionControlCommand, ExtensionControlRequest, ExtensionCaptureInput } from "@mock-json/extension-contract";
 import { scenarioReferences, selectionFor, validateSelection } from "../../shared/response-selection.js";
+import { DEFAULT_GLOBAL_DELAY } from "../../shared/types.js";
 import type {
   ApiGroup,
   LogicalApi,
   CaptureSaveResult,
+  GlobalDelay,
   SaveCaptureInput,
   MatchRule,
   PackageConfig,
@@ -49,6 +51,7 @@ export class MockConfigService {
           const persisted = JSON.parse(this.persistedSnapshot) as State;
           this.state.packages = persisted.packages;
           this.state.currentPackageId = persisted.currentPackageId;
+          this.state.globalDelay = persisted.globalDelay;
         }
         throw error;
       }
@@ -76,6 +79,23 @@ export class MockConfigService {
 
   getPackageApis(id: string) {
     return this.requirePackage(id).apis;
+  }
+
+  async updateGlobalDelay(input: { mode?: unknown; fixedMs?: unknown; minMs?: unknown; maxMs?: unknown }) {
+    return this.enqueue(async () => {
+      const mode = input.mode;
+      if (mode !== "off" && mode !== "fixed" && mode !== "random") throw new Error("延迟方式不正确");
+      const globalDelay: GlobalDelay = {
+        mode,
+        fixedMs: validateDelay(input.fixedMs, DEFAULT_GLOBAL_DELAY.fixedMs),
+        minMs: validateDelay(input.minMs, DEFAULT_GLOBAL_DELAY.minMs),
+        maxMs: validateDelay(input.maxMs, DEFAULT_GLOBAL_DELAY.maxMs),
+      };
+      if (globalDelay.minMs > globalDelay.maxMs) throw new Error("随机延迟的最小值不能大于最大值");
+      this.getState().globalDelay = globalDelay;
+      await this.save();
+      return globalDelay;
+    });
   }
 
   async reorderApis(packageId: string, input: { ids?: unknown }) {
@@ -642,6 +662,7 @@ function normalizeState(state: PersistedState): State {
   const normalized: State = {
     currentPackageId: state.currentPackageId,
     packages: state.packages.map(normalizePackage),
+    globalDelay: state.globalDelay ? { ...state.globalDelay } : { ...DEFAULT_GLOBAL_DELAY },
   };
   for (const packageConfig of normalized.packages) {
     for (const api of packageConfig.apis) {

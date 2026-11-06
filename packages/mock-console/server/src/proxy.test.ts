@@ -105,6 +105,16 @@ test("代理返回 activeScenarioId 指向的场景", async () => {
   assert.deepEqual(response.json(), { matched: "second" });
 });
 
+test("代理 Mock 响应被全局固定延迟覆盖", async () => {
+  const state = createState(matchingRules());
+  state.packages[0].apis[0].scenarios[0].delayMs = 0;
+  state.globalDelay = { mode: "fixed", fixedMs: 40, minMs: 200, maxMs: 800 };
+  const started = Date.now();
+  const response = await request(state);
+  assert.equal(response.statusCode, 200);
+  assert.ok(Date.now() - started >= 35);
+});
+
 test("fullUrl 可使用查询参数匹配", async () => {
   const response = await request(createState([{ id: "url-rule", source: "url", field: "fullUrl", operator: "contains", value: "case=failed" }]));
   assert.equal(response.statusCode, 200);

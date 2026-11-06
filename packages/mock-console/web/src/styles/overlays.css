@@ -71,6 +71,187 @@
   outline: 0;
 }
 
+.modal.global-delay-modal {
+  width: min(440px, 100%);
+}
+
+.global-delay-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.delay-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+
+.delay-modes legend {
+  grid-column: 1 / -1;
+  padding: 0;
+}
+
+.delay-modes label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.delay-modes label:hover {
+  border-color: var(--accent-line);
+  color: var(--ink);
+}
+
+.delay-modes label.active {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.delay-modes label:focus-within {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
+
+.global-delay-form .delay-modes input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.delay-fields {
+  margin-bottom: 14px;
+}
+
+.delay-input {
+  position: relative;
+}
+
+.delay-input input {
+  margin-bottom: 0;
+  padding-right: 42px;
+}
+
+.delay-input span {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-faint);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.delay-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.delay-presets button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--ink-muted);
+  padding: 3px 9px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.delay-presets button:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.delay-presets button.active {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.delay-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.delay-range span {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+.modal .delay-range input {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.modal .delay-off-note {
+  margin: 0 0 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  padding: 10px 12px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.delay-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--accent-soft);
+  padding: 9px 11px;
+}
+
+.delay-preview span {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.delay-preview strong {
+  color: var(--ink-strong);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.delay-preview.off {
+  border-left-color: var(--line-strong);
+  background: var(--surface-subtle);
+}
+
+.delay-preview.off span {
+  color: var(--ink-faint);
+}
+
+.modal p.delay-scope {
+  margin: 10px 0 14px;
+  font-size: 11px;
+}
+
 .real-services-modal,
 .modal:has(.manager-heading) {
   width: min(520px, 100%);

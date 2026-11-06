@@ -1,6 +1,7 @@
 import type { ExtensionRuntimeRequest, ExtensionRuntimeResponse } from "@mock-json/extension-contract";
 import type { LogicalApi, PackageConfig, Scenario, State } from "../../shared/types.js";
 import { matchApi, type MatchContext } from "./matcher.js";
+import { effectiveDelayMs } from "./global-delay.js";
 import { evaluateSelection, selectionFor, type SelectionRequest } from "../../shared/response-selection.js";
 
 type ActiveApi = State["packages"][number]["apis"][number];
@@ -95,7 +96,7 @@ export function resolveExtension(
     response: {
       action: "transform", responseType: selected.scenario.responseType,
       fieldPaths: selected.scenario.fieldPaths ?? [], status: selected.scenario.status,
-      delayMs: selected.scenario.delayMs, body: JSON.stringify(selected.scenario.responseBody) ?? "null",
+      delayMs: effectiveDelayMs(state.globalDelay, selected.scenario.delayMs), body: JSON.stringify(selected.scenario.responseBody) ?? "null",
     },
   };
 
@@ -106,7 +107,7 @@ export function resolveExtension(
     response: {
       action: "mock",
       status: selected.scenario.status,
-      delayMs: selected.scenario.delayMs,
+      delayMs: effectiveDelayMs(state.globalDelay, selected.scenario.delayMs),
       body: JSON.stringify(selected.scenario.responseBody) ?? "null",
       headers: { "content-type": "application/json; charset=utf-8" },
     },
