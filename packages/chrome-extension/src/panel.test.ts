@@ -173,6 +173,61 @@ function openRowMenu(h: ReturnType<typeof createPanelHarness>, entry = menuEntry
   h.elements.get("rows")!.children[0].listeners.contextmenu({ preventDefault() {}, clientX: 900, clientY: 700 });
 }
 
+test("列表展示响应 code 和请求总耗时，移除时间线与大小", () => {
+  const h = createPanelHarness();
+  assert.match(html, /class="col-code">code<\/th>/);
+  assert.match(html, /class="col-duration">响应时长<\/th>/);
+  assert.doesNotMatch(html, /时间线|>大小<\/th>/);
+  for (const decision of ["mock", "pass", "capture"] as const) {
+    h.messageListener({ type: "snapshot", captureTab: true, entries: [{
+      ...menuEntry, decision, startedAt: 1000, endedAt: 1123.6,
+      response: { status: 200, headers: {}, body: '{"code":0}', size: 4096 },
+    }] });
+    const cells = h.elements.get("rows")!.children[0].children;
+    assert.equal(cells.length, 7);
+    assert.equal(cells[5].textContent, "0");
+    assert.equal(cells[6].textContent, "124 ms");
+  }
+});
+
+test("code 只读取成功 JSON 的一级字段，保留零、字符串及其他 JSON 值", () => {
+  const h = createPanelHarness();
+  const cases: [Partial<protocol.TrafficResponseSnapshot>, string][] = [
+    [{ body: '{"code":200}' }, "200"],
+    [{ body: '{"code":"SUCCESS"}' }, "SUCCESS"],
+    [{ body: '{"code":false}' }, "false"],
+    [{ body: '{"code":null}' }, "null"],
+    [{ body: '{"code":{"value":1}}' }, '{"value":1}'],
+    [{ body: '{"data":{"code":200}}' }, "-"],
+    [{ body: '[{"code":200}]' }, "-"],
+    [{ body: 'null' }, "-"],
+    [{ body: '<html>OK</html>' }, "-"],
+    [{ body: '{"code":200' }, "-"],
+    [{ body: undefined, bodyUnavailable: "binary" }, "-"],
+    [{ body: '{"code":200}', bodyTruncated: true }, "-"],
+    [{ status: 500, body: '{"code":500}' }, "-"],
+    [{ status: 302, body: '{"code":302}' }, "-"],
+  ];
+  for (const [response, expected] of cases) {
+    h.messageListener({ type: "snapshot", captureTab: true, entries: [{
+      ...menuEntry, response: { status: 200, headers: {}, ...response },
+    }] });
+    assert.equal(h.elements.get("rows")!.children[0].children[5].textContent, expected, JSON.stringify(response));
+  }
+});
+
+test("请求从进行中更新到响应完成或失败时刷新 code 与耗时", () => {
+  const h = createPanelHarness();
+  const pending = { ...menuEntry, decision: "pending", startedAt: 1000, endedAt: undefined, response: undefined };
+  h.messageListener({ type: "snapshot", captureTab: true, entries: [pending] });
+  const values = () => h.elements.get("rows")!.children[0].children.slice(5).map(cell => cell.textContent);
+  assert.deepEqual(values(), ["-", "进行中"]);
+  h.messageListener({ type: "entry", entry: { ...pending, decision: "capture", endedAt: 1250, response: { status: 201, headers: {}, body: '{"code":"OK"}' } } });
+  assert.deepEqual(values(), ["OK", "250 ms"]);
+  h.messageListener({ type: "entry", entry: { ...pending, endedAt: 1080, error: { name: "TypeError", message: "Failed to fetch" } } });
+  assert.deepEqual(values(), ["-", "80 ms"]);
+});
+
 test("右键选中请求、按需读取配置，选择场景仅更新当前测试包，不重放请求", async () => {
   const h = createPanelHarness();
   assert.equal(h.controlRequests.length, 0);

@@ -168,10 +168,11 @@ body {
 .col-method { width: 60px; }
 .col-status { width: 58px; }
 .col-decision { width: 70px; }
-.col-timeline { width: 104px; }
-.col-size { width: 58px; }
+.col-code { width: 80px; }
+.col-duration { width: 82px; }
 
-.time, .size { color: var(--muted); font: 10px/1.4 var(--mono); }
+.time, .duration { color: var(--muted); font: 10px/1.4 var(--mono); }
+.code { font: 11px/1.4 var(--mono); }
 
 .url {
   display: block;
@@ -205,29 +206,6 @@ body {
 .badge.info { background: var(--accent-soft); color: var(--accent); }
 .badge.mock { background: var(--violet-soft); color: var(--violet); }
 .badge.muted { background: #eef0f5; color: var(--muted); }
-
-.timeline {
-  position: relative;
-  display: block;
-  height: 7px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #eef0f7;
-}
-
-.timeline-bar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  min-width: 3px;
-  border-radius: 4px;
-  background: var(--accent);
-}
-
-.timeline-bar.mock { background: var(--violet); }
-.timeline-bar.capture { background: var(--amber); }
-.timeline-bar.bad { background: var(--red); }
-.timeline-bar.pending { background: #b7bdce; }
 
 .empty {
   margin: 0;

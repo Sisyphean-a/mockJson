@@ -42,8 +42,6 @@ let search = "";
 let decisionFilter = "all";
 let detailTab: DetailTab = "response";
 let detailScrollTop = 0;
-let timelineStart = 0;
-let timelineSpan = 1;
 let handingOff = false;
 const requestMenu = new RequestContextMenu({
   save: saveToConsole,
@@ -274,7 +272,6 @@ function renderSummary() {
 
 function renderList(keepScroll: boolean) {
   const visible = visibleEntries();
-  updateTimelineRange(visible);
   const shouldStick = !keepScroll || isNearBottom();
   rows.replaceChildren();
   const focusKey = visible.some((entry) => keyOf(entry) === selectedKey) ? selectedKey : visible[0] && keyOf(visible[0]);
@@ -282,18 +279,6 @@ function renderList(keepScroll: boolean) {
   renderSummary();
   renderEmpty(visible.length);
   if (shouldStick) listScroll.scrollTop = listScroll.scrollHeight;
-}
-
-function updateTimelineRange(visible: TrafficEntry[]) {
-  if (visible.length === 0) {
-    timelineStart = 0;
-    timelineSpan = 1;
-    return;
-  }
-  const start = visible[0].startedAt;
-  const end = Math.max(Date.now(), ...visible.map((entry) => entry.endedAt ?? Date.now()));
-  timelineStart = start;
-  timelineSpan = Math.max(1, end - start);
 }
 
 function renderEmpty(visibleCount?: number) {
@@ -348,8 +333,8 @@ function renderRow(entry: TrafficEntry, focusable: boolean) {
     urlCell(entry.request.url),
     statusCell(entry),
     decisionCell(entry),
-    timelineCell(entry),
-    cell(formatSize(entry), "size"),
+    cell(responseCode(entry), "code"),
+    cell(formatDuration(entry), "duration"),
   );
   return row;
 }
@@ -583,29 +568,22 @@ function decisionCell(entry: TrafficEntry) {
   return td;
 }
 
-function timelineCell(entry: TrafficEntry) {
-  const td = el("td");
-  const end = entry.endedAt ?? Date.now();
-  const left = ((entry.startedAt - timelineStart) / timelineSpan) * 100;
-  const width = ((end - entry.startedAt) / timelineSpan) * 100;
-  const track = el("span", "timeline");
-  const bar = el("span", `timeline-bar ${timelineClass(entry)}`);
-  bar.style.left = `${Math.min(100, Math.max(0, left))}%`;
-  bar.style.width = `${Math.min(100, Math.max(1.5, width))}%`;
-  track.append(bar);
-  td.title = entry.endedAt === undefined
-    ? `进行中 · 已 ${Math.max(0, Math.round(end - entry.startedAt))} ms`
-    : `${Math.max(0, Math.round(end - entry.startedAt))} ms`;
-  td.append(track);
-  return td;
+function responseCode(entry: TrafficEntry): string {
+  const response = entry.response;
+  if (entry.error || !response || response.status < 200 || response.status >= 300 ||
+      response.body === undefined || response.bodyTruncated || response.bodyUnavailable) return "-";
+  try {
+    const body: unknown = JSON.parse(response.body);
+    if (!isRecord(body) || !Object.hasOwn(body, "code")) return "-";
+    return typeof body.code === "string" ? body.code : JSON.stringify(body.code);
+  } catch {
+    // Rule: 非 JSON 响应不展示业务 code。
+    return "-";
+  }
 }
 
-function timelineClass(entry: TrafficEntry) {
-  if (entry.error || (entry.response && entry.response.status >= 400)) return "bad";
-  if (entry.decision === "mock") return "mock";
-  if (entry.decision === "capture") return "capture";
-  if (entry.decision === "pending") return "pending";
-  return "";
+function formatDuration(entry: TrafficEntry) {
+  return entry.endedAt === undefined ? "进行中" : `${Math.max(0, Math.round(entry.endedAt - entry.startedAt))} ms`;
 }
 
 function statusInfo(entry: TrafficEntry) {
@@ -634,7 +612,6 @@ function decisionClass(decision: TrafficEntry["decision"]) {
 }
 
 function detailMeta(entry: TrafficEntry) {
-  const duration = entry.endedAt === undefined ? "进行中" : `${Math.max(0, Math.round(entry.endedAt - entry.startedAt))} ms`;
   const decision = entry.decision === "mock"
     ? "Mock"
     : entry.decision === "pass"
@@ -642,7 +619,7 @@ function detailMeta(entry: TrafficEntry) {
       : entry.decision === "capture"
         ? "只记录"
         : "判定中";
-  return `${duration} · ${decision}`;
+  return `${formatDuration(entry)} · ${decision}`;
 }
 
 function passReasonLabel(reason: string) {
@@ -661,19 +638,6 @@ function formatTime(ms: number) {
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
-}
-
-function formatSize(entry: TrafficEntry) {
-  const size = entry.response?.size;
-  if (typeof size === "number") return formatBytes(size);
-  if (typeof entry.response?.body === "string") return `~${formatBytes(entry.response.body.length)}`;
-  return "-";
-}
-
-function formatBytes(value: number) {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function pathOf(value: string) {
