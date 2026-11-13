@@ -25,6 +25,13 @@
 
 .request-context-menu { position: fixed; z-index: 100; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 28px rgb(25 32 70 / 16%); outline: none; }
 .request-context-menu[hidden] { display: none; }
+.blocking-dialog { width: min(760px, calc(100vw - 24px)); height: min(740px, calc(100dvh - 24px)); max-height: calc(100dvh - 24px); padding: 0; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: var(--panel); box-shadow: 0 12px 50px rgb(25 32 70 / 20%); }
+.blocking-dialog[open] { display: flex; flex-direction: column; }
+.blocking-dialog::backdrop { background: rgb(20 25 45 / 35%); }
+.blocking-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.blocking-dialog iframe { width: 100%; flex: 1; min-height: 0; border: 0; }
+.blocking-reveal { display: flex; align-items: center; gap: 6px; padding: 10px 18px; border-top: 1px solid var(--line); font-size: 12px; }
+.blocking-reveal input { accent-color: var(--accent); }
 .context-section { padding: 7px 9px 4px; color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .context-status, .context-error { padding: 7px 9px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .context-status { color: var(--muted); }

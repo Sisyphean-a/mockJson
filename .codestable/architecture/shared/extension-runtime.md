@@ -42,6 +42,15 @@
 - 用户已确认这是当前测试包的全局配置入口，而非标签页覆盖。业务行为唯一见[接口显式放行、面板接口快捷操作](../../requirements/CONTEXT.md)。显式放行通过 resolver 的 `pass(api-passthrough)` 传递，观测和日志保留该原因。
 - `passthrough` 是兼容旧配置的可选字段。回退到旧代码时须先处理显式放行配置：旧运行时会忽略此字段，不能依赖旧版本继续执行该放行语义。
 
+## 请求屏蔽管理
+
+此通道只定位扩展拥有的界面，不传输 Mock 配置或请求记录，也不增加服务端管理 API。
+
+- 控制台 `web/src/blocking-manager.ts` 在用户打开弹窗时发起同窗口、同 Origin、随机请求 ID 的发现握手；`blocking-console-bridge.ts` 仅接受顶层 `http://127.0.0.1` / `http://localhost` 的 22333、22334 页面，返回固定的扩展管理页地址，不代理网页提交的规则读写命令。
+- 控制台 `RequestBlockingButton.vue` 与扩展面板的 `blocking-dialog.ts` 均嵌入扩展 `blocking-manager.html`，避免两份编辑器或跨 Origin 的 IndexedDB 副本。仅该 HTML 暴露为本机网页可访问资源，扩展 CSP 的 `frame-ancestors` 允许上述控制台来源、扩展自身及 DevTools 原生宿主 `devtools://devtools`，不允许其他网页来源。该策略作用于所有扩展页，遗漏 DevTools 宿主会阻止 `devtools.html` 加载及「接口面板」注册；没有安装/启用新版扩展或页面未刷新时明确提示不可连接，不创建网页侧规则库。
+- 管理页和面板通过 `request-blocking` 扩展端口连接后台；后台按 Chrome 提供的 `sender.url` 严格限定本扩展的管理页（可读写）与面板（只读），网页 Content Script 和其他扩展页面不得取得规则访问权。所有 IndexedDB 读写均在后台完成，嵌入页不直接访问数据库；提交后推送所有已连接消费者，重连重新读取，未确认的写操作不自动重试。
+- 发现通道的常量与纯 URL 校验归 `@mock-json/extension-contract/blocking-manager`；规则 DTO、匹配和存储仍是扩展内部能力。业务语义唯一见[请求屏蔽](../../requirements/CONTEXT.md#chrome-extension-领域规则)。
+
 ## 所有者
 
 - `package:extension-contract`：DTO、响应类型和放行原因的类型定义，以及无 IO 的 JSON 字段组合与校验。

@@ -24,6 +24,7 @@ import {
   isTrafficWindowMessage,
 } from "./protocol.js";
 import { TabTrafficStore } from "./traffic-store.js";
+import { registerRequestBlocking } from "./blocking-service.js";
 import { DEFAULT_WHITELIST, WHITELIST_STORAGE_KEY, urlMatchesWhitelist, normalizeWhitelist } from "./domain-whitelist.js";
 import {
   createResolverHealth,
@@ -258,6 +259,7 @@ function registerTrafficPanel() {
 }
 
 registerTrafficPanel();
+registerRequestBlocking(chrome.runtime);
 
 async function resolve(request: ExtensionRuntimeRequest, controller: AbortController): Promise<ExtensionRuntimeResponse> {
   // Failure: 连续两次 resolver 失败后短路 3 秒，避免服务不可用时每个页面请求都等待完整超时。

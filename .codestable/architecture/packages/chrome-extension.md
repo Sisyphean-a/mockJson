@@ -11,7 +11,8 @@
 - `content-bridge.ts` 运行在隔离世界，只负责页面与 Service Worker 的消息桥接、traffic 消息转发和取消传播。
 - `service-worker.ts` 负责页面白名单、Mock 与只记录状态、本机 resolver 请求、超时、并发和健康短路；从 Chrome 提供的消息来源 URL 复核 frame 授权，并装配 Chrome 消息、面板端口与会话存储。
 - `traffic-store.ts` 的 `TabTrafficStore` 拥有按标签页/frame 合并记录、排序裁剪、会话恢复、防抖串行写回及清空/关闭时的旧读失效。存储与更新通知由 worker 注入，面板端口和开关仍归 worker；容量与采集边界见[请求观测面板规则](../../requirements/CONTEXT.md#chrome-extension-领域规则)。
-- `panel.ts` + `public/panel.html` 是同一份面板 UI：既通过 `devtools.ts` 注册为 DevTools 顶部标签，也可作为独立扩展页打开；顶部工具栏只保留筛选、记录、暂停和清空，请求列表按发起时间展示，选中后底部用「请求 / 响应」tab 查看详情，列表与详情之间的分隔条可拖动或用方向键调整高度。本地观测不依赖 Mock Console；“保存为 Mock 场景”由 `capture-handoff.ts` 主动交接选中响应并打开控制台确认，见[主动响应交接](../shared/extension-runtime.md#主动响应交接)。`panel-context-menu.ts` 拥有请求行菜单的焦点、异步加载和提交生命周期，`request-controls.ts` 通过[接口快捷操作协议](../shared/extension-runtime.md#接口快捷操作)请求控制台查询/修改；扩展不在本地持久化这些配置。
+- `panel.ts` + `public/panel.html` 是同一份面板 UI：既通过 `devtools.ts` 注册为 DevTools 顶部标签，也可作为独立扩展页打开；顶部工具栏提供筛选、记录、暂停、清空和请求屏蔽，请求列表按发起时间展示，选中后底部用「请求 / 响应」tab 查看详情，列表与详情之间的分隔条可拖动或用方向键调整高度。本地观测不依赖 Mock Console；“保存为 Mock 场景”由 `capture-handoff.ts` 主动交接选中响应并打开控制台确认，见[主动响应交接](../shared/extension-runtime.md#主动响应交接)。`panel-context-menu.ts` 拥有请求行菜单的焦点、异步加载和提交生命周期，`request-controls.ts` 通过[接口快捷操作协议](../shared/extension-runtime.md#接口快捷操作)请求控制台查询/修改；扩展不在本地持久化这些配置。
+- `blocking-rules.ts` 拥有纯匹配规则与索引，`blocking-store.ts` 拥有后台 IndexedDB 的原子写入、去重和规则版本校验，`blocking-service.ts` 通过扩展页面专用端口向面板与管理页推送提交状态；它们不进入采集或 resolver 路径。`blocking-manager.ts` + `public/blocking-manager.html` 是唯一规则编辑界面，由面板弹窗及本机控制台嵌入复用；`blocking-console-bridge.ts` 只交接管理页地址，访问边界见[请求屏蔽管理](../shared/extension-runtime.md#请求屏蔽管理)。
 - `popup.ts` 只负责扩展开关、白名单、连接状态、“记录本页请求”和打开请求面板，不读取 Mock Package、Logical API 或 Scenario。
 - 不直接导入 `package:mock-console` 的源码；跨包 resolver、响应交接 DTO 和无 IO 的字段组合只通过 [`package:extension-contract`](./extension-contract.md) 引用。traffic 消息和面板 DTO 属于扩展内部 `protocol.ts`，不进入共享契约。
 
@@ -44,4 +45,5 @@
 - resolver 返回 `pass`、服务不可用、超时或取消时，页面继续使用浏览器原生请求。
 - 命中场景时只支持 JSON、200–599 状态码和异步请求；导航、资源、WebSocket、Worker / Service Worker、同步 XHR、流式和二进制 Mock 不由扩展接管。
 - traffic 面板与 DevTools Network 不同：静态资源、导航、Worker / Service Worker、WebSocket、重定向中间跳和扩展未观测的请求不会出现；列表顺序是发起时间，不是调用因果。
+- 请求屏蔽规则由扩展后台的独立 IndexedDB 拥有，不是 Mock 配置；其持久化与显示语义见[请求屏蔽](../../requirements/CONTEXT.md#chrome-extension-领域规则)。
 - traffic 记录默认只保存在 `chrome.storage.session` 和 Service Worker 内存中，不写入 Mock Console 服务端日志；主动交接只传递选中的响应草稿，不改变观测记录；上传体、二进制、流式和不透明响应不采集内容。

@@ -7,6 +7,8 @@ import * as protocol from "./protocol.js";
 import * as handoff from "./capture-handoff.js";
 import * as controls from "./request-controls.js";
 import * as panelSplit from "./panel-split.js";
+import * as blockingRules from "./blocking-rules.js";
+import type { openBlockingDialog } from "./blocking-dialog.js";
 import type { ExtensionControlInspection } from "@mock-json/extension-contract";
 
 const source = readFileSync(new URL("./panel.ts", import.meta.url), "utf8");
@@ -80,6 +82,11 @@ class FakeElement {
 
 function createPanelHarness(failHandoff = false) {
   const openedUrls: string[] = [];
+  const blocking = {
+    update: (_rules: blockingRules.BlockingRule[]) => {},
+    fail: (_message: string) => {},
+    dialog: undefined as Parameters<typeof openBlockingDialog>[0] | undefined,
+  };
   const copiedTexts: string[] = [];
   const capturesSent: unknown[] = [];
   const elements = new Map<string, FakeElement>();
@@ -142,12 +149,18 @@ function createPanelHarness(failHandoff = false) {
       };
       if (name === "./panel-context-menu.js") return menuExports;
       if (name === "./panel-split.js") return panelSplit;
+      if (name === "./blocking-rules.js") return blockingRules;
+      if (name === "./blocking-client.js") return { RequestBlockingClient: class {
+        constructor(state: typeof blocking.update, error: typeof blocking.fail) { blocking.update = state; blocking.fail = error; }
+        close() {}
+      } };
+      if (name === "./blocking-dialog.js") return { openBlockingDialog: (options: Parameters<typeof openBlockingDialog>[0]) => { blocking.dialog = options; } };
       assert.equal(name, "./protocol.js");
       return protocol;
     },
     document, window,
     chrome: {
-      tabs: { async create({ url }: { url: string }) { openedUrls.push(url); return {}; } },
+      tabs: { async get() { return { url: "https://app.test/" }; }, async create({ url }: { url: string }) { openedUrls.push(url); return {}; } },
       runtime: {
         connect() {
           return port;
@@ -164,7 +177,7 @@ function createPanelHarness(failHandoff = false) {
     clearTimeout,
   });
   assert.ok(messageListener);
-  return { elements, posted, messageListener, openedUrls, capturesSent, copiedTexts, control, controlRequests, document, menu: document.body.children[0] };
+  return { elements, posted, messageListener, openedUrls, capturesSent, copiedTexts, control, controlRequests, document, blocking, menu: document.body.children[0] };
 }
 
 const menuEntry: protocol.TrafficEntry = { id: "menu", tabId: 1, frameId: 0, pageUrl: "https://app.test", source: "fetch", decision: "mock", startedAt: 1, endedAt: 2, request: { url: "https://api.test/users", method: "POST", headers: { apiName: "users" }, body: "private request" }, response: { status: 200, headers: {}, body: '{"ok":true}' } };
@@ -174,6 +187,55 @@ function openRowMenu(h: ReturnType<typeof createPanelHarness>, entry = menuEntry
   h.messageListener({ type: "snapshot", captureTab: true, entries: [entry] });
   h.elements.get("rows")!.children[0].listeners.contextmenu({ preventDefault() {}, clientX: 900, clientY: 700 });
 }
+
+test("屏蔽即时隐藏历史和新记录，保持采集数据，停用后恢复；临时显示仅影响当前面板", async () => {
+  const h = createPanelHarness();
+  h.messageListener({ type: "snapshot", captureTab: true, entries: [menuEntry] });
+  h.elements.get("rows")!.children[0].listeners.click();
+  assert.equal(h.elements.get("detail")!.hidden, false);
+  const rule: blockingRules.BlockingRule = { ...blockingRules.blockingDraft(menuEntry), id: "one", revision: "v1" };
+  h.blocking.update([rule]);
+  assert.equal(h.elements.get("rows")!.children.length, 0);
+  assert.equal(h.elements.get("detail")!.hidden, true);
+  assert.match(h.elements.get("summary")!.textContent, /0 \/ 1 · 已屏蔽 1 条/);
+  assert.equal(h.elements.get("blocking")!.textContent, "屏蔽 1");
+  h.messageListener({ type: "entry", entry: { ...menuEntry, id: "later" } });
+  assert.equal(h.elements.get("rows")!.children.length, 0);
+  h.elements.get("blocking")!.click(); await tick();
+  assert.equal(h.blocking.dialog!.showBlocked, false);
+  h.blocking.dialog!.reveal(true);
+  assert.equal(h.elements.get("rows")!.children.length, 2);
+  assert.match(h.elements.get("summary")!.textContent, /命中 2 条/);
+  h.blocking.dialog!.reveal(false);
+  h.blocking.update([{ ...rule, enabled: false }]);
+  assert.equal(h.elements.get("rows")!.children.length, 2);
+  assert.equal(h.elements.get("summary")!.textContent, "2 / 2");
+  assert.equal(h.posted.length, 1);
+  assert.equal((h.posted[0] as protocol.TrafficPanelCommand).type, "subscribe");
+});
+
+test("右键屏蔽不依赖控制台在线，弹窗预填页面站点与接口，不携带参数或请求体", async () => {
+  const h = createPanelHarness();
+  h.control.inspectWait = async () => { throw new Error("offline"); };
+  openRowMenu(h, { ...menuEntry, request: { ...menuEntry.request, url: "https://api.test/users?secret=1" } });
+  await tick();
+  menuItem(h.menu, "屏蔽此接口…").click();
+  assert.deepEqual(h.blocking.dialog!.draft, {
+    enabled: true, scopeOrigin: "https://app.test", method: "POST", targetUrl: "https://api.test/users", matchMode: "exact",
+  });
+  assert.equal(h.menu.hidden, true);
+  assert.equal(h.capturesSent.length, 0);
+});
+
+test("规则读取错误明确显示，并保留已加载规则的屏蔽效果", () => {
+  const h = createPanelHarness();
+  h.messageListener({ type: "snapshot", captureTab: true, entries: [menuEntry] });
+  h.blocking.update([{ ...blockingRules.blockingDraft(menuEntry), id: "one", revision: "v1" }]);
+  h.blocking.fail("数据库不可用");
+  assert.equal(h.elements.get("blocking")!.textContent, "屏蔽 !");
+  assert.equal(h.elements.get("blocking")!.title, "数据库不可用");
+  assert.equal(h.elements.get("rows")!.children.length, 0);
+});
 
 test("列表展示响应 code 和请求总耗时，移除时间线与大小", () => {
   const h = createPanelHarness();
@@ -524,6 +586,18 @@ test("DevTools 面板已注册并复用独立面板页面", () => {
   assert.match(source, /chrome\.devtools\?\.inspectedWindow\?\.tabId/);
   assert.match(devtoolsSource, /chrome\.devtools\.panels\.create\("接口面板"/);
   assert.match(devtoolsSource, /panel\.html"/);
+});
+
+test("扩展嵌入策略允许 DevTools 原生宿主和本机控制台，不向任意网页开放", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../public/manifest.json", import.meta.url), "utf8"));
+  const policy: string = manifest.content_security_policy.extension_pages;
+  const ancestors = policy.split(";").map(directive => directive.trim())
+    .find(directive => directive.startsWith("frame-ancestors "))?.split(/\s+/).slice(1) ?? [];
+  assert.deepEqual(new Set(ancestors), new Set([
+    "'self'", "devtools://devtools",
+    "http://127.0.0.1:22333", "http://localhost:22333",
+    "http://127.0.0.1:22334", "http://localhost:22334",
+  ]));
 });
 
 test("点击清空立即清空本地列表，并忽略清空前快照", () => {

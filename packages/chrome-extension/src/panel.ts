@@ -10,6 +10,9 @@ import {
 import { captureUnavailableReason, handoffCapture } from "./capture-handoff.js";
 import { RequestContextMenu } from "./panel-context-menu.js";
 import { DEFAULT_DETAIL_RATIO, clampDetailRatio, detailRatioFromPointer } from "./panel-split.js";
+import { blockingDraft, compileBlockingRules, httpUrl, type BlockingRule } from "./blocking-rules.js";
+import { RequestBlockingClient } from "./blocking-client.js";
+import { openBlockingDialog } from "./blocking-dialog.js";
 
 type DetailTab = "request" | "response";
 
@@ -21,6 +24,7 @@ const clearButton = required<HTMLButtonElement>("clear");
 const searchInput = required<HTMLInputElement>("search");
 const filterSelect = required<HTMLSelectElement>("filter");
 const summary = required<HTMLElement>("summary");
+const blockingButton = required<HTMLButtonElement>("blocking");
 const listScroll = required<HTMLElement>("list-scroll");
 const rows = required<HTMLTableSectionElement>("rows");
 const empty = required<HTMLElement>("empty");
@@ -49,13 +53,28 @@ let detailRatio = DEFAULT_DETAIL_RATIO;
 let resizingDetail = false;
 let resizePointerId: number | undefined;
 let handingOff = false;
+let blockingRules: BlockingRule[] = [];
+let blocked = compileBlockingRules(blockingRules);
+let showBlocked = false;
+let blockingError = "正在读取屏蔽规则…";
 const requestMenu = new RequestContextMenu({
   save: saveToConsole,
+  block: (entry) => { void manageBlocking(entry); },
   openConsole: async (url) => { await chrome.tabs.create({ url }); },
   copy: copyText,
   curl: toCurl,
   notice: showToast,
 });
+const blockingClient = new RequestBlockingClient(rules => {
+  blockingRules = rules;
+  blocked = compileBlockingRules(rules);
+  blockingError = "";
+  refreshBlocking();
+}, message => {
+  blockingError = message;
+  renderSummary();
+});
+blockingButton.addEventListener("click", () => { void manageBlocking(); });
 listScroll.addEventListener("wheel", requestMenu.close, { passive: true });
 splitter.addEventListener("pointerdown", startDetailResize);
 splitter.addEventListener("pointermove", moveDetailResize);
@@ -103,6 +122,7 @@ filterSelect.addEventListener("change", () => {
 });
 window.addEventListener("beforeunload", () => {
   requestMenu.destroy();
+  blockingClient.close();
   window.clearTimeout(reconnectTimer);
   window.clearInterval?.(heartbeatTimer);
   port?.disconnect();
@@ -114,6 +134,10 @@ if (tabId === null) {
   renderAll();
   connect();
   startHeartbeat();
+  void chrome.tabs.get(tabId).then(tab => {
+    if (tab.url) inspectedOrigin = httpUrl(tab.url).origin;
+    renderSummary();
+  }).catch(() => { /* Rule: 未授权读取标签页地址时，仍可按记录站点或在弹窗手动配置。 */ });
 }
 
 function connect() {
@@ -280,7 +304,33 @@ function renderCapture() {
 }
 
 function renderSummary() {
-  summary.textContent = `${visibleEntries().length} / ${entries.size}`;
+  const hiddenCount = [...entries.values()].filter(entry => blocked(entry)).length;
+  summary.textContent = `${visibleEntries().length} / ${entries.size}${hiddenCount ? ` · ${showBlocked ? "命中" : "已屏蔽"} ${hiddenCount} 条` : ""}`;
+  summary.title = blockingError || "可见 / 总记录数，屏蔽不删除缓存记录";
+  const origins = new Set([...entries.values()].map(entry => { try { return httpUrl(entry.pageUrl).origin; } catch { return ""; } }));
+  if (inspectedOrigin) origins.add(inspectedOrigin);
+  const count = blockingRules.filter(rule => rule.enabled && (rule.scopeOrigin === "*" || origins.has(rule.scopeOrigin))).length;
+  blockingButton.textContent = blockingError ? "屏蔽 !" : count ? `屏蔽 ${count}` : "屏蔽";
+  blockingButton.title = blockingError || "管理请求屏蔽规则，仅隐藏记录，不阻止请求";
+}
+
+function refreshBlocking() {
+  const selected = selectedKey ? entries.get(selectedKey) : undefined;
+  if (selected && !showBlocked && blocked(selected)) selectedKey = undefined;
+  requestMenu.close();
+  renderAll();
+}
+
+async function manageBlocking(entry?: TrafficEntry) {
+  try {
+    let pageOrigin = inspectedOrigin;
+    if (!entry && tabId !== null) {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.url) pageOrigin = httpUrl(tab.url).origin;
+    }
+    openBlockingDialog({ pageOrigin, draft: entry ? blockingDraft(entry) : undefined, showBlocked,
+      reveal(value) { showBlocked = value; refreshBlocking(); } });
+  } catch (error) { showToast(error instanceof Error ? error.message : "无法打开请求屏蔽"); }
 }
 
 function renderList(keepScroll: boolean) {
@@ -555,6 +605,7 @@ function visibleEntries() {
 }
 
 function matchesFilter(entry: TrafficEntry) {
+  if (!showBlocked && blocked(entry)) return false;
   if (decisionFilter === "mock" && entry.decision !== "mock") return false;
   if (decisionFilter === "pass" && entry.decision !== "pass") return false;
   if (decisionFilter === "capture" && entry.decision !== "capture") return false;

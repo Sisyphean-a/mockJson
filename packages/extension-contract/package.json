@@ -5,6 +5,7 @@
   "types": "./src/index.ts",
   "exports": {
     "./response-fields": "./src/response-fields.ts",
+    "./blocking-manager": "./src/blocking-manager.ts",
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"

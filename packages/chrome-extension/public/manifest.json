@@ -13,11 +13,26 @@
     "type": "module"
   },
   "devtools_page": "devtools.html",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; frame-ancestors 'self' devtools://devtools http://127.0.0.1:22333 http://localhost:22333 http://127.0.0.1:22334 http://localhost:22334"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["blocking-manager.html"],
+      "matches": ["http://127.0.0.1/*", "http://localhost/*"]
+    }
+  ],
   "host_permissions": [
     "http://127.0.0.1:22333/*",
     "http://localhost:22333/*"
   ],
   "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1/*", "http://localhost/*"],
+      "js": ["blocking-console-bridge.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
     {
       "matches": ["http://*/*", "https://*/*"],
       "js": ["content-main.js"],

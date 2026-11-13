@@ -23,7 +23,7 @@ function createWorkerHarness(pageUrl: string, whitelist = ["app.test"], session:
     async get() { return values; },
     async set(changes: Record<string, unknown>) { Object.assign(values, changes); },
   });
-  const dependencies: Record<string, unknown> = { "./protocol.js": protocol, "./domain-whitelist.js": domains, "./resolver-health.js": health, "./traffic-store.js": traffic };
+  const dependencies: Record<string, unknown> = { "./protocol.js": protocol, "./domain-whitelist.js": domains, "./resolver-health.js": health, "./traffic-store.js": traffic, "./blocking-service.js": { registerRequestBlocking() {} } };
   new Script(compiledWorker).runInNewContext({
     exports: {},
     require(name: string) {

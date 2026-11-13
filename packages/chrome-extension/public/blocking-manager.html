@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>请求屏蔽规则</title>
+  <link rel="stylesheet" href="blocking-manager.css" />
+</head>
+<body>
+  <p class="hint">仅隐藏扩展请求记录，不影响请求发送或 Mock。规则保存在当前浏览器的扩展中。</p>
+  <div class="tools">
+    <label class="sr-only" for="scope-filter">筛选生效站点</label>
+    <select id="scope-filter"><option value="">全部规则</option><option value="*">所有站点规则</option></select>
+    <input id="rule-search" type="search" placeholder="搜索站点 / 地址 / 方法" aria-label="搜索屏蔽规则" />
+    <button id="add" type="button">＋ 添加规则</button>
+  </div>
+  <p id="connection" class="hint" role="status">正在读取规则…</p>
+  <p id="error" class="error" role="alert" hidden></p>
+  <form id="editor" hidden>
+    <h2 id="editor-title">添加屏蔽规则</h2>
+    <fieldset id="editor-fields">
+      <div class="field-row">
+        <label>生效范围<select id="scope-mode"><option value="site">指定页面站点</option><option value="all">所有站点</option></select></label>
+        <label id="scope-field">页面站点<input id="scope-url" type="url" placeholder="https://app.example.com" required /></label>
+      </div>
+      <p class="hint">页面站点区分协议、域名和端口；同站点的其他页面与标签页共用。</p>
+      <div class="field-row">
+        <label class="method-field">方法<input id="method" value="GET" list="methods" required /><datalist id="methods"><option value="*">全部方法</option><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>OPTIONS</option><option>HEAD</option></datalist></label>
+        <label>匹配方式<select id="match-mode"><option value="exact">精确路径</option><option value="prefix">路径前缀</option></select></label>
+      </div>
+      <label>请求地址<input id="target-url" type="url" placeholder="http://localhost:3000/api/logs" required /></label>
+      <p class="hint">忽略查询参数和片段；路径前缀按字面开头匹配，方法填 * 表示全部。</p>
+      <div class="editor-actions"><label class="check"><input id="enabled" type="checkbox" checked />启用规则</label><button id="cancel-edit" type="button">取消</button><button class="primary" type="submit">保存规则</button></div>
+    </fieldset>
+  </form>
+  <div id="rules" class="rules" aria-label="已保存的屏蔽规则"></div>
+  <p id="empty" class="empty" hidden>还没有屏蔽规则。</p>
+  <script type="module" src="blocking-manager.js"></script>
+</body>
+</html>

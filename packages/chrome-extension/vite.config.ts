@@ -8,9 +8,11 @@ function verifyContentScriptBundle() {
   return {
     name: "verify-content-script-bundle",
     closeBundle() {
-      const contentMain = readFileSync(resolve(packageRoot, "dist/content-main.js"), "utf8");
-      if (/(?:^|;)import(?:\\s|\\{)/.test(contentMain) || /(?:^|;)export(?:\\s|\\{)/.test(contentMain)) {
-        throw new Error("content-main.js 必须是自包含的普通脚本，不能包含 import/export");
+      for (const name of ["content-main", "content-bridge", "blocking-console-bridge"]) {
+        const source = readFileSync(resolve(packageRoot, `dist/${name}.js`), "utf8");
+        if (/(?:^|;)import\s*["'{*]/m.test(source) || /(?:^|;)export\s*[\w{*]/m.test(source)) {
+          throw new Error(`${name}.js 必须是自包含的普通脚本，不能包含 import/export`);
+        }
       }
     },
   };
@@ -27,6 +29,8 @@ export default defineConfig({
       input: {
         "content-main": resolve(packageRoot, "src/content-main.ts"),
         "content-bridge": resolve(packageRoot, "src/content-bridge.ts"),
+        "blocking-console-bridge": resolve(packageRoot, "src/blocking-console-bridge.ts"),
+        "blocking-manager": resolve(packageRoot, "src/blocking-manager.ts"),
         "service-worker": resolve(packageRoot, "src/service-worker.ts"),
         popup: resolve(packageRoot, "src/popup.ts"),
         panel: resolve(packageRoot, "src/panel.ts"),

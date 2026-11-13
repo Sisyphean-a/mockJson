@@ -7,7 +7,7 @@
 ## 边界
 
 - `server/` 是服务端组合根和运行时边界，负责配置持久化、管理 API、扩展 resolver、Proxy 转发和运行日志；`config-service.ts` 的变更队列统一拥有失败恢复，响应选择保留先持久化候选快照再发布的生效边界。
-- `web/` 只负责管理页面、表单、状态和管理 API 客户端，不持有浏览器扩展注入逻辑。
+- `web/` 只负责管理页面、表单、状态和管理 API 客户端，不持有浏览器扩展注入逻辑。`RequestBlockingButton.vue` 通过本机发现握手在弹窗中嵌入扩展的请求屏蔽管理页，不保存规则副本或改变服务端日志；见[请求屏蔽管理](../shared/extension-runtime.md#请求屏蔽管理)。
 - `shared/response-selection.ts` 拥有响应选择的纯条件判断、校验和引用定位，运行时与草稿试算共用，不执行 IO；业务语义见 [响应选择规则](../../requirements/CONTEXT.md#mock-console-领域规则)。
 - `shared/types.ts` 只拥有 Mock Console 的领域状态、配置和日志类型；扩展 resolver 的跨包线协议类型由 [`package:extension-contract`](./extension-contract.md) 拥有。
 - 不读取或保存 Chrome 扩展的启用状态、白名单或页面拦截器状态。

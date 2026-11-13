@@ -5,6 +5,7 @@ import { inspectRequestControls, applyRequestControl, consoleApiUrl } from "./re
 
 type Actions = {
   save(entry: TrafficEntry): Promise<void>;
+  block(entry: TrafficEntry): void;
   openConsole(url: string): Promise<void>;
   copy(text: string): void;
   curl(entry: TrafficEntry): string;
@@ -161,6 +162,7 @@ export class RequestContextMenu {
 
   private renderCommon(entry: TrafficEntry) {
     this.root.append(node("div", "context-divider"));
+    this.root.append(this.button("屏蔽此接口…", () => { this.close(); this.actions.block(entry); }));
     if (entry.decision !== "mock")
       this.root.append(this.button("保存此响应为新场景…", () => { this.close(); void this.actions.save(entry); }, captureUnavailableReason(entry)));
     const packageId = this.info?.package?.id, apiId = this.api?.id;

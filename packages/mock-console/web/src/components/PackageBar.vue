@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ConsoleController } from "../console-controller";
+import RequestBlockingButton from "./RequestBlockingButton.vue";
 
 type PackageBarController = Pick<ConsoleController, "state" | "switchPkg" | "pkg" | "selectRealService" | "openRealServices" | "openPackageManager" | "serverReady" | "loading" | "activeView" | "showWorkspace" | "showLogs">;
 const { controller: c } = defineProps<{ controller: PackageBarController }>();
@@ -28,6 +29,7 @@ async function switchEnvironment(event: Event) {
       <button :class="['view-tab', { active: c.activeView.value === 'logs' }]" :aria-selected="c.activeView.value === 'logs'" role="tab" @click="c.showLogs">请求日志</button>
     </nav>
     <div class="top-actions">
+      <RequestBlockingButton />
       <div class="header-control">
         <div class="header-control-row">
           <label for="package-select">包</label>

@@ -15,6 +15,8 @@
 
 源码入口：`packages/extension-contract/src/index.ts`；`/response-fields` 子路径提供 `ScenarioResponseType`、配置字段校验、`composeResponse` 和组合响应头清理。它只接收 JSON 值，不执行请求或拥有场景选择；业务语义见[响应场景类型](../../requirements/CONTEXT.md#mock-console-领域规则)。MAIN world 使用的函数须内联到其普通脚本，不形成运行时共享 chunk。
 
+`/blocking-manager` 子路径仅提供请求屏蔽管理页发现通道的常量与纯 URL 校验；不拥有屏蔽规则、浏览器端口或存储，边界见[请求屏蔽管理](../shared/extension-runtime.md#请求屏蔽管理)。
+
 ## 依赖方向
 
 ```text
