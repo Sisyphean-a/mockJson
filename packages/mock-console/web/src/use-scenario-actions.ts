@@ -14,6 +14,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
   let jsonSavePromise: Promise<void> | null = null;
   let jsonSaveQueued = false;
   let draftRevision = 0;
+  let copySource: Scene | undefined;
 
   function clearJsonAutosave() {
     if (jsonAutosaveTimer !== undefined) clearTimeout(jsonAutosaveTimer);
@@ -50,7 +51,9 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
 
   function openSceneCreate() {
     if (forms.sceneSaving.value || !canLeave()) return;
+    copySource = undefined;
     forms.sceneEditMode.value = false;
+    forms.sceneCopyMode.value = false;
     forms.sceneName.value = "";
     forms.sceneResponseType.value = "mock";
     forms.sceneFieldPaths.value = "";
@@ -62,6 +65,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
   function openSceneEdit(scene: Scene) {
     if (forms.sceneSaving.value) return;
     if (model.sceneId.value !== scene.id && !canLeave()) return;
+    copySource = undefined;
     model.sceneId.value = scene.id;
     forms.editSceneName.value = scene.name;
     forms.editSceneStatus.value = scene.status;
@@ -71,6 +75,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     forms.sceneFieldPaths.value = (scene.fieldPaths ?? []).join("\n");
     forms.sceneFormError.value = "";
     forms.sceneEditMode.value = true;
+    forms.sceneCopyMode.value = false;
     forms.showScene.value = true;
   }
 
@@ -104,8 +109,24 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     return { responseType, fieldPaths };
   }
 
+  function openSceneCopy(scene: Scene) {
+    if (forms.sceneSaving.value) return;
+    copySource = scene;
+    forms.sceneEditMode.value = true;
+    forms.sceneCopyMode.value = true;
+    forms.editSceneName.value = `${scene.name} 副本`.slice(0, 200);
+    forms.editSceneStatus.value = scene.status;
+    forms.editSceneDelay.value = scene.delayMs;
+    forms.editSceneColor.value = scene.color || "blue";
+    forms.sceneResponseType.value = scene.responseType ?? "mock";
+    forms.sceneFieldPaths.value = (scene.fieldPaths ?? []).join("\n");
+    forms.sceneFormError.value = "";
+    forms.showScene.value = true;
+  }
+
   async function saveScene() {
     if (forms.sceneSaving.value) return;
+    if (forms.sceneCopyMode.value) { await saveCopiedScene(); return; }
     if (!forms.sceneEditMode.value) { await createScene(); return; }
     const scene = model.scene.value;
     if (!scene) return;
@@ -209,18 +230,31 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     }
   }
 
-  async function duplicateScene(scene: Scene) {
+  async function saveCopiedScene() {
     const api = model.api.value;
-    if (!api) return;
+    const source = copySource;
+    if (!api || !source) return;
+    forms.sceneSaving.value = true;
+    forms.sceneFormError.value = "";
     try {
+      if (!forms.editSceneName.value.trim()) throw new Error("请输入场景名称");
       const created = await model.runAdminRequest(() => client.createScenario(api.id, {
-        name: `${scene.name} 副本`, status: scene.status, delayMs: scene.delayMs,
-        responseBody: scene.responseBody, color: scene.color, activate: false,
-        responseType: scene.responseType, fieldPaths: scene.fieldPaths,
+        name: forms.editSceneName.value,
+        status: forms.editSceneStatus.value,
+        delayMs: forms.editSceneDelay.value,
+        responseBody: source.responseBody,
+        color: forms.editSceneColor.value,
+        activate: false,
+        ...responseFields(),
       }));
       api.scenarios.push(created);
+      forms.showScene.value = false;
+      forms.sceneEditMode.value = false;
+      forms.sceneCopyMode.value = false;
+      copySource = undefined;
       notify("场景已复制");
-    } catch (error) { notify(message(error)); }
+    } catch (error) { forms.sceneFormError.value = message(error); }
+    finally { forms.sceneSaving.value = false; }
   }
 
   async function deleteScene(scene: Scene) {
@@ -230,7 +264,7 @@ export function useScenarioActions(client: MockAdminClient, model: Model, forms:
     catch (error) { notify(message(error)); }
   }
 
-  return { openSceneCreate, openSceneEdit, createScene, saveScene, saveJson, toggleScene, reorderScenarios, duplicateScene, deleteScene };
+  return { openSceneCreate, openSceneEdit, openSceneCopy, createScene, saveScene, saveJson, toggleScene, reorderScenarios, deleteScene };
 }
 
 function sameOrder(left: string[], right: string[]) {

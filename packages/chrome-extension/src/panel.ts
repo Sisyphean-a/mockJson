@@ -9,6 +9,7 @@ import {
 
 import { captureUnavailableReason, handoffCapture } from "./capture-handoff.js";
 import { RequestContextMenu } from "./panel-context-menu.js";
+import { DEFAULT_DETAIL_RATIO, clampDetailRatio, detailRatioFromPointer } from "./panel-split.js";
 
 type DetailTab = "request" | "response";
 
@@ -24,6 +25,8 @@ const listScroll = required<HTMLElement>("list-scroll");
 const rows = required<HTMLTableSectionElement>("rows");
 const empty = required<HTMLElement>("empty");
 const detail = required<HTMLElement>("detail");
+const workspace = required<HTMLElement>("workspace");
+const splitter = required<HTMLElement>("splitter");
 const toast = required<HTMLElement>("toast");
 
 let port: RuntimePort | undefined;
@@ -42,6 +45,9 @@ let search = "";
 let decisionFilter = "all";
 let detailTab: DetailTab = "response";
 let detailScrollTop = 0;
+let detailRatio = DEFAULT_DETAIL_RATIO;
+let resizingDetail = false;
+let resizePointerId: number | undefined;
 let handingOff = false;
 const requestMenu = new RequestContextMenu({
   save: saveToConsole,
@@ -51,6 +57,13 @@ const requestMenu = new RequestContextMenu({
   notice: showToast,
 });
 listScroll.addEventListener("wheel", requestMenu.close, { passive: true });
+splitter.addEventListener("pointerdown", startDetailResize);
+splitter.addEventListener("pointermove", moveDetailResize);
+splitter.addEventListener("pointerup", endDetailResize);
+splitter.addEventListener("pointercancel", endDetailResize);
+splitter.addEventListener("keydown", resizeDetailWithKeyboard);
+window.addEventListener("resize", () => applyDetailRatio());
+window.addEventListener("blur", () => endDetailResize());
 
 captureButton.addEventListener("click", () => {
   captureTab = !captureTab;
@@ -342,13 +355,62 @@ function renderRow(entry: TrafficEntry, focusable: boolean) {
 function renderDetail() {
   const entry = selectedKey === undefined ? undefined : entries.get(selectedKey);
   if (!entry) {
+    endDetailResize();
     detail.hidden = true;
+    splitter.hidden = true;
     detail.replaceChildren();
     detailScrollTop = 0;
     return;
   }
   detail.hidden = false;
+  splitter.hidden = false;
+  applyDetailRatio();
   detail.replaceChildren(detailHead(entry), detailBody(entry));
+}
+
+function applyDetailRatio(ratio = detailRatio) {
+  if (detail.hidden) return;
+  const height = workspace.getBoundingClientRect().height;
+  detailRatio = clampDetailRatio(ratio, height, splitter.getBoundingClientRect().height);
+  detail.style.flexBasis = `${(detailRatio * 100).toFixed(2)}%`;
+  splitter.setAttribute("aria-valuenow", String(Math.round(detailRatio * 100)));
+}
+
+function startDetailResize(event: PointerEvent) {
+  if (detail.hidden || event.button !== 0) return;
+  resizingDetail = true;
+  resizePointerId = event.pointerId;
+  event.preventDefault();
+  document.body.classList.add("is-resizing");
+  splitter.setPointerCapture?.(event.pointerId);
+}
+
+function moveDetailResize(event: PointerEvent) {
+  if (!resizingDetail) return;
+  const rect = workspace.getBoundingClientRect();
+  applyDetailRatio(detailRatioFromPointer(event.clientY, rect.top, rect.height, splitter.getBoundingClientRect().height));
+}
+
+function endDetailResize(event?: PointerEvent) {
+  if (!resizingDetail) return;
+  resizingDetail = false;
+  document.body.classList.remove("is-resizing");
+  const pointerId = event?.pointerId ?? resizePointerId;
+  if (pointerId !== undefined) {
+    try { splitter.releasePointerCapture(pointerId); } catch { /* Failure: 指针已释放时忽略。 */ }
+  }
+  resizePointerId = undefined;
+}
+
+function resizeDetailWithKeyboard(event: KeyboardEvent) {
+  if (detail.hidden) return;
+  const step = event.shiftKey ? 0.05 : 0.02;
+  if (event.key === "ArrowUp") applyDetailRatio(detailRatio + step);
+  else if (event.key === "ArrowDown") applyDetailRatio(detailRatio - step);
+  else if (event.key === "Home") applyDetailRatio(0);
+  else if (event.key === "End") applyDetailRatio(1);
+  else return;
+  event.preventDefault();
 }
 
 function detailHead(entry: TrafficEntry) {

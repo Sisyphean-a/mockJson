@@ -6,6 +6,7 @@ import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import * as protocol from "./protocol.js";
 import * as handoff from "./capture-handoff.js";
 import * as controls from "./request-controls.js";
+import * as panelSplit from "./panel-split.js";
 import type { ExtensionControlInspection } from "@mock-json/extension-contract";
 
 const source = readFileSync(new URL("./panel.ts", import.meta.url), "utf8");
@@ -140,6 +141,7 @@ function createPanelHarness(failHandoff = false) {
         }),
       };
       if (name === "./panel-context-menu.js") return menuExports;
+      if (name === "./panel-split.js") return panelSplit;
       assert.equal(name, "./protocol.js");
       return protocol;
     },
@@ -188,6 +190,13 @@ test("列表展示响应 code 和请求总耗时，移除时间线与大小", ()
     assert.equal(cells[5].textContent, "0");
     assert.equal(cells[6].textContent, "124 ms");
   }
+});
+
+test("请求列表与详情之间提供可聚焦的分隔条", () => {
+  assert.match(html, /id="splitter"/);
+  assert.match(html, /role="separator"/);
+  assert.match(html, /aria-orientation="horizontal"/);
+  assert.match(html, /aria-controls="list-scroll detail"/);
 });
 
 test("code 只读取成功 JSON 的一级字段，保留零、字符串及其他 JSON 值", () => {

@@ -24,7 +24,7 @@
       </div>
     </header>
 
-    <main class="workspace">
+    <main id="workspace" class="workspace">
       <section class="list-pane">
         <div id="list-scroll" class="list-scroll">
           <table class="grid">
@@ -44,6 +44,7 @@
           <p id="empty" class="empty">正在连接扩展后台…</p>
         </div>
       </section>
+      <div id="splitter" class="splitter" role="separator" aria-orientation="horizontal" aria-label="调整请求列表与详情高度" aria-controls="list-scroll detail" aria-valuemin="20" aria-valuemax="80" aria-valuenow="42" tabindex="0" hidden></div>
       <section id="detail" class="detail-pane" hidden></section>
     </main>
 

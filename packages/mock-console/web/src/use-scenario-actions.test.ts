@@ -34,7 +34,7 @@ async function setup() {
   return { scope, model, forms, actions, writes, fail: () => { fail = true; }, recover: () => { fail = false; }, delay: (f: () => Promise<void>) => { delay = f; } };
 }
 
-test("新建三类场景，不改变固定响应选择方式，复制保留类型和字段", async () => {
+test("新建三类场景，不改变固定响应选择方式，复制前确认名称并保留类型和字段", async () => {
   const x = await setup();
   try {
     for (const type of ["mock", "real-overrides", "mock-with-real"] as const) {
@@ -57,10 +57,21 @@ test("新建三类场景，不改变固定响应选择方式，复制保留类�
     x.actions.openSceneEdit(scene);
     assert.equal(x.forms.sceneResponseType.value, "mock-with-real");
     assert.equal(x.forms.sceneFieldPaths.value, "/data/imageUrl");
-    await x.actions.duplicateScene(scene);
+    const beforeCopy = x.model.api.value!.scenarios.length;
+    x.actions.openSceneCopy(scene);
+    assert.equal(x.forms.showScene.value, true);
+    assert.equal(x.forms.sceneCopyMode.value, true);
+    assert.equal(x.forms.editSceneName.value, `${scene.name} 副本`);
+    assert.equal(x.model.api.value!.scenarios.length, beforeCopy);
+    x.forms.editSceneName.value = "自定义副本";
+    await x.actions.saveScene();
+    assert.equal(x.forms.showScene.value, false);
+    assert.equal(x.forms.sceneCopyMode.value, false);
+    assert.equal(x.writes.at(-1)!.input.name, "自定义副本");
     assert.equal(x.writes.at(-1)!.input.responseType, "mock-with-real");
     assert.deepEqual(x.writes.at(-1)!.input.fieldPaths, ["/data/imageUrl"]);
     assert.equal(x.writes.at(-1)!.input.activate, false);
+    assert.equal(x.model.api.value!.scenarios.at(-1)!.name, "自定义副本");
   } finally { x.scope.stop(); }
 });
 

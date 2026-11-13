@@ -4,13 +4,17 @@ import type { ConsoleController } from "../console-controller";
 import ScenarioTypeFields from "./ScenarioTypeFields.vue";
 import JsonEditor from "./JsonEditor.vue";
 
-type ConsoleModalsController = Pick<ConsoleController, "showGlobalDelay" | "globalDelayDraft" | "globalDelaySaving" | "globalDelayError" | "saveGlobalDelay" | "closeGlobalDelay" | "showApi" | "showApiGroup" | "showApiGroupDelete" | "apiGroupDeleteTarget" | "apiGroupDeleteCount" | "confirmApiGroupDelete" | "cancelApiGroupDelete" | "editingApiGroupId" | "apiGroupName" | "saveApiGroup" | "showScene" | "showPackage" | "showPackageForm" | "showRealServices" | "showRealServiceForm" | "showMoveApi" | "movingApiId" | "destinationPackageId" | "state" | "sceneEditMode" | "editingPackageId" | "apiEditName" | "apiName" | "apiPriority" | "packageName" | "realServiceName" | "realServiceEditId" | "targetUrl" | "sceneName" | "sceneResponseType" | "sceneFieldPaths" | "sceneInitialBody" | "sceneFormError" | "sceneSaving" | "api" | "editSceneName" | "editSceneStatus" | "editSceneDelay" | "editSceneColor" | "pkg" | "openPackage" | "deletePackage" | "savePackage" | "saveApi" | "createApi" | "openNewRealService" | "openRealServiceEdit" | "selectRealService" | "saveRealService" | "deleteRealService" | "moveApi" | "saveScene" | "createScene" | "leavePrompt" | "resolveResponseLeave" | "responseSaving" | "responseError">;
+type ConsoleModalsController = Pick<ConsoleController, "showGlobalDelay" | "globalDelayDraft" | "globalDelaySaving" | "globalDelayError" | "saveGlobalDelay" | "closeGlobalDelay" | "showApi" | "showApiGroup" | "showApiGroupDelete" | "apiGroupDeleteTarget" | "apiGroupDeleteCount" | "confirmApiGroupDelete" | "cancelApiGroupDelete" | "editingApiGroupId" | "apiGroupName" | "saveApiGroup" | "showScene" | "showPackage" | "showPackageForm" | "showRealServices" | "showRealServiceForm" | "showMoveApi" | "movingApiId" | "destinationPackageId" | "state" | "sceneEditMode" | "sceneCopyMode" | "editingPackageId" | "apiEditName" | "apiName" | "apiPriority" | "packageName" | "realServiceName" | "realServiceEditId" | "targetUrl" | "sceneName" | "sceneResponseType" | "sceneFieldPaths" | "sceneInitialBody" | "sceneFormError" | "sceneSaving" | "api" | "editSceneName" | "editSceneStatus" | "editSceneDelay" | "editSceneColor" | "pkg" | "openPackage" | "deletePackage" | "savePackage" | "saveApi" | "createApi" | "openNewRealService" | "openRealServiceEdit" | "selectRealService" | "saveRealService" | "deleteRealService" | "moveApi" | "saveScene" | "createScene" | "leavePrompt" | "resolveResponseLeave" | "responseSaving" | "responseError">;
 const { controller: c } = defineProps<{ controller: ConsoleModalsController }>();
 const modalRef = ref<HTMLElement | null>(null);
 const modalTrigger = ref<HTMLElement | null>(null);
 const modalOpen = computed(() => c.leavePrompt.value || c.showGlobalDelay.value || c.showApi.value || c.showApiGroup.value || c.showApiGroupDelete.value || c.showScene.value || c.showPackage.value || c.showRealServices.value || c.showMoveApi.value);
 const movingApi = computed(() => c.pkg.value?.apis.find((item) => item.id === c.movingApiId.value));
 const sceneDialog = computed(() => c.showScene.value && !c.leavePrompt.value);
+const sceneDialogTitle = computed(() => c.sceneCopyMode.value ? "复制响应场景" : c.sceneEditMode.value ? "编辑响应场景" : "新建响应场景");
+const sceneSubmitLabel = computed(() => c.sceneSaving.value
+  ? c.sceneCopyMode.value ? "复制中…" : c.sceneEditMode.value ? "保存中…" : "创建中…"
+  : c.sceneCopyMode.value ? "复制场景" : c.sceneEditMode.value ? "保存设置" : "创建场景");
 
 function closeModal() {
   if (sceneDialog.value && c.sceneSaving.value) return;
@@ -24,6 +28,7 @@ function closeModal() {
   c.showRealServices.value = false;
   c.showMoveApi.value = false;
   c.sceneEditMode.value = false;
+  c.sceneCopyMode.value = false;
 }
 
 function revealInvalidField(event: Event) {
@@ -73,6 +78,7 @@ watch(modalOpen, async (open) => {
     await nextTick();
     const first = modalRef.value?.querySelector<HTMLElement>("[autofocus]") || focusableElements()[0];
     (first || modalRef.value)?.focus();
+    if (c.sceneCopyMode.value && first instanceof HTMLInputElement) first.select();
   } else {
     if (modalTrigger.value?.isConnected) modalTrigger.value.focus();
     modalTrigger.value = null;
@@ -94,7 +100,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
   <div v-if="modalOpen" class="modal-backdrop">
     <div ref="modalRef" :class="['modal', { 'global-delay-modal': c.showGlobalDelay.value, 'real-services-modal': c.showRealServices.value, 'scene-create-modal': sceneDialog && !c.sceneEditMode.value, 'scene-settings-modal': sceneDialog && c.sceneEditMode.value }]" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-description" tabindex="-1">
       <button class="close" aria-label="关闭" :disabled="(sceneDialog && c.sceneSaving.value) || (c.showGlobalDelay.value && c.globalDelaySaving.value)" @click="closeModal">×</button>
-      <h2 id="modal-title">{{ c.showApiGroupDelete.value ? "删除接口分组" : c.leavePrompt.value ? "响应选择尚未保存" : c.showGlobalDelay.value ? "全局延迟" : c.showMoveApi.value ? "切换包" : c.showRealServices.value ? "管理转发环境" : c.showPackage.value ? "管理测试包" : c.showApiGroup.value ? (c.editingApiGroupId.value ? "编辑接口分组" : "新建接口分组") : c.showApi.value ? (c.apiEditName.value ? "编辑逻辑接口" : "新建逻辑接口") : c.sceneEditMode.value ? "编辑响应场景" : "新建响应场景" }}</h2>
+      <h2 id="modal-title">{{ c.showApiGroupDelete.value ? "删除接口分组" : c.leavePrompt.value ? "响应选择尚未保存" : c.showGlobalDelay.value ? "全局延迟" : c.showMoveApi.value ? "切换包" : c.showRealServices.value ? "管理转发环境" : c.showPackage.value ? "管理测试包" : c.showApiGroup.value ? (c.editingApiGroupId.value ? "编辑接口分组" : "新建接口分组") : c.showApi.value ? (c.apiEditName.value ? "编辑逻辑接口" : "新建逻辑接口") : sceneDialogTitle }}</h2>
       <p v-if="sceneDialog" id="modal-description" class="scene-dialog-context">{{ c.api.value?.name }}</p>
       <p v-else id="modal-description">{{ c.showApiGroupDelete.value ? `分组「${c.apiGroupDeleteTarget.value?.name || ""}」中的 ${c.apiGroupDeleteCount.value} 个接口会移到「未分组」，接口、规则和场景都不会删除。` : c.leavePrompt.value ? "保存后生效，或放弃本轮响应模式与分支改动；取消则继续编辑。场景 JSON 仍独立保存。" : c.showGlobalDelay.value ? "覆盖所有接口与场景的响应延迟，用于检查等待和加载状态。" : c.showMoveApi.value ? `将「${movingApi?.name || '接口'}」及其规则、响应场景移至其他测试包。当前运行测试包不会切换。` : c.showRealServices.value ? `仅管理「${c.pkg.value?.name || '当前测试包'}」的真实转发地址（未命中与混合响应使用）。` : c.showPackage.value ? "测试包各自拥有独立的接口与转发环境。" : c.showApiGroup.value ? "分组只在侧栏归拢接口，不影响优先级与匹配。" : c.showApi.value ? "用业务名称和优先级标识一个可切换的接口。" : "" }}</p>
       <template v-if="c.showApiGroupDelete.value">
@@ -250,7 +256,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", handleKeydown));
           <p v-if="c.sceneFormError.value" class="scene-dialog-error" role="alert">{{ c.sceneFormError.value }}</p>
           <div class="scene-dialog-actions">
             <button type="button" class="secondary" :disabled="c.sceneSaving.value" @click="closeModal">取消</button>
-            <button type="submit" class="primary" :disabled="c.sceneSaving.value">{{ c.sceneSaving.value ? c.sceneEditMode.value ? '保存中…' : '创建中…' : c.sceneEditMode.value ? '保存设置' : '创建场景' }}</button>
+            <button type="submit" class="primary" :disabled="c.sceneSaving.value">{{ sceneSubmitLabel }}</button>
           </div>
         </div>
       </form>

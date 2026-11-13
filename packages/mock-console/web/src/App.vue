@@ -76,7 +76,7 @@ function menuFor(target: ContextTarget): { title: string; items: ContextMenuItem
         { label: "打开场景", action: () => c.selectScene(target.item) },
         { label: "编辑场景", action: () => c.openSceneEdit(target.item) },
         ...(c.responseEditorMode.value === "fixed" ? [{ label: active ? "停用场景" : "启用场景", action: () => c.toggleScene(target.item) }] : []),
-        { label: "复制场景", action: () => c.duplicateScene(target.item) },
+        { label: "复制场景", action: () => c.openSceneCopy(target.item) },
         { label: "删除场景", separator: true, danger: true, action: () => c.deleteScene(target.item) },
       ],
     };
