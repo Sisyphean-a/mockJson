@@ -99,6 +99,19 @@ test("浏览器传输以浏览器对象作为原生 fetch 接收者", async () =
   await client.getState();
 });
 
+test("服务端错误优先使用 message 而不是 HTTP 状态短语", async () => {
+  const transport: AdminTransport = {
+    async send() {
+      return Response.json({ statusCode: 410, error: "Gone", message: "响应草稿已过期或服务已重启，请从扩展重新发送" }, { status: 410 });
+    },
+  };
+  const client = new MockAdminClient(endpoints, transport);
+
+  await assert.rejects(client.getCapture("expired"), {
+    message: "响应草稿已过期或服务已重启，请从扩展重新发送",
+  });
+});
+
 test("浏览器传输保留连接失败的地址和原始原因", async () => {
   const cause = new TypeError("Failed to fetch");
   const browser = {

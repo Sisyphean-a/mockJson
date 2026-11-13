@@ -221,7 +221,11 @@ export class MockAdminClient {
   private async readResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       let message = `管理服务返回 ${response.status}`;
-      try { message = (await response.json()).error || message; } catch {}
+      try {
+        const body = await response.json() as { message?: unknown; error?: unknown };
+        if (typeof body.message === "string" && body.message) message = body.message;
+        else if (typeof body.error === "string" && body.error) message = body.error;
+      } catch {}
       throw new Error(message);
     }
     return (response.status === 204 ? null : await response.json()) as T;
